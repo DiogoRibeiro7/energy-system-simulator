@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install Poetry
+        run: pip install "poetry>=1.8,<3"
+      - name: Install dependencies
+        run: poetry install
+      - name: Lint
+        run: poetry run ruff check .
+      - name: Type check
+        run: poetry run mypy src
+      - name: Test
+        run: poetry run pytest --cov=energy_system_simulator --cov-report=term-missing

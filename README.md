@@ -1,0 +1,110 @@
+# Energy System Simulator
+
+A transparent, optimisation-based simulator for an electrical energy system with renewable generation, a dispatchable thermal plant, battery storage, imports, distribution constraints, and hourly end-user consumption.
+
+The model is designed for research, teaching, and policy experiments. It uses explicit physical and economic constraints rather than machine-learning methods.
+
+## Main capabilities
+
+- Solar generation from irradiance and ambient temperature.
+- Wind generation from a configurable turbine power curve.
+- Thermal unit commitment with minimum and maximum output, ramp limits, start-up and shutdown decisions, minimum up/down times, fuel cost, and emissions.
+- Battery charging, discharging, state-of-charge limits, efficiency losses, and throughput cost.
+- Aggregated distribution losses and transfer-capacity constraints.
+- Optional electricity imports.
+- Renewable curtailment and involuntary load shedding.
+- Mixed-integer optimisation using `scipy.optimize.milp`.
+- CSV results, JSON summary metrics, and diagnostic plots.
+- A small DC power-flow module for network experiments.
+
+## Mathematical core
+
+For each period \(t\), the source-side balance is
+
+\[
+R_t + P_t + D_t^{\mathrm{bat}} + I_t + L_t
+= G_t + C_t^{\mathrm{bat}},
+\]
+
+where \(G_t\) is demand adjusted for distribution losses, \(R_t\) is renewable generation used, \(P_t\) is thermal output, \(I_t\) is imported power, and \(L_t\) is source-equivalent load shedding.
+
+The optimiser minimizes operating cost, start-up and shutdown cost, import cost, battery degradation, renewable curtailment, emissions cost, and the value of lost load.
+
+## Repository structure
+
+```text
+energy-system-simulator/
+├── configs/                  Example YAML configuration
+├── data/                     Example hourly input data
+├── docs/                     Mathematical and architecture documentation
+├── scripts/                  Reproducible data-generation scripts
+├── src/energy_system_simulator/
+│   ├── dispatch/             Mixed-integer unit commitment
+│   ├── generation/           Solar and wind models
+│   ├── network/              Distribution and DC power flow
+│   ├── reporting/            Metrics and figures
+│   ├── simulation/           End-to-end simulation engine
+│   └── storage/              Battery model helpers
+└── tests/                    Unit and integration tests
+```
+
+## Requirements
+
+- Python 3.11 or later
+- Poetry 1.8 or later
+
+## Installation
+
+```bash
+poetry install
+```
+
+## Run the example
+
+```bash
+poetry run energy-sim validate --config configs/example.yaml
+poetry run energy-sim simulate --config configs/example.yaml
+```
+
+Equivalent module invocation:
+
+```bash
+poetry run python -m energy_system_simulator simulate --config configs/example.yaml
+```
+
+Results are written to `outputs/example/`:
+
+- `timeseries.csv`
+- `summary.json`
+- `dispatch.png`
+- `battery_soc.png`
+
+## Input data contract
+
+The hourly CSV must contain:
+
+| Column | Unit | Meaning |
+|---|---:|---|
+| `timestamp` | ISO-8601 | Start of the interval |
+| `demand_mw` | MW | End-user electrical demand |
+| `irradiance_w_m2` | W/m² | Global horizontal irradiance |
+| `ambient_temperature_c` | °C | Ambient temperature |
+| `wind_speed_m_s` | m/s | Hub-height wind speed |
+
+See [`docs/data-contract.md`](docs/data-contract.md) for validation rules.
+
+## Quality checks
+
+```bash
+poetry run pytest
+poetry run ruff check .
+poetry run mypy src
+```
+
+## Modelling scope
+
+The default simulation uses a single aggregated distribution network. This is appropriate for system planning and policy analysis. The repository also contains a DC power-flow solver that can be integrated into zonal or nodal studies. Detailed low-voltage AC analysis, frequency dynamics, protection systems, and transient stability are outside the current scope.
+
+## License
+
+MIT

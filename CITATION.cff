@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this software in research, please cite it using this metadata."
+title: "Energy System Simulator"
+type: software
+authors:
+  - family-names: "Diogo"
+version: 0.1.0
+date-released: 2026-07-30
+license: MIT
+repository-code: "https://github.com/OWNER/energy-system-simulator"
