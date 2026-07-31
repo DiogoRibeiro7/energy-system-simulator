@@ -24,6 +24,10 @@ and this project follows semantic versioning.
 - Reservoir and run-of-river hydro dispatch with natural inflows, turbine
   release, spill, environmental releases, evaporation, terminal reservoir
   policies, water-value accounting, and a synthetic hydro portfolio example.
+- Sector demand and demand-response dispatch with fixed, curtailable,
+  shiftable, deferrable, and EV-charging entities, entity-specific lost-load
+  costs, temperature-sensitive demand preprocessing, task completion penalties,
+  and a demand-response portfolio example.
 
 ## [0.1.1] - 2026-07-31
 

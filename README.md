@@ -1,6 +1,6 @@
 # Energy System Simulator
 
-A transparent, optimisation-based simulator for an electrical energy system with renewable generation, dispatchable thermal plants, storage, reservoir hydro, imports, distribution constraints, and hourly end-user consumption.
+A transparent, optimisation-based simulator for an electrical energy system with renewable generation, dispatchable thermal plants, storage, reservoir hydro, demand response, imports, distribution constraints, and hourly end-user consumption.
 
 The model is designed for research, teaching, and policy experiments. It uses explicit physical and economic constraints rather than machine-learning methods.
 
@@ -18,6 +18,9 @@ The model is designed for research, teaching, and policy experiments. It uses ex
 - Reservoir and run-of-river hydro dispatch with energy-equivalent water
   balances, inflows, release, spill, evaporation, terminal storage policies,
   environmental releases, and optional terminal water value.
+- Sector demand portfolios with fixed, curtailable, shiftable, deferrable, and
+  EV-charging demand, including sector-specific lost-load costs and explicit
+  demand-response accounting.
 - Aggregated distribution losses and transfer-capacity constraints.
 - Optional electricity imports.
 - Renewable curtailment and involuntary load shedding.
@@ -81,6 +84,13 @@ Run the schema v2 hydro portfolio example:
 ```bash
 poetry run energy-sim validate --config configs/portfolio_hydro.yaml
 poetry run energy-sim simulate --config configs/portfolio_hydro.yaml
+```
+
+Run the demand-response portfolio example:
+
+```bash
+poetry run energy-sim validate --config configs/portfolio_demand_response.yaml
+poetry run energy-sim simulate --config configs/portfolio_demand_response.yaml
 ```
 
 Equivalent module invocation:
@@ -151,6 +161,7 @@ make stress
 | Renewables | Multiple configured solar and wind assets with asset-level availability, used output, and curtailment reporting |
 | Storage | Multiple batteries and pumped-storage assets with exact charge/discharge modes, independent power limits, self-discharge, terminal SOC policies, and degradation accounting |
 | Hydro | Reservoir and run-of-river assets with inflows, release, spill, energy-equivalent reservoir state, evaporation losses, environmental releases, terminal policies, and water-value accounting |
+| Demand | Demand entities with fixed, curtailable, shiftable, deferrable, and EV-charging modes, temperature-sensitive preprocessing, sector-specific lost-load values, and demand-response cost accounting |
 | Network | Aggregate delivery losses and transfer-capacity shedding in dispatch |
 | DC flow | Standalone fixed-injection DC power flow with overload diagnostics |
 | Outputs | Aggregate CSV time series, tidy renewable, thermal, storage, and hydro asset time series, fuel and emissions accounting, JSON summary, manifest, plots, benchmark, baseline, and stress comparison table |

@@ -21,8 +21,8 @@ resolved into the same typed portfolio model used by newer configurations.
 
 The current optimisation engine evaluates multiple renewable assets by ID,
 optimizes all configured thermal generators as a generator-indexed unit
-commitment fleet, and dispatches indexed storage and hydro portfolios. Imports
-are still represented as a single aggregate resource.
+commitment fleet, and dispatches indexed storage, hydro, and demand-response
+portfolios. Imports are still represented as a single aggregate resource.
 
 ## Validation Approach
 
@@ -137,6 +137,29 @@ Hydro units may set:
 - `upstream_hydro_id` and `cascade_delay_hours`: typed cascade metadata. The
   current optimisation does not yet add upstream releases to downstream inflows.
 
+Demand entities may set:
+
+- `kind`: `fixed`, `curtailable`, `shiftable`, `deferrable`, or `ev_charging`.
+  Existing fixed demand remains the default.
+- `sector`: optional reporting label, for example residential, industrial, or
+  transport. The schema does not hard-code sector names.
+- `value_of_lost_load_eur_per_mwh`: optional entity-specific involuntary
+  shedding cost. When omitted, `penalties.lost_load_eur_per_mwh` is used.
+- `maximum_curtailment_fraction`, `maximum_curtailment_mw`, and
+  `voluntary_curtailment_cost_eur_per_mwh`: voluntary curtailment limits and
+  utility-loss cost for curtailable or shiftable demand.
+- `shift_up_capacity_mw`, `shift_down_capacity_mw`, `shift_window_hours`,
+  `rebound_fraction`, and `shift_cost_eur_per_mwh`: energy-conserving load
+  shifting. A non-positive shift window conserves energy over the full horizon;
+  otherwise conservation is enforced over non-overlapping windows.
+- `task_power_capacity_mw`, `task_required_energy_mwh`, `task_start_period`,
+  `task_end_period`, and `task_unserved_penalty_eur_per_mwh`: deferrable task
+  or EV-charging requirements. `task_end_period` is exclusive.
+- `temperature_time_series_key`, `heating_base_temperature_c`,
+  `cooling_base_temperature_c`, `heating_sensitivity_mw_per_c`, and
+  `cooling_sensitivity_mw_per_c`: deterministic heating- and cooling-degree
+  demand adjustments applied before dispatch.
+
 ## Migration
 
 Convert a legacy configuration with:
@@ -157,6 +180,8 @@ generator, one storage unit, one import resource, and one demand entry.
   generators and two renewable generators.
 - `configs/portfolio_hydro.yaml` is a schema v2 example with a reservoir unit,
   a run-of-river unit, and synthetic seasonal hydro inflows.
+- `configs/portfolio_demand_response.yaml` is a schema v2 example with
+  residential fixed demand, industrial shiftable demand, and an EV fleet.
 - `tests/fixtures/invalid_portfolio_missing_bus.yaml` is intentionally invalid
   and is used by the validation tests.
 

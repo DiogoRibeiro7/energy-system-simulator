@@ -28,6 +28,11 @@ reported as network-capacity shedding before dispatch optimisation. The dispatch
 model then serves the remaining source-equivalent demand \(g_t\) with generation,
 storage, imports, or source-side load shedding.
 
+Demand response is applied to the source-side deliverable demand after this
+aggregate network preprocessing. Entity-level source-side demand profiles are
+scaled from end-user demand by the same period efficiency and transfer-capacity
+factor used for the aggregate dispatch input.
+
 ## Renewable generation
 
 Let \(K^{\mathrm{ren}}\) be the configured renewable asset set. Each asset \(k\)
@@ -63,10 +68,15 @@ All dispatch variables are represented on the source side:
 
 \[
 r_t+\sum_{g\in G}p_{g,t}+\sum_{h\in H}x_{h,t}+d_t^{\mathrm{bat}}+i_t+\ell_t
-=g_t+c_t^{\mathrm{bat}}.
++\sum_{j\in D}\left(\ell_{j,t}+v_{j,t}+o_{j,t}\right)
+=g_t+c_t^{\mathrm{bat}}+\sum_{j\in D}\left(u_{j,t}+e_{j,t}\right).
 \]
 
-Here \(\ell_t\) is source-equivalent involuntary load shedding. Delivered involuntary shedding is \(\eta_n\ell_t\).
+Here \(\ell_t\) is the legacy aggregate source-equivalent involuntary load
+shedding variable used when no demand portfolio is supplied. In demand-portfolio
+mode, \(\ell_{j,t}\) is entity-specific involuntary shedding, \(v_{j,t}\) is
+voluntary curtailment, \(o_{j,t}\) is shifted-out demand, \(u_{j,t}\) is
+shifted-in demand, and \(e_{j,t}\) is task or EV charging demand.
 
 ## Thermal generators
 
@@ -77,7 +87,8 @@ uses total thermal output:
 
 \[
 r_t+\sum_{g\in G}p_{g,t}+\sum_{h\in H}x_{h,t}+d_t^{\mathrm{bat}}+i_t+\ell_t
-=g_t+c_t^{\mathrm{bat}}.
++\sum_{j\in D}\left(\ell_{j,t}+v_{j,t}+o_{j,t}\right)
+=g_t+c_t^{\mathrm{bat}}+\sum_{j\in D}\left(u_{j,t}+e_{j,t}\right).
 \]
 
 Generator availability is an exogenous multiplier
@@ -295,6 +306,67 @@ to lower-cost bands first without extra binary variables. The approximation is
 throughput-based; it reports equivalent full cycles and depth-of-discharge
 metrics but does not model electrochemical ageing states.
 
+## Demand Response
+
+Let \(D\) be the configured demand entity set. Each entity has a source-side
+baseline demand \(b_{j,t}\). Fixed demand only supports involuntary shedding:
+
+\[
+0\le \ell_{j,t}\le b_{j,t}.
+\]
+
+Curtailable demand can reduce served demand voluntarily:
+
+\[
+0\le v_{j,t}\le \min(\phi_j b_{j,t}, V_j^{\max}),
+\]
+
+where \(\phi_j\) is `maximum_curtailment_fraction` and \(V_j^{\max}\) is the
+optional absolute curtailment limit.
+
+Shiftable demand uses shifted-out \(o_{j,t}\) and shifted-in \(u_{j,t}\)
+variables:
+
+\[
+0\le o_{j,t}\le O_j^{\max},\quad 0\le u_{j,t}\le U_j^{\max}.
+\]
+
+Energy is conserved over the full horizon or over configured non-overlapping
+windows:
+
+\[
+\sum_{t\in W}u_{j,t}\Delta t=(1+\rho_j)\sum_{t\in W}o_{j,t}\Delta t,
+\]
+
+where \(\rho_j\) is an optional rebound fraction.
+
+Deferrable demand and EV charging use a task charging variable \(e_{j,t}\) that
+is available only inside the configured period window:
+
+\[
+0\le e_{j,t}\le E_j^{\max}.
+\]
+
+Task completion is:
+
+\[
+\sum_t e_{j,t}\Delta t-\sum_t \ell_{j,t}\Delta t+m_j=R_j,
+\]
+
+where \(R_j\) is required task energy and \(m_j\) is unmet task energy. This
+prevents generic load shedding from counting as completed charging.
+
+For every demand entity and period, involuntary shedding cannot exceed adjusted
+demand:
+
+\[
+\ell_{j,t}+v_{j,t}+o_{j,t}-u_{j,t}-e_{j,t}\le b_{j,t}.
+\]
+
+Demand preprocessing can add transparent temperature-sensitive load with
+heating- and cooling-degree terms. No statistical or machine-learning demand
+model is used.
+
 ## Hydro
 
 Hydro reservoirs use direct energy-equivalent water units. Natural inflow,
@@ -360,16 +432,19 @@ C^{\mathrm{imp}}i_t
 
 plus generator running costs, no-load costs, start-up costs, shutdown costs,
 thermal carbon costs, renewable-curtailment costs, and hydro terminal water
-value credits. For compatibility-mode thermal units, running cost is scalar
-variable cost times output. For segmented thermal units, running cost is fuel
-input times fuel price.
+value credits. Demand response adds voluntary curtailment utility-loss costs,
+shift costs, entity-specific involuntary shedding costs, and unmet task-energy
+penalties. For compatibility-mode thermal units, running cost is scalar variable
+cost times output. For segmented thermal units, running cost is fuel input times
+fuel price.
 
 Reported cost components reconcile the solver objective into thermal variable,
 thermal no-load, startup, shutdown, import energy, battery throughput, storage
-degradation, hydro terminal value, thermal carbon, import carbon, renewable
-curtailment, dispatch load-shedding, and network-capacity load-shedding costs.
-The simulator raises an error if the reported component sum diverges from the
-objective beyond the configured tolerance.
+degradation, hydro terminal value, demand voluntary curtailment, demand shift,
+unmet task energy, thermal carbon, import carbon, renewable curtailment,
+dispatch load-shedding, and network-capacity load-shedding costs. The simulator
+raises an error if the reported component sum diverges from the objective beyond
+the configured tolerance.
 
 ## Solver status and reconciliation
 
@@ -387,7 +462,7 @@ relative-gap denominator is meaningful.
 
 Per-period reconciliation columns report source balance residual, delivered
 demand balance residual, battery energy residual, hydro water-balance residual,
-curtailment residual, network losses, and unserved energy.
+curtailment residual, demand adjustments, network losses, and unserved energy.
 
 ## Numerical Policy
 

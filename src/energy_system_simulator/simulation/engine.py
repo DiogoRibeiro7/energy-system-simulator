@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from energy_system_simulator.config import ModelConfig, StorageUnitConfig
@@ -64,7 +65,13 @@ class SimulationEngine:
         demand = self._calculate_demand(registry, data)
         network = DistributionNetwork(self.config.network)
         distribution = network.prepare_demand(demand)
-        dispatch = self._solve_dispatch(registry, data, renewable, distribution.gross_demand_mw)
+        dispatch = self._solve_dispatch(
+            registry,
+            data,
+            renewable,
+            distribution.gross_demand_mw,
+            self._source_side_demand_profiles(registry, data, demand, distribution),
+        )
         frame = self._assemble_timeseries(data, renewable, distribution, dispatch)
         asset_timeseries = self._asset_timeseries(data, renewable, frame)
 
@@ -73,8 +80,24 @@ class SimulationEngine:
         frame["total_load_shed_mw"] = (
             frame["network_capacity_shed_mw"] + frame["dispatch_load_shed_mw"]
         )
-        frame["served_demand_mw"] = frame["end_user_demand_mw"] - frame["total_load_shed_mw"]
-        source_power_to_load = frame["gross_demand_mw"] - frame["source_load_shed_mw"]
+        frame["demand_voluntary_curtailment_end_user_mw"] = (
+            efficiency * frame["demand_voluntary_curtailment_mw"]
+        )
+        frame["demand_shifted_out_end_user_mw"] = efficiency * frame["demand_shift_down_mw"]
+        frame["demand_shifted_in_end_user_mw"] = efficiency * frame["demand_shift_up_mw"]
+        frame["demand_task_charge_end_user_mw"] = efficiency * frame["demand_task_charge_mw"]
+        frame["adjusted_end_user_demand_mw"] = (
+            frame["end_user_demand_mw"]
+            - frame["network_capacity_shed_mw"]
+            - frame["demand_voluntary_curtailment_end_user_mw"]
+            - frame["demand_shifted_out_end_user_mw"]
+            + frame["demand_shifted_in_end_user_mw"]
+            + frame["demand_task_charge_end_user_mw"]
+        )
+        frame["served_demand_mw"] = (
+            frame["adjusted_end_user_demand_mw"] - frame["dispatch_load_shed_mw"]
+        )
+        source_power_to_load = frame["demand_adjusted_mw"] - frame["source_load_shed_mw"]
         frame["network_losses_mw"] = source_power_to_load * self.config.network.loss_fraction
         thermal_emission_columns = [
             column for column in frame.columns if column.startswith("thermal_emissions_tonnes__")
@@ -168,6 +191,7 @@ class SimulationEngine:
         data: pd.DataFrame,
         renewable: RenewableAvailability,
         gross_demand_mw: FloatArray,
+        demand_profiles_mw: dict[str, FloatArray] | None,
     ) -> DispatchResult:
         return UnitCommitment(self.config).solve(
             renewable.aggregate_mw,
@@ -176,7 +200,29 @@ class SimulationEngine:
             fuel_price_series=self._fuel_price_series(data),
             storage_availability_factors=registry.storage_availability_factors(data),
             hydro_inflows_mw=registry.hydro_inflows_mw(data),
+            demand_profiles_mw=demand_profiles_mw,
         )
+
+    def _source_side_demand_profiles(
+        self,
+        registry: AssetRegistry,
+        data: pd.DataFrame,
+        end_user_demand_mw: FloatArray,
+        distribution: DistributionDemand,
+    ) -> dict[str, FloatArray] | None:
+        if not any(
+            demand.kind != "fixed" or demand.value_of_lost_load_eur_per_mwh is not None
+            for demand in self.config.portfolio.demand
+        ):
+            return None
+        profiles = registry.demand_profiles_mw(data)
+        scale = np.divide(
+            distribution.gross_demand_mw,
+            end_user_demand_mw,
+            out=np.zeros_like(distribution.gross_demand_mw, dtype=np.float64),
+            where=end_user_demand_mw > 0.0,
+        )
+        return {asset_id: values * scale for asset_id, values in profiles.items()}
 
     def _fuel_price_series(self, data: pd.DataFrame) -> dict[str, FloatArray]:
         prices: dict[str, FloatArray] = {}
@@ -237,6 +283,7 @@ class SimulationEngine:
             .append(self._thermal_asset_timeseries(data["timestamp"], frame))
             .append(self._storage_asset_timeseries(data["timestamp"], frame))
             .append(self._hydro_asset_timeseries(data["timestamp"], frame))
+            .append(self._demand_asset_timeseries(data["timestamp"], frame))
         )
 
     def _thermal_asset_timeseries(
@@ -374,6 +421,43 @@ class SimulationEngine:
             return AssetTimeSeries.empty()
         return AssetTimeSeries(pd.concat(pieces, ignore_index=True))
 
+    def _demand_asset_timeseries(
+        self,
+        timestamps: pd.Series,
+        frame: pd.DataFrame,
+    ) -> AssetTimeSeries:
+        pieces: list[pd.DataFrame] = []
+        variable_map = {
+            "demand_baseline_mw": ("baseline_mw_source", "MW-source"),
+            "demand_adjusted_mw": ("adjusted_mw_source", "MW-source"),
+            "demand_served_mw": ("served_mw_source", "MW-source"),
+            "demand_involuntary_shed_mw": ("involuntary_shed_mw_source", "MW-source"),
+            "demand_voluntary_curtailment_mw": ("voluntary_curtailment_mw_source", "MW-source"),
+            "demand_shift_down_mw": ("shifted_out_mw_source", "MW-source"),
+            "demand_shift_up_mw": ("shifted_in_mw_source", "MW-source"),
+            "demand_task_charge_mw": ("task_charge_mw_source", "MW-source"),
+            "demand_task_unserved_mwh": ("task_unserved_mwh", "MWh"),
+        }
+        for demand in self.config.portfolio.demand:
+            for prefix, (variable, unit) in variable_map.items():
+                column = f"{prefix}__{demand.id}"
+                if column not in frame:
+                    continue
+                pieces.append(
+                    pd.DataFrame(
+                        {
+                            "timestamp": timestamps.to_numpy(),
+                            "asset_id": demand.id,
+                            "variable": variable,
+                            "value": frame[column].to_numpy(),
+                            "unit": unit,
+                        }
+                    )
+                )
+        if not pieces:
+            return AssetTimeSeries.empty()
+        return AssetTimeSeries(pd.concat(pieces, ignore_index=True))
+
     def _renewable_kind_available(
         self,
         renewable: RenewableAvailability,
@@ -422,8 +506,15 @@ class SimulationEngine:
                 objective_eur - sum(cost_components.values())
             ),
             "total_demand_mwh": demand_mwh,
+            "adjusted_demand_mwh": energy("adjusted_end_user_demand_mw"),
             "served_demand_mwh": served_mwh,
             "unserved_energy_mwh": energy("total_load_shed_mw"),
+            "voluntary_demand_curtailment_mwh": energy("demand_voluntary_curtailment_end_user_mw"),
+            "demand_shifted_out_mwh": energy("demand_shifted_out_end_user_mw"),
+            "demand_shifted_in_mwh": energy("demand_shifted_in_end_user_mw"),
+            "demand_task_charge_mwh": energy("demand_task_charge_end_user_mw"),
+            "demand_task_unserved_mwh": float(frame["demand_task_unserved_mwh"].sum()),
+            "demand_assets": self._demand_asset_summary(frame),
             "loss_of_load_probability": float(
                 (
                     frame["total_load_shed_mw"] > DEFAULT_NUMERICAL_POLICY.primal_feasibility_mw
@@ -522,7 +613,7 @@ class SimulationEngine:
                             "battery_discharge_mw",
                             "imports_mw",
                             "source_load_shed_mw",
-                            "gross_demand_mw",
+                            "demand_adjusted_mw",
                             "battery_charge_mw",
                         ),
                     ),
@@ -530,7 +621,15 @@ class SimulationEngine:
                         frame,
                         "delivered_demand_balance",
                         "delivered_demand_balance_residual_mw",
-                        ("served_demand_mw", "total_load_shed_mw", "end_user_demand_mw"),
+                        (
+                            "served_demand_mw",
+                            "total_load_shed_mw",
+                            "demand_voluntary_curtailment_end_user_mw",
+                            "demand_shifted_out_end_user_mw",
+                            "demand_shifted_in_end_user_mw",
+                            "demand_task_charge_end_user_mw",
+                            "end_user_demand_mw",
+                        ),
                     ),
                     "battery_energy": self._residual_summary(
                         frame,
@@ -696,6 +795,55 @@ class SimulationEngine:
             }
         return result
 
+    def _demand_asset_summary(self, frame: pd.DataFrame) -> dict[str, Any]:
+        dt = self.config.simulation.time_step_hours
+        result: dict[str, Any] = {}
+        for demand in self.config.portfolio.demand:
+            if f"demand_baseline_mw__{demand.id}" not in frame:
+                continue
+            result[demand.id] = {
+                "kind": demand.kind,
+                "sector": demand.sector,
+                "baseline_mwh_source": float(frame[f"demand_baseline_mw__{demand.id}"].sum() * dt),
+                "adjusted_mwh_source": float(frame[f"demand_adjusted_mw__{demand.id}"].sum() * dt),
+                "served_mwh_source": float(frame[f"demand_served_mw__{demand.id}"].sum() * dt),
+                "voluntary_curtailment_mwh_source": self._energy_prefixed_asset(
+                    frame,
+                    f"demand_voluntary_curtailment_mw__{demand.id}",
+                ),
+                "shifted_out_mwh_source": self._energy_prefixed_asset(
+                    frame,
+                    f"demand_shift_down_mw__{demand.id}",
+                ),
+                "shifted_in_mwh_source": self._energy_prefixed_asset(
+                    frame,
+                    f"demand_shift_up_mw__{demand.id}",
+                ),
+                "task_charge_mwh_source": self._energy_prefixed_asset(
+                    frame,
+                    f"demand_task_charge_mw__{demand.id}",
+                ),
+                "task_unserved_mwh": self._sum_optional_column(
+                    frame,
+                    f"demand_task_unserved_mwh__{demand.id}",
+                ),
+                "involuntary_shed_mwh_source": float(
+                    frame[f"demand_involuntary_shed_mw__{demand.id}"].sum() * dt
+                ),
+            }
+        return result
+
+    def _energy_prefixed_asset(self, frame: pd.DataFrame, column: str) -> float:
+        if column not in frame:
+            return 0.0
+        return float(frame[column].sum() * self.config.simulation.time_step_hours)
+
+    @staticmethod
+    def _sum_optional_column(frame: pd.DataFrame, column: str) -> float:
+        if column not in frame:
+            return 0.0
+        return float(frame[column].sum())
+
     def _storage_reconciliation_summary(self, frame: pd.DataFrame) -> dict[str, Any]:
         result: dict[str, Any] = {}
         for storage in self._storage_units_for_reporting():
@@ -746,10 +894,16 @@ class SimulationEngine:
             + frame["imports_mw"]
             + frame["source_load_shed_mw"]
         )
-        source_right = frame["gross_demand_mw"] + frame["battery_charge_mw"]
+        source_right = frame["demand_adjusted_mw"] + frame["battery_charge_mw"]
         frame["source_balance_residual_mw"] = source_left - source_right
         frame["delivered_demand_balance_residual_mw"] = (
-            frame["served_demand_mw"] + frame["total_load_shed_mw"] - frame["end_user_demand_mw"]
+            frame["served_demand_mw"]
+            + frame["total_load_shed_mw"]
+            + frame["demand_voluntary_curtailment_end_user_mw"]
+            + frame["demand_shifted_out_end_user_mw"]
+            - frame["demand_shifted_in_end_user_mw"]
+            - frame["demand_task_charge_end_user_mw"]
+            - frame["end_user_demand_mw"]
         )
         storage_units = self._storage_units_for_reporting()
         storage_residual_columns: list[str] = []
@@ -792,7 +946,7 @@ class SimulationEngine:
                 "battery_discharge_mw",
                 "imports_mw",
                 "source_load_shed_mw",
-                "gross_demand_mw",
+                "demand_adjusted_mw",
                 "battery_charge_mw",
             ),
         )

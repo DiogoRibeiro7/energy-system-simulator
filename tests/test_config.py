@@ -290,3 +290,16 @@ def test_resolved_config_yaml_serializes_canonical_paths() -> None:
     assert "portfolio:" in text
     assert "schema_version: 2" in text
     assert str(config.paths.input_csv) in text
+
+
+def test_demand_response_configuration_loads_with_typed_entities() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "configs" / "portfolio_demand_response.yaml")
+
+    assert [demand.kind for demand in config.portfolio.demand] == [
+        "fixed",
+        "shiftable",
+        "ev_charging",
+    ]
+    assert config.portfolio.demand[1].shift_window_hours == 6.0
+    assert config.portfolio.demand[2].task_required_energy_mwh == 45.0

@@ -230,7 +230,32 @@ LIST_SECTION_KEYS = {
         "cascade_delay_hours",
     },
     "imports": LEGACY_SECTION_KEYS["imports"] | {"id", "bus_id"},
-    "demand": {"id", "bus_id", "time_series_key"},
+    "demand": {
+        "id",
+        "bus_id",
+        "time_series_key",
+        "kind",
+        "sector",
+        "value_of_lost_load_eur_per_mwh",
+        "voluntary_curtailment_cost_eur_per_mwh",
+        "maximum_curtailment_fraction",
+        "maximum_curtailment_mw",
+        "shift_up_capacity_mw",
+        "shift_down_capacity_mw",
+        "shift_window_hours",
+        "rebound_fraction",
+        "shift_cost_eur_per_mwh",
+        "task_power_capacity_mw",
+        "task_required_energy_mwh",
+        "task_start_period",
+        "task_end_period",
+        "task_unserved_penalty_eur_per_mwh",
+        "temperature_time_series_key",
+        "heating_base_temperature_c",
+        "cooling_base_temperature_c",
+        "heating_sensitivity_mw_per_c",
+        "cooling_sensitivity_mw_per_c",
+    },
 }
 LIST_OPTIONAL_KEYS = {
     "renewable_generators": {
@@ -288,7 +313,29 @@ LIST_OPTIONAL_KEYS = {
         "cascade_delay_hours",
     },
     "imports": set(),
-    "demand": set(),
+    "demand": {
+        "kind",
+        "sector",
+        "value_of_lost_load_eur_per_mwh",
+        "voluntary_curtailment_cost_eur_per_mwh",
+        "maximum_curtailment_fraction",
+        "maximum_curtailment_mw",
+        "shift_up_capacity_mw",
+        "shift_down_capacity_mw",
+        "shift_window_hours",
+        "rebound_fraction",
+        "shift_cost_eur_per_mwh",
+        "task_power_capacity_mw",
+        "task_required_energy_mwh",
+        "task_start_period",
+        "task_end_period",
+        "task_unserved_penalty_eur_per_mwh",
+        "temperature_time_series_key",
+        "heating_base_temperature_c",
+        "cooling_base_temperature_c",
+        "heating_sensitivity_mw_per_c",
+        "cooling_sensitivity_mw_per_c",
+    },
 }
 LIST_REQUIRED_KEYS = {
     section: keys - LIST_OPTIONAL_KEYS.get(section, set())
@@ -455,6 +502,16 @@ def _number_at(section: Mapping[str, Any], key: str, expected: type[T], path: st
     return expected(value)
 
 
+def _integer_at(section: Mapping[str, Any], key: str, path: str) -> int:
+    field = _field_path(path, key)
+    if key not in section:
+        raise ConfigurationError(f"Missing required configuration field: {field}")
+    value = section.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ConfigurationError(f"{field!r} must be an integer")
+    return value
+
+
 def _boolean_at(section: Mapping[str, Any], key: str, path: str) -> bool:
     field = _field_path(path, key)
     if key not in section:
@@ -486,6 +543,12 @@ def _optional_number_at(
     if key not in section:
         return default
     return _number_at(section, key, expected, path)
+
+
+def _optional_integer_at(section: Mapping[str, Any], key: str, default: int, path: str) -> int:
+    if key not in section:
+        return default
+    return _integer_at(section, key, path)
 
 
 def _optional_string_at(
@@ -795,6 +858,27 @@ class DemandConfig:
     id: str
     bus_id: str
     time_series_key: str
+    kind: Literal["fixed", "curtailable", "shiftable", "deferrable", "ev_charging"] = "fixed"
+    sector: str | None = None
+    value_of_lost_load_eur_per_mwh: float | None = None
+    voluntary_curtailment_cost_eur_per_mwh: float = 0.0
+    maximum_curtailment_fraction: float = 0.0
+    maximum_curtailment_mw: float | None = None
+    shift_up_capacity_mw: float = 0.0
+    shift_down_capacity_mw: float = 0.0
+    shift_window_hours: float = 0.0
+    rebound_fraction: float = 0.0
+    shift_cost_eur_per_mwh: float = 0.0
+    task_power_capacity_mw: float = 0.0
+    task_required_energy_mwh: float = 0.0
+    task_start_period: int = 0
+    task_end_period: int | None = None
+    task_unserved_penalty_eur_per_mwh: float = 0.0
+    temperature_time_series_key: str | None = None
+    heating_base_temperature_c: float | None = None
+    cooling_base_temperature_c: float | None = None
+    heating_sensitivity_mw_per_c: float = 0.0
+    cooling_sensitivity_mw_per_c: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -1156,11 +1240,7 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
         for index, item in enumerate(_list_section(raw, "imports"))
     )
     demand = tuple(
-        DemandConfig(
-            id=_id_at(item, "id", f"demand[{index}]"),
-            bus_id=_id_at(item, "bus_id", f"demand[{index}]"),
-            time_series_key=_input_key_at(item, "time_series_key", f"demand[{index}]"),
-        )
+        _parse_demand(item, f"demand[{index}]")
         for index, item in enumerate(_list_section(raw, "demand"))
     )
     portfolio = PortfolioConfig(
@@ -1656,6 +1736,120 @@ def _parse_hydro_unit(item: Mapping[str, Any], path: str) -> HydroUnitConfig:
     )
 
 
+def _parse_demand(item: Mapping[str, Any], path: str) -> DemandConfig:
+    kind = _optional_string_at(item, "kind", "fixed", path)
+    if kind not in {"fixed", "curtailable", "shiftable", "deferrable", "ev_charging"}:
+        raise ConfigurationError(
+            f"{path}.kind must be one of: fixed, curtailable, shiftable, deferrable, ev_charging"
+        )
+    task_end_period = (
+        _integer_at(item, "task_end_period", path) if "task_end_period" in item else None
+    )
+    return DemandConfig(
+        id=_id_at(item, "id", path),
+        bus_id=_id_at(item, "bus_id", path),
+        time_series_key=_input_key_at(item, "time_series_key", path),
+        kind=cast(
+            Literal["fixed", "curtailable", "shiftable", "deferrable", "ev_charging"],
+            kind,
+        ),
+        sector=_string_at(item, "sector", path) if "sector" in item else None,
+        value_of_lost_load_eur_per_mwh=(
+            _number_at(item, "value_of_lost_load_eur_per_mwh", float, path)
+            if "value_of_lost_load_eur_per_mwh" in item
+            else None
+        ),
+        voluntary_curtailment_cost_eur_per_mwh=_optional_number_at(
+            item,
+            "voluntary_curtailment_cost_eur_per_mwh",
+            float,
+            0.0,
+            path,
+        ),
+        maximum_curtailment_fraction=_optional_number_at(
+            item,
+            "maximum_curtailment_fraction",
+            float,
+            0.0,
+            path,
+        ),
+        maximum_curtailment_mw=(
+            _number_at(item, "maximum_curtailment_mw", float, path)
+            if "maximum_curtailment_mw" in item
+            else None
+        ),
+        shift_up_capacity_mw=_optional_number_at(item, "shift_up_capacity_mw", float, 0.0, path),
+        shift_down_capacity_mw=_optional_number_at(
+            item,
+            "shift_down_capacity_mw",
+            float,
+            0.0,
+            path,
+        ),
+        shift_window_hours=_optional_number_at(item, "shift_window_hours", float, 0.0, path),
+        rebound_fraction=_optional_number_at(item, "rebound_fraction", float, 0.0, path),
+        shift_cost_eur_per_mwh=_optional_number_at(
+            item,
+            "shift_cost_eur_per_mwh",
+            float,
+            0.0,
+            path,
+        ),
+        task_power_capacity_mw=_optional_number_at(
+            item,
+            "task_power_capacity_mw",
+            float,
+            0.0,
+            path,
+        ),
+        task_required_energy_mwh=_optional_number_at(
+            item,
+            "task_required_energy_mwh",
+            float,
+            0.0,
+            path,
+        ),
+        task_start_period=_optional_integer_at(item, "task_start_period", 0, path),
+        task_end_period=task_end_period,
+        task_unserved_penalty_eur_per_mwh=_optional_number_at(
+            item,
+            "task_unserved_penalty_eur_per_mwh",
+            float,
+            0.0,
+            path,
+        ),
+        temperature_time_series_key=(
+            _input_key_at(item, "temperature_time_series_key", path)
+            if "temperature_time_series_key" in item
+            else None
+        ),
+        heating_base_temperature_c=(
+            _number_at(item, "heating_base_temperature_c", float, path)
+            if "heating_base_temperature_c" in item
+            else None
+        ),
+        cooling_base_temperature_c=(
+            _number_at(item, "cooling_base_temperature_c", float, path)
+            if "cooling_base_temperature_c" in item
+            else None
+        ),
+        heating_sensitivity_mw_per_c=_optional_number_at(
+            item,
+            "heating_sensitivity_mw_per_c",
+            float,
+            0.0,
+            path,
+        ),
+        cooling_sensitivity_mw_per_c=_optional_number_at(
+            item,
+            "cooling_sensitivity_mw_per_c",
+            float,
+            0.0,
+            path,
+        ),
+    )
+
+
 def _legacy_portfolio(
     solar: SolarConfig,
     wind: WindConfig,
@@ -1847,6 +2041,8 @@ def _validate_schema_v2_assets(portfolio: PortfolioConfig) -> None:
         _validate_storage_config_at(unit.config, f"storage_units[{index}]")
     for index, hydro in enumerate(portfolio.hydro_units):
         _validate_hydro_unit_at(hydro, f"hydro_units[{index}]")
+    for index, demand in enumerate(portfolio.demand):
+        _validate_demand_at(demand, f"demand[{index}]")
     for index, line in enumerate(portfolio.lines):
         _check_nonnegative_at(f"lines[{index}].capacity_mw", line.capacity_mw)
     for index, resource in enumerate(portfolio.imports):
@@ -2129,6 +2325,69 @@ def _validate_hydro_unit_at(hydro: HydroUnitConfig, path: str) -> None:
                 raise ConfigurationError(f"{path}.{name} must be zero for run_of_river")
 
 
+def _validate_demand_at(demand: DemandConfig, path: str) -> None:
+    if demand.kind not in {"fixed", "curtailable", "shiftable", "deferrable", "ev_charging"}:
+        raise ConfigurationError(f"{path}.kind has an unsupported value")
+    for name, value in (
+        ("voluntary_curtailment_cost_eur_per_mwh", demand.voluntary_curtailment_cost_eur_per_mwh),
+        ("maximum_curtailment_fraction", demand.maximum_curtailment_fraction),
+        ("shift_up_capacity_mw", demand.shift_up_capacity_mw),
+        ("shift_down_capacity_mw", demand.shift_down_capacity_mw),
+        ("shift_window_hours", demand.shift_window_hours),
+        ("rebound_fraction", demand.rebound_fraction),
+        ("shift_cost_eur_per_mwh", demand.shift_cost_eur_per_mwh),
+        ("task_power_capacity_mw", demand.task_power_capacity_mw),
+        ("task_required_energy_mwh", demand.task_required_energy_mwh),
+        ("task_unserved_penalty_eur_per_mwh", demand.task_unserved_penalty_eur_per_mwh),
+        ("heating_sensitivity_mw_per_c", demand.heating_sensitivity_mw_per_c),
+        ("cooling_sensitivity_mw_per_c", demand.cooling_sensitivity_mw_per_c),
+    ):
+        _check_nonnegative_at(f"{path}.{name}", value)
+    if demand.value_of_lost_load_eur_per_mwh is not None:
+        _check_nonnegative_at(
+            f"{path}.value_of_lost_load_eur_per_mwh",
+            demand.value_of_lost_load_eur_per_mwh,
+        )
+    if demand.maximum_curtailment_mw is not None:
+        _check_nonnegative_at(f"{path}.maximum_curtailment_mw", demand.maximum_curtailment_mw)
+    _check_fraction_at(f"{path}.maximum_curtailment_fraction", demand.maximum_curtailment_fraction)
+    _check_fraction_at(f"{path}.rebound_fraction", demand.rebound_fraction)
+    if demand.task_start_period < 0:
+        raise ConfigurationError(f"{path}.task_start_period must be non-negative")
+    if demand.task_end_period is not None and demand.task_end_period <= demand.task_start_period:
+        raise ConfigurationError(f"{path}.task_end_period must exceed task_start_period")
+    if demand.kind == "fixed" and any(
+        value > 0.0
+        for value in (
+            demand.maximum_curtailment_fraction,
+            demand.shift_up_capacity_mw,
+            demand.shift_down_capacity_mw,
+            demand.task_power_capacity_mw,
+            demand.task_required_energy_mwh,
+        )
+    ):
+        raise ConfigurationError(f"{path} fixed demand cannot define flexibility quantities")
+    if demand.kind == "curtailable" and (
+        demand.maximum_curtailment_fraction == 0.0 and demand.maximum_curtailment_mw is None
+    ):
+        raise ConfigurationError(f"{path} curtailable demand requires a curtailment limit")
+    if demand.kind == "shiftable" and (
+        demand.shift_up_capacity_mw == 0.0 or demand.shift_down_capacity_mw == 0.0
+    ):
+        raise ConfigurationError(f"{path} shiftable demand requires up and down shift capacity")
+    if demand.kind in {"deferrable", "ev_charging"} and (
+        demand.task_power_capacity_mw == 0.0 or demand.task_required_energy_mwh == 0.0
+    ):
+        raise ConfigurationError(f"{path} task demand requires power capacity and required energy")
+    if demand.temperature_time_series_key is None and (
+        demand.heating_base_temperature_c is not None
+        or demand.cooling_base_temperature_c is not None
+        or demand.heating_sensitivity_mw_per_c > 0.0
+        or demand.cooling_sensitivity_mw_per_c > 0.0
+    ):
+        raise ConfigurationError(f"{path}.temperature_time_series_key is required")
+
+
 def _check_nonnegative_at(name: str, value: float) -> None:
     if value < 0.0:
         raise ConfigurationError(f"{name} must be non-negative")
@@ -2272,14 +2531,7 @@ def _schema_v2_mapping_from_config(
             }
             for resource in portfolio.imports
         ],
-        "demand": [
-            {
-                "id": demand.id,
-                "bus_id": demand.bus_id,
-                "time_series_key": demand.time_series_key,
-            }
-            for demand in portfolio.demand
-        ],
+        "demand": [_demand_mapping(demand) for demand in portfolio.demand],
         "penalties": {
             "renewable_curtailment_eur_per_mwh": (
                 config.penalties.renewable_curtailment_eur_per_mwh
@@ -2465,6 +2717,23 @@ def _hydro_unit_mapping(unit: HydroUnitConfig) -> dict[str, Any]:
     if unit.upstream_hydro_id is not None:
         item["upstream_hydro_id"] = unit.upstream_hydro_id
         item["cascade_delay_hours"] = unit.cascade_delay_hours
+    return item
+
+
+def _demand_mapping(demand: DemandConfig) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "id": demand.id,
+        "bus_id": demand.bus_id,
+        "time_series_key": demand.time_series_key,
+    }
+    defaults = DemandConfig(
+        id=demand.id, bus_id=demand.bus_id, time_series_key=demand.time_series_key
+    )
+    for key, value in asdict(demand).items():
+        if key in {"id", "bus_id", "time_series_key"}:
+            continue
+        if value != getattr(defaults, key):
+            item[key] = value
     return item
 
 

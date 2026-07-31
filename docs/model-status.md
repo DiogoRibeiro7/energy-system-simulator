@@ -10,7 +10,7 @@ power-flow diagnostics. The `Unreleased` line adds typed portfolio
 configuration, asset-level renewable availability reporting,
 generator-indexed thermal unit commitment, typed fuels, piecewise heat-rate
 segments, startup categories, richer thermal emissions accounting, and indexed
-storage portfolio and hydro dispatch.
+storage portfolio, hydro dispatch, and demand-response dispatch.
 
 ## Release Decision
 
@@ -44,8 +44,9 @@ The stress suite writes `outputs/stress/summary.csv` and checks:
 
 - Thermal dispatch supports multiple committed generators, and storage dispatch
   supports multiple batteries or pumped-storage assets. Hydro dispatch supports
-  reservoir and run-of-river units. Imports are still represented as a single
-  aggregate resource.
+  reservoir and run-of-river units. Demand dispatch supports fixed,
+  curtailable, shiftable, deferrable, and EV-charging entities. Imports are
+  still represented as a single aggregate resource.
 - Solar and wind availability can be evaluated for multiple configured assets,
   with aggregate renewable dispatch allocated back to assets for reporting.
 - The dispatch network is an aggregate transfer-and-loss representation, not a

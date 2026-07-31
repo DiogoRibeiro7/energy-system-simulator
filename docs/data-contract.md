@@ -32,6 +32,11 @@ MW-water. Reservoir state and water-balance residuals are reported in
 MWh-water. The first hydro model uses a constant turbine efficiency to convert
 MW-water release into electrical MW generation.
 
+Demand columns referenced by `demand[].time_series_key` are MW of end-user
+baseline demand. Optional temperature-driver columns referenced by
+`demand[].temperature_time_series_key` are degrees Celsius and are converted
+with configured heating- and cooling-degree sensitivities before dispatch.
+
 ## Configuration rules
 
 The YAML configuration supports `schema_version: 1` for legacy aggregate-system

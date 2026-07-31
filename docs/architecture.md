@@ -15,7 +15,7 @@ AssetRegistry resolves portfolio assets
         ├── thermal generator fleet and fuel prices
         ├── storage portfolio availability by asset
         ├── hydro inflows by reservoir and run-of-river asset
-        ├── demand by configured column
+        ├── demand profiles and deterministic demand adjustments
         └── aggregate distribution preprocessing
                   │
                   ▼
@@ -44,7 +44,10 @@ AssetRegistry resolves portfolio assets
 - Hydro assets use indexed water-balance equations for reservoirs and
   run-of-river plants. Cascade metadata is typed, while coupled downstream
   inflow optimisation is reserved for a later extension.
+- Demand assets use indexed curtailment, shifting, task-charging, and
+  entity-specific shedding variables when configured.
 - Zonal or nodal networks can replace the aggregated distribution representation.
 - Reserve requirements can be added as capacity constraints.
-- Demand response can be represented through shiftable and curtailable load variables.
+- Demand response is represented through explicit demand-entity variables in the
+  aggregate dispatch formulation.
 - Stochastic scenarios can wrap the deterministic model without changing its internal equations.

@@ -201,14 +201,40 @@ class DemandAsset:
     asset_id: str
     bus_id: str
     time_series_key: str
+    config: DemandConfig
     role: AssetRole = "demand"
 
     @classmethod
     def from_config(cls, config: DemandConfig) -> DemandAsset:
-        return cls(asset_id=config.id, bus_id=config.bus_id, time_series_key=config.time_series_key)
+        return cls(
+            asset_id=config.id,
+            bus_id=config.bus_id,
+            time_series_key=config.time_series_key,
+            config=config,
+        )
 
     def demand_mw(self, data: pd.DataFrame) -> FloatArray:
-        return _column(data, self.time_series_key, self.asset_id, nonnegative=True)
+        baseline = _column(data, self.time_series_key, self.asset_id, nonnegative=True)
+        if self.config.temperature_time_series_key is None:
+            return baseline
+        temperature = _column(
+            data,
+            self.config.temperature_time_series_key,
+            self.asset_id,
+            nonnegative=False,
+        )
+        adjustment = np.zeros_like(baseline, dtype=np.float64)
+        if self.config.heating_base_temperature_c is not None:
+            adjustment += (
+                np.maximum(self.config.heating_base_temperature_c - temperature, 0.0)
+                * self.config.heating_sensitivity_mw_per_c
+            )
+        if self.config.cooling_base_temperature_c is not None:
+            adjustment += (
+                np.maximum(temperature - self.config.cooling_base_temperature_c, 0.0)
+                * self.config.cooling_sensitivity_mw_per_c
+            )
+        return baseline + adjustment
 
 
 @dataclass(frozen=True)
@@ -343,8 +369,10 @@ class AssetRegistry:
         )
 
     def demand_mw(self, data: pd.DataFrame) -> FloatArray:
-        values_by_asset = {asset.asset_id: asset.demand_mw(data) for asset in self.demand_assets}
-        return _sum_arrays(values_by_asset)
+        return _sum_arrays(self.demand_profiles_mw(data))
+
+    def demand_profiles_mw(self, data: pd.DataFrame) -> dict[str, FloatArray]:
+        return {asset.asset_id: asset.demand_mw(data) for asset in self.demand_assets}
 
     def thermal_availability_factors(self, data: pd.DataFrame) -> dict[str, FloatArray]:
         factors: dict[str, FloatArray] = {}

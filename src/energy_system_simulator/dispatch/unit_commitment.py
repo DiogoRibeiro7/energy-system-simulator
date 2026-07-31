@@ -13,6 +13,7 @@ from scipy.sparse import coo_matrix
 
 from energy_system_simulator.config import (
     BatteryConfig,
+    DemandConfig,
     FuelConfig,
     HydroUnitConfig,
     ModelConfig,
@@ -49,6 +50,14 @@ HYDRO_BLOCKS = (
     "hydro_release_mw",
     "hydro_spill_mw",
     "hydro_reservoir_mwh",
+)
+DEMAND_BLOCKS = (
+    "demand_involuntary_shed_mw",
+    "demand_voluntary_curtailment_mw",
+    "demand_shift_down_mw",
+    "demand_shift_up_mw",
+    "demand_task_charge_mw",
+    "demand_task_unserved_mwh",
 )
 THERMAL_BLOCKS = (
     "thermal_output_mw",
@@ -130,6 +139,14 @@ class HydroUnit:
 
 
 @dataclass(frozen=True)
+class DemandUnit:
+    """Resolved demand entity used by the indexed formulation."""
+
+    id: str
+    config: DemandConfig
+
+
+@dataclass(frozen=True)
 class FormulationProblem:
     """Complete linear mixed-integer problem and source input arrays."""
 
@@ -142,6 +159,8 @@ class FormulationProblem:
     thermal_units: tuple[ThermalUnit, ...]
     storage_units: tuple[StorageUnit, ...]
     hydro_units: tuple[HydroUnit, ...]
+    demand_units: tuple[DemandUnit, ...]
+    demand_profiles_mw: dict[str, FloatArray]
     thermal_capacity_available_mw: dict[str, FloatArray]
     storage_availability_factor: dict[str, FloatArray]
     hydro_inflow_mw: dict[str, FloatArray]
@@ -242,6 +261,7 @@ class UnitCommitment:
         fuel_price_series: Mapping[str, npt.ArrayLike] | None = None,
         storage_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
         hydro_inflows_mw: Mapping[str, npt.ArrayLike] | None = None,
+        demand_profiles_mw: Mapping[str, npt.ArrayLike] | None = None,
     ) -> FormulationProblem:
         """Build the MILP formulation without solving it."""
         renewable = np.asarray(renewable_available_mw, dtype=np.float64)
@@ -261,6 +281,8 @@ class UnitCommitment:
         thermal_units = self._thermal_units()
         storage_units = self._storage_units()
         hydro_units = self._hydro_units()
+        demand_units = self._demand_units(demand_profiles_mw)
+        demand_profiles = self._demand_profiles(demand_units, demand, demand_profiles_mw or {})
         thermal_capacity = self._thermal_capacity_available(
             thermal_units,
             periods,
@@ -273,13 +295,20 @@ class UnitCommitment:
         )
         hydro_inflow = self._hydro_inflows(hydro_units, periods, hydro_inflows_mw or {})
         fuel_prices = self._fuel_prices(periods, fuel_price_series or {})
-        registry = self._variable_registry(periods, thermal_units, storage_units, hydro_units)
+        registry = self._variable_registry(
+            periods,
+            thermal_units,
+            storage_units,
+            hydro_units,
+            demand_units,
+        )
         objective = self._objective(
             registry,
             renewable,
             thermal_units,
             storage_units,
             hydro_units,
+            demand_units,
             fuel_prices,
         )
         bounds, integrality = self._bounds(
@@ -289,6 +318,8 @@ class UnitCommitment:
             thermal_units,
             storage_units,
             hydro_units,
+            demand_units,
+            demand_profiles,
             storage_availability,
         )
         constraints, component_counts = self._constraints(
@@ -297,6 +328,8 @@ class UnitCommitment:
             thermal_units,
             storage_units,
             hydro_units,
+            demand_units,
+            demand_profiles,
             thermal_capacity,
             hydro_inflow,
         )
@@ -321,6 +354,8 @@ class UnitCommitment:
             thermal_units=thermal_units,
             storage_units=storage_units,
             hydro_units=hydro_units,
+            demand_units=demand_units,
+            demand_profiles_mw=demand_profiles,
             thermal_capacity_available_mw=thermal_capacity,
             storage_availability_factor=storage_availability,
             hydro_inflow_mw=hydro_inflow,
@@ -337,6 +372,7 @@ class UnitCommitment:
         fuel_price_series: Mapping[str, npt.ArrayLike] | None = None,
         storage_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
         hydro_inflows_mw: Mapping[str, npt.ArrayLike] | None = None,
+        demand_profiles_mw: Mapping[str, npt.ArrayLike] | None = None,
     ) -> DispatchResult:
         """Solve unit commitment over the full input horizon."""
         problem = self.build_formulation(
@@ -346,6 +382,7 @@ class UnitCommitment:
             fuel_price_series,
             storage_availability_factors,
             hydro_inflows_mw,
+            demand_profiles_mw,
         )
         return self.solve_formulation(problem)
 
@@ -384,12 +421,16 @@ class UnitCommitment:
         self._add_thermal_accounting_columns(frame, problem.thermal_units, problem)
         self._add_storage_accounting_columns(frame, problem.storage_units)
         self._add_hydro_accounting_columns(frame, problem.hydro_units, problem)
+        self._add_demand_accounting_columns(frame, problem.demand_units)
         nonnegative_cleanup_max_abs = self._clip_nonnegative_solver_noise(
             frame,
             problem.thermal_units,
             problem.storage_units,
             problem.hydro_units,
+            problem.demand_units,
         )
+        if problem.demand_units:
+            self._add_demand_accounting_columns(frame, problem.demand_units)
 
         constant_curtailment_cost = (
             self.config.penalties.renewable_curtailment_eur_per_mwh
@@ -481,6 +522,44 @@ class UnitCommitment:
         return tuple(
             HydroUnit(id=unit.id, config=unit) for unit in self.config.portfolio.hydro_units
         )
+
+    def _demand_units(
+        self,
+        demand_profiles_mw: Mapping[str, npt.ArrayLike] | None,
+    ) -> tuple[DemandUnit, ...]:
+        if demand_profiles_mw is None:
+            return ()
+        return tuple(DemandUnit(id=unit.id, config=unit) for unit in self.config.portfolio.demand)
+
+    def _demand_profiles(
+        self,
+        units: tuple[DemandUnit, ...],
+        aggregate_demand: FloatArray,
+        demand_profiles_mw: Mapping[str, npt.ArrayLike],
+    ) -> dict[str, FloatArray]:
+        result: dict[str, FloatArray] = {}
+        for unit in units:
+            if unit.id not in demand_profiles_mw:
+                raise ValueError(f"Demand profile series is required for {unit.id}")
+            values = np.asarray(demand_profiles_mw[unit.id], dtype=np.float64)
+            if values.shape != aggregate_demand.shape:
+                raise ValueError(f"Demand profile series for {unit.id} has wrong shape")
+            if np.any(~np.isfinite(values)) or np.any(values < 0.0):
+                raise ValueError(f"Demand profile for {unit.id} must be finite and non-negative")
+            result[unit.id] = values
+        if result:
+            aggregate = np.asarray(
+                np.sum(np.vstack(list(result.values())), axis=0, dtype=np.float64),
+                dtype=np.float64,
+            )
+            if not np.allclose(
+                aggregate,
+                aggregate_demand,
+                atol=DEFAULT_NUMERICAL_POLICY.primal_feasibility_mw,
+                rtol=0.0,
+            ):
+                raise ValueError("Demand profiles must sum to aggregate gross demand")
+        return result
 
     def _fuels_by_id(self) -> dict[str, FuelConfig]:
         fuels = {fuel.id: fuel for fuel in self.config.portfolio.fuels}
@@ -576,6 +655,7 @@ class UnitCommitment:
         thermal_units: tuple[ThermalUnit, ...],
         storage_units: tuple[StorageUnit, ...],
         hydro_units: tuple[HydroUnit, ...],
+        demand_units: tuple[DemandUnit, ...],
     ) -> VariableRegistry:
         registry = VariableRegistry()
         for block in SYSTEM_BLOCKS:
@@ -597,6 +677,16 @@ class UnitCommitment:
         for hydro in hydro_units:
             for block in HYDRO_BLOCKS:
                 registry.add(block, periods, asset_id=hydro.id)
+        for demand in demand_units:
+            registry.add("demand_involuntary_shed_mw", periods, asset_id=demand.id)
+            if demand.config.kind in {"curtailable", "shiftable"}:
+                registry.add("demand_voluntary_curtailment_mw", periods, asset_id=demand.id)
+            if demand.config.kind == "shiftable":
+                registry.add("demand_shift_down_mw", periods, asset_id=demand.id)
+                registry.add("demand_shift_up_mw", periods, asset_id=demand.id)
+            if demand.config.kind in {"deferrable", "ev_charging"}:
+                registry.add("demand_task_charge_mw", periods, asset_id=demand.id)
+                registry.add("demand_task_unserved_mwh", periods, asset_id=demand.id)
         for thermal_unit in thermal_units:
             for block in THERMAL_BLOCKS:
                 registry.add(
@@ -627,6 +717,7 @@ class UnitCommitment:
         thermal_units: tuple[ThermalUnit, ...],
         storage_units: tuple[StorageUnit, ...],
         hydro_units: tuple[HydroUnit, ...],
+        demand_units: tuple[DemandUnit, ...],
         fuel_prices: dict[str, FloatArray],
     ) -> FloatArray:
         periods = renewable.size
@@ -668,6 +759,32 @@ class UnitCommitment:
             coefficients[registry.at("source_load_shed_mw", t)] = (
                 penalties.lost_load_eur_per_mwh * (1.0 - self.config.network.loss_fraction) * dt
             )
+            for demand in demand_units:
+                demand_config = demand.config
+                lost_load_cost = (
+                    demand_config.value_of_lost_load_eur_per_mwh
+                    if demand_config.value_of_lost_load_eur_per_mwh is not None
+                    else penalties.lost_load_eur_per_mwh
+                )
+                coefficients[registry.at("demand_involuntary_shed_mw", t, asset_id=demand.id)] = (
+                    lost_load_cost * (1.0 - self.config.network.loss_fraction) * dt
+                )
+                if demand_config.kind in {"curtailable", "shiftable"}:
+                    coefficients[
+                        registry.at("demand_voluntary_curtailment_mw", t, asset_id=demand.id)
+                    ] = demand_config.voluntary_curtailment_cost_eur_per_mwh * dt
+                if demand_config.kind == "shiftable":
+                    shift_cost = demand_config.shift_cost_eur_per_mwh * dt
+                    coefficients[registry.at("demand_shift_down_mw", t, asset_id=demand.id)] = (
+                        shift_cost
+                    )
+                    coefficients[registry.at("demand_shift_up_mw", t, asset_id=demand.id)] = (
+                        shift_cost
+                    )
+                if demand_config.kind in {"deferrable", "ev_charging"}:
+                    coefficients[registry.at("demand_task_unserved_mwh", t, asset_id=demand.id)] = (
+                        demand_config.task_unserved_penalty_eur_per_mwh
+                    )
             for unit in thermal_units:
                 thermal = unit.config
                 fuel = fuels[unit.fuel_id]
@@ -729,6 +846,8 @@ class UnitCommitment:
         thermal_units: tuple[ThermalUnit, ...],
         storage_units: tuple[StorageUnit, ...],
         hydro_units: tuple[HydroUnit, ...],
+        demand_units: tuple[DemandUnit, ...],
+        demand_profiles: dict[str, FloatArray],
         storage_availability: dict[str, FloatArray],
     ) -> tuple[Bounds, npt.NDArray[np.int_]]:
         periods = renewable.size
@@ -739,7 +858,46 @@ class UnitCommitment:
         for t in range(periods):
             upper[registry.at("renewable_used_mw", t)] = renewable[t]
             upper[registry.at("imports_mw", t)] = self.config.imports.maximum_power_mw
-            upper[registry.at("source_load_shed_mw", t)] = demand[t]
+            upper[registry.at("source_load_shed_mw", t)] = 0.0 if demand_units else demand[t]
+            for demand_unit in demand_units:
+                demand_config = demand_unit.config
+                baseline = demand_profiles[demand_unit.id][t]
+                upper[registry.at("demand_involuntary_shed_mw", t, asset_id=demand_unit.id)] = (
+                    baseline
+                    + demand_config.shift_up_capacity_mw
+                    + demand_config.task_power_capacity_mw
+                )
+                if demand_config.kind in {"curtailable", "shiftable"}:
+                    curtailment_limit = baseline * demand_config.maximum_curtailment_fraction
+                    if demand_config.maximum_curtailment_mw is not None:
+                        curtailment_limit = min(
+                            curtailment_limit,
+                            demand_config.maximum_curtailment_mw,
+                        )
+                    upper[
+                        registry.at(
+                            "demand_voluntary_curtailment_mw",
+                            t,
+                            asset_id=demand_unit.id,
+                        )
+                    ] = curtailment_limit
+                if demand_config.kind == "shiftable":
+                    upper[registry.at("demand_shift_down_mw", t, asset_id=demand_unit.id)] = min(
+                        baseline, demand_config.shift_down_capacity_mw
+                    )
+                    upper[registry.at("demand_shift_up_mw", t, asset_id=demand_unit.id)] = (
+                        demand_config.shift_up_capacity_mw
+                    )
+                if demand_config.kind in {"deferrable", "ev_charging"}:
+                    in_window = t >= demand_config.task_start_period and (
+                        demand_config.task_end_period is None or t < demand_config.task_end_period
+                    )
+                    upper[registry.at("demand_task_charge_mw", t, asset_id=demand_unit.id)] = (
+                        demand_config.task_power_capacity_mw if in_window else 0.0
+                    )
+                    upper[registry.at("demand_task_unserved_mwh", t, asset_id=demand_unit.id)] = (
+                        demand_config.task_required_energy_mwh
+                    )
             for storage in storage_units:
                 battery = storage.config
                 availability = storage_availability[storage.id][t]
@@ -815,6 +973,8 @@ class UnitCommitment:
         thermal_units: tuple[ThermalUnit, ...],
         storage_units: tuple[StorageUnit, ...],
         hydro_units: tuple[HydroUnit, ...],
+        demand_units: tuple[DemandUnit, ...],
+        demand_profiles: dict[str, FloatArray],
         thermal_capacity_available: dict[str, FloatArray],
         hydro_inflow: dict[str, FloatArray],
     ) -> tuple[LinearConstraint, dict[str, int]]:
@@ -826,6 +986,8 @@ class UnitCommitment:
             thermal_units,
             storage_units,
             hydro_units,
+            demand_units,
+            demand_profiles,
         )
         self._add_thermal_constraints(
             builder,
@@ -836,6 +998,7 @@ class UnitCommitment:
         )
         self._add_hydro_constraints(builder, registry, demand.size, hydro_units, hydro_inflow)
         self._add_storage_constraints(builder, registry, demand.size, storage_units)
+        self._add_demand_constraints(builder, registry, demand_units, demand_profiles)
         self._add_terminal_soc_constraints(builder, registry, demand.size, storage_units)
         return builder.build(), builder.component_counts
 
@@ -847,6 +1010,8 @@ class UnitCommitment:
         thermal_units: tuple[ThermalUnit, ...],
         storage_units: tuple[StorageUnit, ...],
         hydro_units: tuple[HydroUnit, ...],
+        demand_units: tuple[DemandUnit, ...],
+        demand_profiles: dict[str, FloatArray],
     ) -> None:
         for t, value in enumerate(demand):
             coefficients = {
@@ -861,6 +1026,37 @@ class UnitCommitment:
                 coefficients[registry.at("storage_charge_mw", t, asset_id=storage.id)] = -1.0
             for hydro in hydro_units:
                 coefficients[registry.at("hydro_generation_mw", t, asset_id=hydro.id)] = 1.0
+            if demand_units:
+                value = 0.0
+                for demand_unit in demand_units:
+                    baseline = demand_profiles[demand_unit.id][t]
+                    value += baseline
+                    coefficients[
+                        registry.at(
+                            "demand_involuntary_shed_mw",
+                            t,
+                            asset_id=demand_unit.id,
+                        )
+                    ] = 1.0
+                    if demand_unit.config.kind in {"curtailable", "shiftable"}:
+                        coefficients[
+                            registry.at(
+                                "demand_voluntary_curtailment_mw",
+                                t,
+                                asset_id=demand_unit.id,
+                            )
+                        ] = 1.0
+                    if demand_unit.config.kind == "shiftable":
+                        coefficients[
+                            registry.at("demand_shift_down_mw", t, asset_id=demand_unit.id)
+                        ] = 1.0
+                        coefficients[
+                            registry.at("demand_shift_up_mw", t, asset_id=demand_unit.id)
+                        ] = -1.0
+                    if demand_unit.config.kind in {"deferrable", "ev_charging"}:
+                        coefficients[
+                            registry.at("demand_task_charge_mw", t, asset_id=demand_unit.id)
+                        ] = -1.0
             builder.add(coefficients, value, value, component="balance")
 
     def _add_thermal_constraints(
@@ -898,6 +1094,83 @@ class UnitCommitment:
                     terminal_on,
                     component="thermal_terminal_fixed",
                 )
+
+    def _add_demand_constraints(
+        self,
+        builder: _ConstraintBuilder,
+        registry: VariableRegistry,
+        units: tuple[DemandUnit, ...],
+        demand_profiles: dict[str, FloatArray],
+    ) -> None:
+        for unit in units:
+            config = unit.config
+            baseline = demand_profiles[unit.id]
+            for t, baseline_mw in enumerate(baseline):
+                coefficients = {registry.at("demand_involuntary_shed_mw", t, asset_id=unit.id): 1.0}
+                if config.kind in {"curtailable", "shiftable"}:
+                    coefficients[
+                        registry.at("demand_voluntary_curtailment_mw", t, asset_id=unit.id)
+                    ] = 1.0
+                if config.kind == "shiftable":
+                    coefficients[registry.at("demand_shift_down_mw", t, asset_id=unit.id)] = 1.0
+                    coefficients[registry.at("demand_shift_up_mw", t, asset_id=unit.id)] = -1.0
+                if config.kind in {"deferrable", "ev_charging"}:
+                    coefficients[registry.at("demand_task_charge_mw", t, asset_id=unit.id)] = -1.0
+                builder.add(
+                    coefficients,
+                    -np.inf,
+                    baseline_mw,
+                    component="demand_shed_limit",
+                )
+            if config.kind == "shiftable":
+                self._add_shift_conservation_constraints(builder, registry, unit, baseline.size)
+            if config.kind in {"deferrable", "ev_charging"}:
+                self._add_task_completion_constraint(builder, registry, unit, baseline.size)
+
+    def _add_shift_conservation_constraints(
+        self,
+        builder: _ConstraintBuilder,
+        registry: VariableRegistry,
+        unit: DemandUnit,
+        periods: int,
+    ) -> None:
+        dt = self.config.simulation.time_step_hours
+        config = unit.config
+        window_periods = (
+            periods
+            if config.shift_window_hours <= 0.0
+            else max(1, ceil(config.shift_window_hours / dt))
+        )
+        for start in range(0, periods, window_periods):
+            end = min(periods, start + window_periods)
+            coefficients: dict[int, float] = {}
+            for t in range(start, end):
+                coefficients[registry.at("demand_shift_up_mw", t, asset_id=unit.id)] = dt
+                coefficients[registry.at("demand_shift_down_mw", t, asset_id=unit.id)] = (
+                    -(1.0 + config.rebound_fraction) * dt
+                )
+            builder.add(coefficients, 0.0, 0.0, component="demand_shift_conservation")
+
+    def _add_task_completion_constraint(
+        self,
+        builder: _ConstraintBuilder,
+        registry: VariableRegistry,
+        unit: DemandUnit,
+        periods: int,
+    ) -> None:
+        dt = self.config.simulation.time_step_hours
+        config = unit.config
+        coefficients: dict[int, float] = {}
+        for t in range(periods):
+            coefficients[registry.at("demand_task_charge_mw", t, asset_id=unit.id)] = dt
+            coefficients[registry.at("demand_involuntary_shed_mw", t, asset_id=unit.id)] = -dt
+            coefficients[registry.at("demand_task_unserved_mwh", t, asset_id=unit.id)] = 1.0
+        builder.add(
+            coefficients,
+            config.task_required_energy_mwh,
+            config.task_required_energy_mwh,
+            component="demand_task_completion",
+        )
 
     def _add_thermal_bounds(
         self,
@@ -1506,6 +1779,41 @@ class UnitCommitment:
                     block,
                     asset_id=hydro.id,
                 )
+        for demand in problem.demand_units:
+            data[f"demand_baseline_mw__{demand.id}"] = problem.demand_profiles_mw[demand.id]
+            data[f"demand_involuntary_shed_mw__{demand.id}"] = registry.values(
+                solution,
+                "demand_involuntary_shed_mw",
+                asset_id=demand.id,
+            )
+            if demand.config.kind in {"curtailable", "shiftable"}:
+                data[f"demand_voluntary_curtailment_mw__{demand.id}"] = registry.values(
+                    solution,
+                    "demand_voluntary_curtailment_mw",
+                    asset_id=demand.id,
+                )
+            if demand.config.kind == "shiftable":
+                data[f"demand_shift_down_mw__{demand.id}"] = registry.values(
+                    solution,
+                    "demand_shift_down_mw",
+                    asset_id=demand.id,
+                )
+                data[f"demand_shift_up_mw__{demand.id}"] = registry.values(
+                    solution,
+                    "demand_shift_up_mw",
+                    asset_id=demand.id,
+                )
+            if demand.config.kind in {"deferrable", "ev_charging"}:
+                data[f"demand_task_charge_mw__{demand.id}"] = registry.values(
+                    solution,
+                    "demand_task_charge_mw",
+                    asset_id=demand.id,
+                )
+                data[f"demand_task_unserved_mwh__{demand.id}"] = registry.values(
+                    solution,
+                    "demand_task_unserved_mwh",
+                    asset_id=demand.id,
+                )
         for unit in problem.thermal_units:
             for block in THERMAL_BLOCKS:
                 data[f"{block}__{unit.id}"] = registry.values(
@@ -1528,6 +1836,7 @@ class UnitCommitment:
         frame = pd.DataFrame(data)
         self._add_storage_aggregate_columns(frame, problem.storage_units)
         self._add_hydro_aggregate_columns(frame, problem.hydro_units)
+        self._add_demand_aggregate_columns(frame, problem.demand_units, problem.gross_demand_mw)
         for block in THERMAL_BLOCKS:
             columns = [f"{block}__{unit.id}" for unit in problem.thermal_units]
             frame[block] = frame[columns].sum(axis=1)
@@ -1565,6 +1874,31 @@ class UnitCommitment:
                 continue
             columns = [f"{block}__{unit.id}" for unit in hydro_units]
             frame[aggregate] = frame[columns].sum(axis=1)
+
+    @staticmethod
+    def _add_demand_aggregate_columns(
+        frame: pd.DataFrame,
+        demand_units: tuple[DemandUnit, ...],
+        gross_demand_mw: FloatArray,
+    ) -> None:
+        frame["demand_baseline_mw"] = (
+            sum(frame[f"demand_baseline_mw__{unit.id}"] for unit in demand_units)
+            if demand_units
+            else gross_demand_mw
+        )
+        mapping = {
+            "demand_involuntary_shed_mw": "demand_involuntary_shed_mw",
+            "demand_voluntary_curtailment_mw": "demand_voluntary_curtailment_mw",
+            "demand_shift_down_mw": "demand_shift_down_mw",
+            "demand_shift_up_mw": "demand_shift_up_mw",
+            "demand_task_charge_mw": "demand_task_charge_mw",
+            "demand_task_unserved_mwh": "demand_task_unserved_mwh",
+        }
+        for aggregate, block in mapping.items():
+            columns = [
+                f"{block}__{unit.id}" for unit in demand_units if f"{block}__{unit.id}" in frame
+            ]
+            frame[aggregate] = frame[columns].sum(axis=1) if columns else 0.0
 
     def _add_thermal_accounting_columns(
         self,
@@ -1800,6 +2134,93 @@ class UnitCommitment:
             sum(frame[f"hydro_terminal_value_eur__{unit.id}"] for unit in units) if units else 0.0
         )
 
+    def _add_demand_accounting_columns(
+        self,
+        frame: pd.DataFrame,
+        units: tuple[DemandUnit, ...],
+    ) -> None:
+        dt = self.config.simulation.time_step_hours
+        penalties = self.config.penalties
+        for unit in units:
+            config = unit.config
+            baseline = frame[f"demand_baseline_mw__{unit.id}"]
+            voluntary_column = f"demand_voluntary_curtailment_mw__{unit.id}"
+            shift_down_column = f"demand_shift_down_mw__{unit.id}"
+            shift_up_column = f"demand_shift_up_mw__{unit.id}"
+            task_charge_column = f"demand_task_charge_mw__{unit.id}"
+            shed = frame[f"demand_involuntary_shed_mw__{unit.id}"]
+            voluntary = frame.get(voluntary_column, 0.0)
+            shift_down = frame.get(shift_down_column, 0.0)
+            shift_up = frame.get(shift_up_column, 0.0)
+            task_charge = frame.get(task_charge_column, 0.0)
+            adjusted = baseline - voluntary - shift_down + shift_up + task_charge
+            frame[f"demand_adjusted_mw__{unit.id}"] = adjusted
+            frame[f"demand_served_mw__{unit.id}"] = adjusted - shed
+            lost_load_cost = (
+                config.value_of_lost_load_eur_per_mwh
+                if config.value_of_lost_load_eur_per_mwh is not None
+                else penalties.lost_load_eur_per_mwh
+            )
+            frame[f"demand_involuntary_shed_cost_eur__{unit.id}"] = (
+                shed * lost_load_cost * (1.0 - self.config.network.loss_fraction) * dt
+            )
+            if config.kind in {"curtailable", "shiftable"}:
+                frame[f"demand_voluntary_curtailment_cost_eur__{unit.id}"] = (
+                    frame[voluntary_column] * config.voluntary_curtailment_cost_eur_per_mwh * dt
+                )
+            if config.kind == "shiftable":
+                frame[f"demand_shift_cost_eur__{unit.id}"] = (
+                    (frame[shift_down_column] + frame[shift_up_column])
+                    * config.shift_cost_eur_per_mwh
+                    * dt
+                )
+            if config.kind in {"deferrable", "ev_charging"}:
+                frame[f"demand_task_unserved_cost_eur__{unit.id}"] = (
+                    frame[f"demand_task_unserved_mwh__{unit.id}"]
+                    * config.task_unserved_penalty_eur_per_mwh
+                )
+        if units:
+            self._add_demand_aggregate_columns(
+                frame,
+                units,
+                frame["demand_baseline_mw"].to_numpy(dtype=np.float64),
+            )
+            frame["source_load_shed_mw"] = frame["demand_involuntary_shed_mw"]
+        frame["demand_adjusted_mw"] = (
+            frame["demand_baseline_mw"]
+            - frame["demand_voluntary_curtailment_mw"]
+            - frame["demand_shift_down_mw"]
+            + frame["demand_shift_up_mw"]
+            + frame["demand_task_charge_mw"]
+        )
+        frame["demand_response_delta_mw"] = (
+            frame["demand_adjusted_mw"] - frame["demand_baseline_mw"]
+        )
+        frame["demand_served_before_network_mw"] = (
+            frame["demand_adjusted_mw"] - frame["demand_involuntary_shed_mw"]
+        )
+        frame["demand_involuntary_shed_cost_eur"] = self._sum_prefixed_frame_columns(
+            frame,
+            "demand_involuntary_shed_cost_eur__",
+        )
+        frame["demand_voluntary_curtailment_cost_eur"] = self._sum_prefixed_frame_columns(
+            frame,
+            "demand_voluntary_curtailment_cost_eur__",
+        )
+        frame["demand_shift_cost_eur"] = self._sum_prefixed_frame_columns(
+            frame,
+            "demand_shift_cost_eur__",
+        )
+        frame["demand_task_unserved_cost_eur"] = self._sum_prefixed_frame_columns(
+            frame,
+            "demand_task_unserved_cost_eur__",
+        )
+
+    @staticmethod
+    def _sum_prefixed_frame_columns(frame: pd.DataFrame, prefix: str) -> pd.Series:
+        columns = [column for column in frame.columns if column.startswith(prefix)]
+        return frame[columns].sum(axis=1) if columns else pd.Series(0.0, index=frame.index)
+
     def _coerce_binary_columns(
         self,
         frame: pd.DataFrame,
@@ -1860,6 +2281,7 @@ class UnitCommitment:
         thermal_units: tuple[ThermalUnit, ...] | None = None,
         storage_units: tuple[StorageUnit, ...] | None = None,
         hydro_units: tuple[HydroUnit, ...] | None = None,
+        demand_units: tuple[DemandUnit, ...] | None = None,
     ) -> float:
         columns = [
             "renewable_used_mw",
@@ -1892,6 +2314,19 @@ class UnitCommitment:
                         f"hydro_reservoir_mwh__{hydro.id}",
                     ]
                 )
+        if demand_units is not None:
+            for demand in demand_units:
+                columns.append(f"demand_involuntary_shed_mw__{demand.id}")
+                for block in (
+                    "demand_voluntary_curtailment_mw",
+                    "demand_shift_down_mw",
+                    "demand_shift_up_mw",
+                    "demand_task_charge_mw",
+                    "demand_task_unserved_mwh",
+                ):
+                    column = f"{block}__{demand.id}"
+                    if column in frame:
+                        columns.append(column)
         if thermal_units is None:
             columns.append("thermal_output_mw")
         else:
@@ -1924,6 +2359,14 @@ class UnitCommitment:
             self._add_storage_aggregate_columns(frame, storage_units)
         if hydro_units is not None:
             self._add_hydro_aggregate_columns(frame, hydro_units)
+        if demand_units is not None:
+            self._add_demand_aggregate_columns(
+                frame,
+                demand_units,
+                frame["demand_baseline_mw"].to_numpy(dtype=np.float64),
+            )
+            if demand_units:
+                frame["source_load_shed_mw"] = frame["demand_involuntary_shed_mw"]
         return max_clipped
 
     def _cost_components(
@@ -1936,6 +2379,11 @@ class UnitCommitment:
         imports = self.config.imports
         penalties = self.config.penalties
         network_efficiency = 1.0 - self.config.network.loss_fraction
+        demand_shed_cost_columns = [
+            column
+            for column in frame.columns
+            if column.startswith("demand_involuntary_shed_cost_eur__")
+        ]
         return {
             "thermal_variable_cost_eur": float(
                 sum(frame[f"thermal_variable_cost_eur__{unit.id}"].sum() for unit in thermal_units)
@@ -1964,6 +2412,11 @@ class UnitCommitment:
                 )
             ),
             "hydro_terminal_value_eur": -float(frame["hydro_terminal_value_eur"].sum()),
+            "demand_voluntary_curtailment_cost_eur": float(
+                frame["demand_voluntary_curtailment_cost_eur"].sum()
+            ),
+            "demand_shift_cost_eur": float(frame["demand_shift_cost_eur"].sum()),
+            "demand_task_unserved_cost_eur": float(frame["demand_task_unserved_cost_eur"].sum()),
             "thermal_carbon_cost_eur": float(
                 sum(frame[f"thermal_carbon_cost_eur__{unit.id}"].sum() for unit in thermal_units)
             ),
@@ -1979,7 +2432,9 @@ class UnitCommitment:
                 * penalties.renewable_curtailment_eur_per_mwh
             ),
             "dispatch_load_shedding_cost_eur": float(
-                frame["source_load_shed_mw"].sum()
+                frame[demand_shed_cost_columns].sum().sum()
+                if demand_shed_cost_columns
+                else frame["source_load_shed_mw"].sum()
                 * network_efficiency
                 * dt
                 * penalties.lost_load_eur_per_mwh

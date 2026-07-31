@@ -1,0 +1,141 @@
+schema_version: 2
+
+scenario:
+  id: demand-response-example
+
+simulation:
+  time_step_hours: 1.0
+
+solver:
+  solver_time_limit_seconds: 60.0
+  mip_relative_gap: 0.001
+  allow_non_optimal_solution: false
+
+fuels:
+  - id: gas
+    price_eur_per_mwh_thermal: 35.0
+    co2_factor_tonnes_per_mwh_thermal: 0.18
+
+zones:
+  - id: system
+
+buses:
+  - id: system
+    zone_id: system
+
+lines: []
+
+aggregate_network:
+  loss_fraction: 0.04
+  transfer_capacity_mw: 400.0
+
+renewable_generators:
+  - id: solar
+    kind: solar
+    bus_id: system
+    capacity_mw: 120.0
+    performance_ratio: 0.86
+    reference_irradiance_w_m2: 1000.0
+    temperature_coefficient_per_c: -0.004
+    nominal_operating_cell_temperature_c: 45.0
+    time_series_key: irradiance_w_m2
+    ambient_temperature_key: ambient_temperature_c
+  - id: wind
+    kind: wind
+    bus_id: system
+    capacity_mw: 80.0
+    cut_in_speed_m_s: 3.0
+    rated_speed_m_s: 12.0
+    cut_out_speed_m_s: 25.0
+    time_series_key: wind_speed_m_s
+
+thermal_generators:
+  - id: gas-ccgt
+    bus_id: system
+    fuel_id: gas
+    name: Gas combined-cycle plant
+    minimum_output_mw: 0.0
+    maximum_output_mw: 160.0
+    ramp_up_mw_per_hour: 100.0
+    ramp_down_mw_per_hour: 100.0
+    startup_ramp_mw: 160.0
+    shutdown_ramp_mw: 160.0
+    variable_cost_eur_per_mwh: 85.0
+    no_load_cost_eur_per_hour: 0.0
+    startup_cost_eur: 0.0
+    shutdown_cost_eur: 0.0
+    emission_factor_tonnes_per_mwh: 0.36
+    minimum_fuel_input_mwh_per_hour: 0.0
+    heat_rate_segments:
+      - id: main
+        capacity_mw: 160.0
+        heat_rate_mwh_thermal_per_mwh: 2.1
+    minimum_up_hours: 1.0
+    minimum_down_hours: 1.0
+    initial_on: false
+    initial_output_mw: 0.0
+    initial_up_time_hours: 0.0
+    initial_down_time_hours: 4.0
+    terminal_commitment_mode: forbid_incomplete_transitions
+
+storage_units:
+  - id: battery
+    bus_id: system
+    technology: battery
+    energy_capacity_mwh: 80.0
+    power_capacity_mw: 40.0
+    minimum_soc_mwh: 0.0
+    maximum_soc_mwh: 80.0
+    initial_soc_mwh: 20.0
+    charge_efficiency: 0.94
+    discharge_efficiency: 0.94
+    throughput_cost_eur_per_mwh: 1.0
+    minimum_final_soc_mwh: 10.0
+    terminal_soc_mode: minimum
+
+hydro_units: []
+
+imports:
+  - id: market
+    bus_id: system
+    maximum_power_mw: 40.0
+    price_eur_per_mwh: 140.0
+    emission_factor_tonnes_per_mwh: 0.22
+
+demand:
+  - id: residential
+    bus_id: system
+    sector: residential
+    kind: fixed
+    time_series_key: residential_mw
+    value_of_lost_load_eur_per_mwh: 12000.0
+  - id: industrial
+    bus_id: system
+    sector: industrial
+    kind: shiftable
+    time_series_key: industrial_mw
+    shift_up_capacity_mw: 25.0
+    shift_down_capacity_mw: 25.0
+    shift_window_hours: 6.0
+    shift_cost_eur_per_mwh: 5.0
+    value_of_lost_load_eur_per_mwh: 9000.0
+  - id: ev-fleet
+    bus_id: system
+    sector: transport
+    kind: ev_charging
+    time_series_key: ev_baseline_mw
+    task_power_capacity_mw: 20.0
+    task_required_energy_mwh: 45.0
+    task_start_period: 1
+    task_end_period: 6
+    task_unserved_penalty_eur_per_mwh: 25000.0
+    value_of_lost_load_eur_per_mwh: 15000.0
+
+penalties:
+  renewable_curtailment_eur_per_mwh: 1.0
+  lost_load_eur_per_mwh: 10000.0
+  carbon_price_eur_per_tonne: 85.0
+
+paths:
+  input_csv: ../data/demand_response_hourly.csv
+  output_directory: ../outputs/portfolio-demand-response
