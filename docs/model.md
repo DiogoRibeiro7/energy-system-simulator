@@ -90,7 +90,11 @@ first
 periods are forced on. If the unit is initially off, the corresponding residual
 minimum down periods are forced off.
 
-Ramping constraints use explicit start-up and shutdown ramp limits:
+Ramping constraints use explicit start-up and shutdown ramp limits. The
+configuration interprets `startup_ramp_mw` as the maximum output allowed in a
+startup period. It interprets `shutdown_ramp_mw` as the maximum output in the
+period immediately before a shutdown, including the configured initial output
+when the unit shuts down in period 1.
 
 \[
 p_t-p_{t-1}\le R^{\uparrow}\Delta t\,u_{t-1}+S^{\uparrow}y_t,
@@ -99,6 +103,11 @@ p_t-p_{t-1}\le R^{\uparrow}\Delta t\,u_{t-1}+S^{\uparrow}y_t,
 \[
 p_{t-1}-p_t\le R^{\downarrow}\Delta t\,u_t+S^{\downarrow}z_t.
 \]
+
+Because this formulation does not model multi-period startup or shutdown
+trajectories, both transition limits must be at least \(P^{\min}\). Otherwise a
+unit could be configured so that it cannot physically move between off and its
+minimum stable output.
 
 Minimum up and down times are imposed through rolling sums of recent starts and
 shutdowns:

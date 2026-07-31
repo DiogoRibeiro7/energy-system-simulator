@@ -27,6 +27,8 @@ and this project follows semantic versioning.
   terminal modes.
 - Typed solver-result interpretation with explicit domain statuses, raw backend
   diagnostics, and safe objective-gap reporting.
+- Explicit startup and shutdown ramp semantics, validation for impossible
+  transition limits, and hand-computable transition-ramp regressions.
 
 ## [0.1.0] - 2026-07-31
 

@@ -384,6 +384,17 @@ def validate_config(config: ModelConfig) -> None:
         _check_nonnegative(f"thermal.{name}", value)
     if th.minimum_up_hours <= 0.0 or th.minimum_down_hours <= 0.0:
         raise ConfigurationError("Minimum up/down times must be positive")
+    if th.minimum_output_mw > 0.0 and th.startup_ramp_mw < th.minimum_output_mw:
+        raise ConfigurationError(
+            "thermal.startup_ramp_mw must be at least thermal.minimum_output_mw "
+            "because startup_ramp_mw is the maximum output allowed in a startup period"
+        )
+    if th.minimum_output_mw > 0.0 and th.shutdown_ramp_mw < th.minimum_output_mw:
+        raise ConfigurationError(
+            "thermal.shutdown_ramp_mw must be at least thermal.minimum_output_mw "
+            "because shutdown_ramp_mw is the maximum previous-period output allowed "
+            "for a shutdown"
+        )
     if th.terminal_commitment_mode not in {
         "forbid_incomplete_transitions",
         "carry_residual_obligations",

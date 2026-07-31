@@ -22,7 +22,9 @@ thermal:
   maximum_output_mw: 220.0
   ramp_up_mw_per_hour: 80.0
   ramp_down_mw_per_hour: 80.0
+  # Maximum output in a startup period; must be at least minimum_output_mw.
   startup_ramp_mw: 220.0
+  # Maximum output immediately before shutdown; must be at least minimum_output_mw.
   shutdown_ramp_mw: 220.0
   variable_cost_eur_per_mwh: 72.0
   no_load_cost_eur_per_hour: 700.0

@@ -69,8 +69,8 @@ The following remediation items remain tracked:
   as explicit strict, carry-forward, and fixed terminal policies.
 - FIX-04: additional time-step and initial-state regression coverage is required.
 - FIX-05: solver termination mapping still needs an isolated regression suite.
-- FIX-06: transition ramp semantics need a dedicated review and regression
-  matrix.
+- FIX-06: transition ramp semantics are explicit and covered by a dedicated
+  regression matrix.
 - FIX-07: configuration parsing does not yet reject every unknown field.
 - FIX-08: numerical tolerance policy exists but still needs broader enforcement
   coverage.
