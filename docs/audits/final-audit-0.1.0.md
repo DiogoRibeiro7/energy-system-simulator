@@ -71,7 +71,8 @@ The following remediation items remain tracked:
 - FIX-05: solver termination mapping still needs an isolated regression suite.
 - FIX-06: transition ramp semantics are explicit and covered by a dedicated
   regression matrix.
-- FIX-07: configuration parsing does not yet reject every unknown field.
+- FIX-07: configuration parsing rejects unknown and duplicate fields with
+  deterministic diagnostics.
 - FIX-08: numerical tolerance policy exists but still needs broader enforcement
   coverage.
 - FIX-09: aggregate network and standalone DC power-flow semantics need clearer

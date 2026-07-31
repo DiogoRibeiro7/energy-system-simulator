@@ -29,6 +29,8 @@ and this project follows semantic versioning.
   diagnostics, and safe objective-gap reporting.
 - Explicit startup and shutdown ramp semantics, validation for impossible
   transition limits, and hand-computable transition-ramp regressions.
+- Strict YAML configuration parsing with schema versioning, duplicate-key
+  detection, unknown-field suggestions, and JSON validation output.
 
 ## [0.1.0] - 2026-07-31
 

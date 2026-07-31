@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from difflib import get_close_matches
 from pathlib import Path
 from typing import Any, Literal, TypeVar, cast
 
@@ -10,9 +11,129 @@ import yaml
 from energy_system_simulator.exceptions import ConfigurationError
 
 T = TypeVar("T", int, float)
+CURRENT_SCHEMA_VERSION = 1
+
+ROOT_KEYS = {
+    "schema_version",
+    "simulation",
+    "solar",
+    "wind",
+    "thermal",
+    "battery",
+    "network",
+    "imports",
+    "penalties",
+    "paths",
+}
+REQUIRED_ROOT_KEYS = ROOT_KEYS - {"schema_version"}
+SECTION_KEYS = {
+    "simulation": {
+        "time_step_hours",
+        "solver_time_limit_seconds",
+        "mip_relative_gap",
+        "allow_non_optimal_solution",
+    },
+    "solar": {
+        "capacity_mw",
+        "performance_ratio",
+        "reference_irradiance_w_m2",
+        "temperature_coefficient_per_c",
+        "nominal_operating_cell_temperature_c",
+    },
+    "wind": {
+        "capacity_mw",
+        "cut_in_speed_m_s",
+        "rated_speed_m_s",
+        "cut_out_speed_m_s",
+    },
+    "thermal": {
+        "name",
+        "minimum_output_mw",
+        "maximum_output_mw",
+        "ramp_up_mw_per_hour",
+        "ramp_down_mw_per_hour",
+        "startup_ramp_mw",
+        "shutdown_ramp_mw",
+        "variable_cost_eur_per_mwh",
+        "no_load_cost_eur_per_hour",
+        "startup_cost_eur",
+        "shutdown_cost_eur",
+        "emission_factor_tonnes_per_mwh",
+        "minimum_up_hours",
+        "minimum_down_hours",
+        "initial_on",
+        "initial_output_mw",
+        "initial_up_time_hours",
+        "initial_down_time_hours",
+        "terminal_commitment_mode",
+        "terminal_on",
+    },
+    "battery": {
+        "energy_capacity_mwh",
+        "power_capacity_mw",
+        "minimum_soc_mwh",
+        "maximum_soc_mwh",
+        "initial_soc_mwh",
+        "charge_efficiency",
+        "discharge_efficiency",
+        "throughput_cost_eur_per_mwh",
+        "minimum_final_soc_mwh",
+        "terminal_soc_mode",
+    },
+    "network": {"loss_fraction", "transfer_capacity_mw"},
+    "imports": {"maximum_power_mw", "price_eur_per_mwh", "emission_factor_tonnes_per_mwh"},
+    "penalties": {
+        "renewable_curtailment_eur_per_mwh",
+        "lost_load_eur_per_mwh",
+        "carbon_price_eur_per_tonne",
+    },
+    "paths": {"input_csv", "output_directory"},
+}
+OPTIONAL_SECTION_KEYS = {
+    "simulation": {"allow_non_optimal_solution"},
+    "thermal": {
+        "startup_ramp_mw",
+        "shutdown_ramp_mw",
+        "initial_up_time_hours",
+        "initial_down_time_hours",
+        "terminal_commitment_mode",
+        "terminal_on",
+    },
+    "battery": {"terminal_soc_mode"},
+}
+REQUIRED_SECTION_KEYS = {
+    section: keys - OPTIONAL_SECTION_KEYS.get(section, set())
+    for section, keys in SECTION_KEYS.items()
+}
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):  # type: ignore[misc]
+    """YAML loader that rejects duplicate mapping keys."""
+
+
+def _construct_unique_mapping(
+    loader: _UniqueKeyLoader,
+    node: Any,
+    deep: bool = False,
+) -> dict[Any, Any]:
+    mapping: dict[Any, Any] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in mapping:
+            raise ConfigurationError(f"Duplicate configuration field: {key}")
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    _construct_unique_mapping,
+)
 
 
 def _number(section: Mapping[str, Any], key: str, expected: type[T]) -> T:
+    if key not in section:
+        raise ConfigurationError(f"Missing required configuration field: {key}")
     value = section.get(key)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ConfigurationError(f"{key!r} must be numeric")
@@ -20,6 +141,8 @@ def _number(section: Mapping[str, Any], key: str, expected: type[T]) -> T:
 
 
 def _integer(section: Mapping[str, Any], key: str) -> int:
+    if key not in section:
+        raise ConfigurationError(f"Missing required configuration field: {key}")
     value = section.get(key)
     if isinstance(value, bool) or not isinstance(value, int):
         raise ConfigurationError(f"{key!r} must be an integer")
@@ -27,6 +150,8 @@ def _integer(section: Mapping[str, Any], key: str) -> int:
 
 
 def _boolean(section: Mapping[str, Any], key: str) -> bool:
+    if key not in section:
+        raise ConfigurationError(f"Missing required configuration field: {key}")
     value = section.get(key)
     if not isinstance(value, bool):
         raise ConfigurationError(f"{key!r} must be boolean")
@@ -63,6 +188,8 @@ def _optional_string(section: Mapping[str, Any], key: str, default: str) -> str:
 
 
 def _string(section: Mapping[str, Any], key: str) -> str:
+    if key not in section:
+        raise ConfigurationError(f"Missing required configuration field: {key}")
     value = section.get(key)
     if not isinstance(value, str) or not value.strip():
         raise ConfigurationError(f"{key!r} must be a non-empty string")
@@ -70,10 +197,45 @@ def _string(section: Mapping[str, Any], key: str) -> str:
 
 
 def _section(data: Mapping[str, Any], name: str) -> Mapping[str, Any]:
+    if name not in data:
+        raise ConfigurationError(f"Missing required configuration section: {name}")
     value = data.get(name)
     if not isinstance(value, Mapping):
         raise ConfigurationError(f"Missing or invalid section: {name}")
     return value
+
+
+def _validate_allowed_keys(
+    section: Mapping[str, Any],
+    path: str,
+    allowed_keys: set[str],
+) -> None:
+    for key in section:
+        if key in allowed_keys:
+            continue
+        field = f"{path}.{key}" if path else str(key)
+        allowed = ", ".join(sorted(allowed_keys))
+        suggestion = _suggestion(str(key), allowed_keys)
+        hint = f"; did you mean {suggestion!r}?" if suggestion is not None else ""
+        raise ConfigurationError(
+            f"Unknown configuration field: {field}{hint}. Allowed keys: {allowed}"
+        )
+
+
+def _validate_required_keys(
+    section: Mapping[str, Any],
+    path: str,
+    required_keys: set[str],
+) -> None:
+    missing = sorted(key for key in required_keys if key not in section)
+    if missing:
+        field = f"{path}.{missing[0]}" if path else missing[0]
+        raise ConfigurationError(f"Missing required configuration field: {field}")
+
+
+def _suggestion(key: str, allowed_keys: set[str]) -> str | None:
+    matches = get_close_matches(key, sorted(allowed_keys), n=1, cutoff=0.75)
+    return matches[0] if matches else None
 
 
 def _check_nonnegative(name: str, value: float) -> None:
@@ -186,6 +348,7 @@ class PathConfig:
 
 @dataclass(frozen=True)
 class ModelConfig:
+    schema_version: int
     simulation: SimulationConfig
     solar: SolarConfig
     wind: WindConfig
@@ -203,9 +366,17 @@ def load_config(path: str | Path) -> ModelConfig:
     if not config_path.exists():
         raise ConfigurationError(f"Configuration file does not exist: {config_path}")
 
-    raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    raw = yaml.load(config_path.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)
     if not isinstance(raw, Mapping):
         raise ConfigurationError("Configuration root must be a mapping")
+    _validate_allowed_keys(raw, "", ROOT_KEYS)
+    _validate_required_keys(raw, "", REQUIRED_ROOT_KEYS)
+    schema_version = _optional_number(raw, "schema_version", int, CURRENT_SCHEMA_VERSION)
+    if schema_version != CURRENT_SCHEMA_VERSION:
+        raise ConfigurationError(
+            f"Unsupported configuration schema_version: {schema_version}. "
+            f"Supported versions: {CURRENT_SCHEMA_VERSION}"
+        )
 
     simulation_raw = _section(raw, "simulation")
     solar_raw = _section(raw, "solar")
@@ -216,6 +387,10 @@ def load_config(path: str | Path) -> ModelConfig:
     import_raw = _section(raw, "imports")
     penalties_raw = _section(raw, "penalties")
     paths_raw = _section(raw, "paths")
+    for section_name, allowed_keys in SECTION_KEYS.items():
+        section = _section(raw, section_name)
+        _validate_allowed_keys(section, section_name, allowed_keys)
+        _validate_required_keys(section, section_name, REQUIRED_SECTION_KEYS[section_name])
 
     simulation = SimulationConfig(
         time_step_hours=_number(simulation_raw, "time_step_hours", float),
@@ -331,6 +506,7 @@ def load_config(path: str | Path) -> ModelConfig:
     paths = PathConfig(input_csv=input_csv, output_directory=output_directory)
 
     config = ModelConfig(
+        schema_version=schema_version,
         simulation=simulation,
         solar=solar,
         wind=wind,
