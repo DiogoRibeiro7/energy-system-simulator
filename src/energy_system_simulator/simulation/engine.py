@@ -7,7 +7,7 @@ from typing import Any
 import pandas as pd
 
 from energy_system_simulator.config import ModelConfig
-from energy_system_simulator.constants import BALANCE_TOLERANCE_MW, OBJECTIVE_TOLERANCE_EUR
+from energy_system_simulator.constants import DEFAULT_NUMERICAL_POLICY
 from energy_system_simulator.data import load_input_data
 from energy_system_simulator.dispatch import (
     FormulationStatistics,
@@ -38,6 +38,7 @@ class SimulationResult:
     solver_node_count: int | None
     formulation_statistics: FormulationStatistics
     terminal_commitment_state: TerminalCommitmentState
+    numerical_diagnostics: dict[str, float]
 
 
 class SimulationEngine:
@@ -105,13 +106,17 @@ class SimulationEngine:
         }
         reconciled_objective_eur = float(sum(cost_components.values()))
         total_objective_eur = dispatch.objective_eur + float(fixed_network_shedding_cost)
-        if abs(total_objective_eur - reconciled_objective_eur) > OBJECTIVE_TOLERANCE_EUR:
+        if (
+            abs(total_objective_eur - reconciled_objective_eur)
+            > DEFAULT_NUMERICAL_POLICY.objective_reconciliation_eur
+        ):
             raise OptimisationError("Total cost components do not reconcile with objective")
         summary = self._summary(
             frame,
             total_objective_eur,
             cost_components,
             dispatch.terminal_commitment_state,
+            dispatch.numerical_diagnostics,
         )
         return SimulationResult(
             timeseries=frame,
@@ -133,6 +138,7 @@ class SimulationEngine:
             solver_node_count=dispatch.solver_node_count,
             formulation_statistics=dispatch.formulation_statistics,
             terminal_commitment_state=dispatch.terminal_commitment_state,
+            numerical_diagnostics=dispatch.numerical_diagnostics,
         )
 
     def _summary(
@@ -141,6 +147,7 @@ class SimulationEngine:
         objective_eur: float,
         cost_components: dict[str, float],
         terminal_commitment_state: TerminalCommitmentState,
+        numerical_diagnostics: dict[str, float],
     ) -> dict[str, Any]:
         dt = self.config.simulation.time_step_hours
 
@@ -158,13 +165,18 @@ class SimulationEngine:
             "time_step_hours": dt,
             "objective_eur": objective_eur,
             "cost_components_eur": cost_components,
+            "numerical_diagnostics": numerical_diagnostics,
             "objective_reconciliation_error_eur": abs(
                 objective_eur - sum(cost_components.values())
             ),
             "total_demand_mwh": demand_mwh,
             "served_demand_mwh": served_mwh,
             "unserved_energy_mwh": energy("total_load_shed_mw"),
-            "loss_of_load_probability": float((frame["total_load_shed_mw"] > 1e-7).mean()),
+            "loss_of_load_probability": float(
+                (
+                    frame["total_load_shed_mw"] > DEFAULT_NUMERICAL_POLICY.primal_feasibility_mw
+                ).mean()
+            ),
             "renewable_available_mwh": energy("renewable_available_mw"),
             "renewable_used_mwh": renewable_used_mwh,
             "renewable_curtailed_mwh": energy("renewable_curtailed_mw"),
@@ -204,6 +216,40 @@ class SimulationEngine:
                 ),
                 "total_network_losses_mwh": energy("network_losses_mw"),
                 "total_unserved_energy_mwh": energy("total_load_shed_mw"),
+                "residual_summaries": {
+                    "source_balance": self._residual_summary(
+                        frame,
+                        "source_balance",
+                        "source_balance_residual_mw",
+                        (
+                            "renewable_used_mw",
+                            "thermal_output_mw",
+                            "battery_discharge_mw",
+                            "imports_mw",
+                            "source_load_shed_mw",
+                            "gross_demand_mw",
+                            "battery_charge_mw",
+                        ),
+                    ),
+                    "delivered_demand_balance": self._residual_summary(
+                        frame,
+                        "delivered_demand_balance",
+                        "delivered_demand_balance_residual_mw",
+                        ("served_demand_mw", "total_load_shed_mw", "end_user_demand_mw"),
+                    ),
+                    "battery_energy": self._residual_summary(
+                        frame,
+                        "battery_energy",
+                        "battery_energy_residual_mwh",
+                        ("battery_energy_change_mwh", "battery_charge_mw", "battery_discharge_mw"),
+                    ),
+                    "curtailment": self._residual_summary(
+                        frame,
+                        "curtailment",
+                        "curtailment_residual_mw",
+                        ("renewable_available_mw", "renewable_used_mw", "renewable_curtailed_mw"),
+                    ),
+                },
             },
         }
 
@@ -235,8 +281,50 @@ class SimulationEngine:
             - frame["renewable_used_mw"]
             - frame["renewable_curtailed_mw"]
         )
-        if frame["source_balance_residual_mw"].abs().max() > BALANCE_TOLERANCE_MW:
-            raise OptimisationError("Source balance residual exceeds tolerance")
+        source_summary = self._residual_summary(
+            frame,
+            "source_balance",
+            "source_balance_residual_mw",
+            (
+                "renewable_used_mw",
+                "thermal_output_mw",
+                "battery_discharge_mw",
+                "imports_mw",
+                "source_load_shed_mw",
+                "gross_demand_mw",
+                "battery_charge_mw",
+            ),
+        )
+        if (
+            float(source_summary["max_abs_residual"])
+            > DEFAULT_NUMERICAL_POLICY.primal_feasibility_mw
+        ):
+            raise OptimisationError(
+                "source_balance residual exceeds tolerance at period "
+                f"{source_summary['period_index']}: {source_summary['max_abs_residual']} MW"
+            )
+
+    @staticmethod
+    def _residual_summary(
+        frame: pd.DataFrame,
+        equation_family: str,
+        residual_column: str,
+        scale_columns: tuple[str, ...],
+    ) -> dict[str, Any]:
+        residuals = frame[residual_column].abs()
+        period_index = int(residuals.idxmax())
+        max_abs_residual = float(residuals.loc[period_index])
+        scale = sum(abs(float(frame[column].iloc[period_index])) for column in scale_columns)
+        denominator = max(scale, DEFAULT_NUMERICAL_POLICY.primal_feasibility_mw)
+        timestamp = frame["timestamp"].iloc[period_index] if "timestamp" in frame else None
+        return {
+            "equation_family": equation_family,
+            "period_index": period_index,
+            "timestamp": str(timestamp) if timestamp is not None else None,
+            "max_abs_residual": max_abs_residual,
+            "scale": scale,
+            "scale_normalized_residual": max_abs_residual / denominator,
+        }
 
     @staticmethod
     def ensure_output_directory(path: Path) -> None:

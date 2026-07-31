@@ -76,6 +76,7 @@ def _write_manifest(
         },
         "formulation": asdict(result.formulation_statistics),
         "terminal_commitment": asdict(result.terminal_commitment_state),
+        "numerical_diagnostics": result.numerical_diagnostics,
         "resolved_configuration": _json_ready(asdict(config)),
     }
     path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")

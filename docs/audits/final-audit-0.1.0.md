@@ -73,8 +73,8 @@ The following remediation items remain tracked:
   regression matrix.
 - FIX-07: configuration parsing rejects unknown and duplicate fields with
   deterministic diagnostics.
-- FIX-08: numerical tolerance policy exists but still needs broader enforcement
-  coverage.
+- FIX-08: numerical tolerances are consolidated into a typed policy with
+  enforcement and residual-summary coverage.
 - FIX-09: aggregate network and standalone DC power-flow semantics need clearer
   validation and documentation.
 

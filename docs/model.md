@@ -218,6 +218,22 @@ Per-period reconciliation columns report source balance residual, delivered
 demand balance residual, battery energy residual, curtailment residual, network
 losses, and unserved energy.
 
+## Numerical Policy
+
+The simulator uses an immutable numerical policy with separate absolute
+tolerances for primal power feasibility, energy reconciliation, binary
+integrality, objective reconciliation in EUR, near-zero non-negativity cleanup,
+report rounding, timestamp spacing, and DC power-balance checks. Physical
+validation uses feasibility and reconciliation tolerances; report rounding is
+not used to validate equations.
+
+Residual summaries report the equation family, worst period, maximum absolute
+residual, local scale, and scale-normalised residual. For very small systems,
+absolute tolerances dominate because relative residuals can be unstable near
+zero. For very large systems, the scale-normalised residual helps identify
+whether a small absolute residual is material relative to the period's dispatch
+scale.
+
 ## Interpretation limits
 
 The aggregated network is an energy-planning approximation. It does not represent voltage, reactive power, phase imbalance, protection, or transient stability. The DC power-flow module provides a separate linear nodal approximation for transmission-oriented experiments.

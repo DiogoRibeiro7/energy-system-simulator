@@ -31,6 +31,8 @@ and this project follows semantic versioning.
   transition limits, and hand-computable transition-ramp regressions.
 - Strict YAML configuration parsing with schema versioning, duplicate-key
   detection, unknown-field suggestions, and JSON validation output.
+- Immutable numerical policy for feasibility, integrality, objective, cleanup,
+  reporting, timestamp, and DC power-balance tolerances with residual summaries.
 
 ## [0.1.0] - 2026-07-31
 

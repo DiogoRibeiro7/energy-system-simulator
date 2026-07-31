@@ -25,6 +25,7 @@ def test_write_outputs_includes_machine_readable_manifest(tmp_path: Path) -> Non
     assert manifest["solver"]["backend_status"] == "optimal"
     assert manifest["solver"]["backend_status_code"] == 0
     assert manifest["formulation"]["integer_variables"] == 1344
+    assert "integrality_max_deviation" in manifest["numerical_diagnostics"]
     assert (
         manifest["terminal_commitment"]["terminal_commitment_mode"]
         == "forbid_incomplete_transitions"

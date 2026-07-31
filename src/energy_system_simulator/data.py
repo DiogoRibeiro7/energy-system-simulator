@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from energy_system_simulator.constants import DEFAULT_NUMERICAL_POLICY
 from energy_system_simulator.exceptions import DataValidationError
 
 REQUIRED_COLUMNS = (
@@ -54,7 +55,12 @@ def load_input_data(path: str | Path, time_step_hours: float) -> pd.DataFrame:
         timestamp_values = timestamps.to_numpy(dtype="datetime64[ns]")
         differences = np.diff(timestamp_values) / np.timedelta64(1, "s")
         expected_seconds = time_step_hours * 3600.0
-        if not np.allclose(differences, expected_seconds, rtol=0.0, atol=1e-6):
+        if not np.allclose(
+            differences,
+            expected_seconds,
+            rtol=0.0,
+            atol=DEFAULT_NUMERICAL_POLICY.time_axis_seconds,
+        ):
             raise DataValidationError(
                 "Timestamps are not equally spaced according to simulation.time_step_hours"
             )

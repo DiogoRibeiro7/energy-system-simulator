@@ -113,7 +113,7 @@ Require this response format after every major prompt:
 | FIX-05 | Solver termination regression suite | `test/solver-statuses` | Required | Complete |
 | FIX-06 | Startup and shutdown ramp semantics | `fix/transition-ramps` | Required | Complete |
 | FIX-07 | Strict configuration and unknown fields | `fix/config-strictness` | Required | Complete |
-| FIX-08 | Numerical tolerance policy | `refactor/numerical-policy` | Required | Not started |
+| FIX-08 | Numerical tolerance policy | `refactor/numerical-policy` | Required | Complete |
 | FIX-09 | Network utility semantics | `fix/network-semantics` | Required | Not started |
 | FIX-10 | Stress example and baseline release gate | `release/0.1.1` | Required | Not started |
 | CORE-01–CORE-24 | Research-grade electricity-system roadmap | See each prompt | Sequential by dependency | Not started |

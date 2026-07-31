@@ -6,6 +6,8 @@ from dataclasses import dataclass
 import numpy as np
 import numpy.typing as npt
 
+from energy_system_simulator.constants import DEFAULT_NUMERICAL_POLICY
+
 FloatArray = npt.NDArray[np.float64]
 
 
@@ -44,7 +46,11 @@ def solve_dc_power_flow(
         raise ValueError("injections_mw must be a one-dimensional array with at least two buses")
     if np.any(~np.isfinite(injections)):
         raise ValueError("Injections must be finite")
-    if not np.isclose(injections.sum(), 0.0, atol=1e-8):
+    if not np.isclose(
+        injections.sum(),
+        0.0,
+        atol=DEFAULT_NUMERICAL_POLICY.dc_power_balance_mw,
+    ):
         raise ValueError("Bus injections must sum to zero")
     if not 0 <= slack_bus < injections.size:
         raise ValueError("slack_bus is outside the bus range")

@@ -8,7 +8,7 @@ import numpy as np
 import numpy.typing as npt
 from scipy.optimize import Bounds, LinearConstraint, milp
 
-from energy_system_simulator.constants import OBJECTIVE_TOLERANCE_EUR
+from energy_system_simulator.constants import DEFAULT_NUMERICAL_POLICY
 
 FloatArray = npt.NDArray[np.float64]
 
@@ -142,10 +142,10 @@ def relative_gap(primal_objective: float, objective_bound: float | None) -> floa
     gap = absolute_gap(primal_objective, objective_bound)
     if gap is None:
         return None
-    if gap <= OBJECTIVE_TOLERANCE_EUR:
+    if gap <= DEFAULT_NUMERICAL_POLICY.objective_reconciliation_eur:
         return 0.0
     denominator = abs(primal_objective)
-    if denominator <= OBJECTIVE_TOLERANCE_EUR:
+    if denominator <= DEFAULT_NUMERICAL_POLICY.objective_reconciliation_eur:
         return None
     return gap / denominator
 

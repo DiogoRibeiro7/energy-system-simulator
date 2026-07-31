@@ -12,7 +12,7 @@ from scipy.optimize import Bounds, LinearConstraint
 from scipy.sparse import coo_matrix
 
 from energy_system_simulator.config import ModelConfig
-from energy_system_simulator.constants import OBJECTIVE_TOLERANCE_EUR
+from energy_system_simulator.constants import DEFAULT_NUMERICAL_POLICY
 from energy_system_simulator.dispatch.solver import (
     absolute_gap,
     interpret_solver_result,
@@ -96,6 +96,7 @@ class DispatchResult:
     formulation_statistics: FormulationStatistics
     cost_components_eur: dict[str, float]
     terminal_commitment_state: TerminalCommitmentState
+    numerical_diagnostics: dict[str, float]
 
 
 class _VariableIndex:
@@ -226,13 +227,13 @@ class UnitCommitment:
         solution = solver.solution
         index = _VariableIndex(problem.renewable_available_mw.size)
         frame = pd.DataFrame({name: index.values(solution, name) for name in BLOCKS})
-        for column in ("thermal_on", "thermal_startup", "thermal_shutdown"):
-            frame[column] = np.rint(frame[column]).astype(int)
+        integrality_max_deviation = self._coerce_binary_columns(frame)
         frame["renewable_available_mw"] = problem.renewable_available_mw
         frame["renewable_curtailed_mw"] = (
             problem.renewable_available_mw - frame["renewable_used_mw"]
         )
         frame["gross_demand_mw"] = problem.gross_demand_mw
+        nonnegative_cleanup_max_abs = self._clip_nonnegative_solver_noise(frame)
 
         constant_curtailment_cost = (
             self.config.penalties.renewable_curtailment_eur_per_mwh
@@ -248,7 +249,8 @@ class UnitCommitment:
         objective_eur = float(sum(cost_components.values()))
         if (
             primal_objective_eur is not None
-            and abs(primal_objective_eur - objective_eur) > OBJECTIVE_TOLERANCE_EUR
+            and abs(primal_objective_eur - objective_eur)
+            > DEFAULT_NUMERICAL_POLICY.objective_reconciliation_eur
         ):
             raise OptimisationError(
                 "Reported dispatch cost components do not reconcile with solver objective"
@@ -275,6 +277,10 @@ class UnitCommitment:
             formulation_statistics=problem.statistics,
             cost_components_eur=cost_components,
             terminal_commitment_state=self._terminal_commitment_state(frame),
+            numerical_diagnostics={
+                "integrality_max_deviation": integrality_max_deviation,
+                "nonnegative_cleanup_max_abs": nonnegative_cleanup_max_abs,
+            },
         )
 
     def _objective(self, index: _VariableIndex, renewable: FloatArray) -> FloatArray:
@@ -577,6 +583,51 @@ class UnitCommitment:
             residual_minimum_down_hours=float(residual_down),
             terminal_commitment_mode=thermal.terminal_commitment_mode,
         )
+
+    def _coerce_binary_columns(self, frame: pd.DataFrame) -> float:
+        max_deviation = 0.0
+        for column in ("thermal_on", "thermal_startup", "thermal_shutdown", "battery_charge_mode"):
+            raw = frame[column].to_numpy(dtype=np.float64)
+            rounded = np.rint(raw)
+            deviations = np.abs(raw - rounded)
+            column_max_deviation = float(deviations.max()) if deviations.size else 0.0
+            max_deviation = max(max_deviation, column_max_deviation)
+            if column_max_deviation > DEFAULT_NUMERICAL_POLICY.integrality:
+                period = int(deviations.argmax())
+                raise OptimisationError(
+                    f"Integrality residual exceeds tolerance for {column} at period {period}: "
+                    f"{column_max_deviation}"
+                )
+            frame[column] = rounded.astype(int)
+        return max_deviation
+
+    def _clip_nonnegative_solver_noise(self, frame: pd.DataFrame) -> float:
+        columns = (
+            "renewable_used_mw",
+            "thermal_output_mw",
+            "battery_charge_mw",
+            "battery_discharge_mw",
+            "battery_soc_mwh",
+            "imports_mw",
+            "source_load_shed_mw",
+            "renewable_curtailed_mw",
+        )
+        max_clipped = 0.0
+        for column in columns:
+            raw = frame[column].to_numpy(dtype=np.float64)
+            negative = raw < 0.0
+            if not negative.any():
+                continue
+            min_value = float(raw[negative].min())
+            if min_value < -DEFAULT_NUMERICAL_POLICY.nonnegative_cleanup:
+                period = int(raw.argmin())
+                raise OptimisationError(
+                    f"Negative solver value exceeds cleanup tolerance for {column} at "
+                    f"period {period}: {min_value}"
+                )
+            max_clipped = max(max_clipped, abs(min_value))
+            frame.loc[negative, column] = 0.0
+        return max_clipped
 
     def _cost_components(self, frame: pd.DataFrame) -> dict[str, float]:
         dt = self.config.simulation.time_step_hours
