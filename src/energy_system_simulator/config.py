@@ -123,6 +123,7 @@ OPTIONAL_SECTION_KEYS = {
         "charge_ramp_mw_per_hour",
         "discharge_ramp_mw_per_hour",
     },
+    "aggregate_network": {"network_mode", "slack_bus_id"},
 }
 LEGACY_REQUIRED_SECTION_KEYS = {
     section: keys - OPTIONAL_SECTION_KEYS.get(section, set())
@@ -156,14 +157,22 @@ SECTION_KEYS = {
         "mip_relative_gap",
         "allow_non_optimal_solution",
     },
-    "aggregate_network": {"loss_fraction", "transfer_capacity_mw"},
+    "aggregate_network": {"loss_fraction", "transfer_capacity_mw", "network_mode", "slack_bus_id"},
     "penalties": LEGACY_SECTION_KEYS["penalties"],
     "paths": LEGACY_SECTION_KEYS["paths"],
 }
 LIST_SECTION_KEYS = {
     "zones": {"id"},
     "buses": {"id", "zone_id"},
-    "lines": {"id", "from_bus_id", "to_bus_id", "susceptance", "capacity_mw"},
+    "lines": {
+        "id",
+        "from_bus_id",
+        "to_bus_id",
+        "susceptance",
+        "capacity_mw",
+        "availability_factor",
+        "availability_factor_key",
+    },
     "renewable_generators": {
         "id",
         "kind",
@@ -313,6 +322,7 @@ LIST_OPTIONAL_KEYS = {
         "cascade_delay_hours",
     },
     "imports": set(),
+    "lines": {"availability_factor", "availability_factor_key"},
     "demand": {
         "kind",
         "sector",
@@ -665,6 +675,8 @@ class TransmissionLineConfig:
     to_bus_id: str
     susceptance: float
     capacity_mw: float
+    availability_factor: float = 1.0
+    availability_factor_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -837,6 +849,8 @@ class HydroUnitConfig:
 class NetworkConfig:
     loss_fraction: float
     transfer_capacity_mw: float
+    network_mode: Literal["aggregate", "nodal"] = "aggregate"
+    slack_bus_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1152,7 +1166,8 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
     for section_name, allowed_keys in SECTION_KEYS.items():
         section = _section(raw, section_name)
         _validate_allowed_keys(section, section_name, allowed_keys)
-        _validate_required_keys(section, section_name, allowed_keys)
+        required_keys = allowed_keys - OPTIONAL_SECTION_KEYS.get(section_name, set())
+        _validate_required_keys(section, section_name, required_keys)
     for section_name, allowed_keys in LIST_SECTION_KEYS.items():
         items = _list_section(
             raw,
@@ -1202,6 +1217,18 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
             to_bus_id=_id_at(item, "to_bus_id", f"lines[{index}]"),
             susceptance=_number_at(item, "susceptance", float, f"lines[{index}]"),
             capacity_mw=_number_at(item, "capacity_mw", float, f"lines[{index}]"),
+            availability_factor=_optional_number_at(
+                item,
+                "availability_factor",
+                float,
+                1.0,
+                f"lines[{index}]",
+            ),
+            availability_factor_key=(
+                _input_key_at(item, "availability_factor_key", f"lines[{index}]")
+                if "availability_factor_key" in item
+                else None
+            ),
         )
         for index, item in enumerate(_list_section(raw, "lines"))
     )
@@ -1263,10 +1290,21 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
     wind = _primary_wind(renewable_generators)
     thermal = thermal_generators[0].config
     battery = storage_units[0].config
+    network_mode = _optional_string_at(
+        network_raw, "network_mode", "aggregate", "aggregate_network"
+    )
+    if network_mode not in {"aggregate", "nodal"}:
+        raise ConfigurationError("aggregate_network.network_mode must be aggregate or nodal")
     network = NetworkConfig(
         loss_fraction=_number_at(network_raw, "loss_fraction", float, "aggregate_network"),
         transfer_capacity_mw=_number_at(
             network_raw, "transfer_capacity_mw", float, "aggregate_network"
+        ),
+        network_mode=cast(Literal["aggregate", "nodal"], network_mode),
+        slack_bus_id=(
+            _id_at(network_raw, "slack_bus_id", "aggregate_network")
+            if "slack_bus_id" in network_raw
+            else None
         ),
     )
     import_config = imports[0].config
@@ -2044,7 +2082,11 @@ def _validate_schema_v2_assets(portfolio: PortfolioConfig) -> None:
     for index, demand in enumerate(portfolio.demand):
         _validate_demand_at(demand, f"demand[{index}]")
     for index, line in enumerate(portfolio.lines):
-        _check_nonnegative_at(f"lines[{index}].capacity_mw", line.capacity_mw)
+        if line.susceptance <= 0.0:
+            raise ConfigurationError(f"lines[{index}].susceptance must be positive")
+        if line.capacity_mw <= 0.0:
+            raise ConfigurationError(f"lines[{index}].capacity_mw must be positive")
+        _check_fraction_at(f"lines[{index}].availability_factor", line.availability_factor)
     for index, resource in enumerate(portfolio.imports):
         for name, value in (
             ("maximum_power_mw", resource.config.maximum_power_mw),
@@ -2499,20 +2541,8 @@ def _schema_v2_mapping_from_config(
         "zones": [{"id": zone.id} for zone in portfolio.zones],
         "fuels": [_fuel_mapping(fuel) for fuel in portfolio.fuels],
         "buses": [{"id": bus.id, "zone_id": bus.zone_id} for bus in portfolio.buses],
-        "lines": [
-            {
-                "id": line.id,
-                "from_bus_id": line.from_bus_id,
-                "to_bus_id": line.to_bus_id,
-                "susceptance": line.susceptance,
-                "capacity_mw": line.capacity_mw,
-            }
-            for line in portfolio.lines
-        ],
-        "aggregate_network": {
-            "loss_fraction": config.network.loss_fraction,
-            "transfer_capacity_mw": config.network.transfer_capacity_mw,
-        },
+        "lines": [_line_mapping(line) for line in portfolio.lines],
+        "aggregate_network": _network_mapping(config.network),
         "renewable_generators": [
             _renewable_generator_mapping(generator) for generator in portfolio.renewable_generators
         ],
@@ -2541,6 +2571,32 @@ def _schema_v2_mapping_from_config(
         },
         "paths": {"input_csv": input_csv, "output_directory": output_directory},
     }
+
+
+def _line_mapping(line: TransmissionLineConfig) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "id": line.id,
+        "from_bus_id": line.from_bus_id,
+        "to_bus_id": line.to_bus_id,
+        "susceptance": line.susceptance,
+        "capacity_mw": line.capacity_mw,
+    }
+    if line.availability_factor != 1.0:
+        item["availability_factor"] = line.availability_factor
+    if line.availability_factor_key is not None:
+        item["availability_factor_key"] = line.availability_factor_key
+    return item
+
+
+def _network_mapping(network: NetworkConfig) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "loss_fraction": network.loss_fraction,
+        "transfer_capacity_mw": network.transfer_capacity_mw,
+        "network_mode": network.network_mode,
+    }
+    if network.slack_bus_id is not None:
+        item["slack_bus_id"] = network.slack_bus_id
+    return item
 
 
 def _fuel_mapping(fuel: FuelConfig) -> dict[str, Any]:
@@ -2883,6 +2939,14 @@ def validate_config(config: ModelConfig) -> None:
     _check_fraction("network.loss_fraction", config.network.loss_fraction, allow_one=False)
     if config.network.transfer_capacity_mw <= 0.0:
         raise ConfigurationError("network.transfer_capacity_mw must be positive")
+    if config.network.network_mode not in {"aggregate", "nodal"}:
+        raise ConfigurationError("network.network_mode must be one of aggregate, nodal")
+    if config.network.slack_bus_id is not None and config.network.slack_bus_id not in {
+        bus.id for bus in config.portfolio.buses
+    }:
+        raise ConfigurationError("network.slack_bus_id references unknown bus")
+    if config.network.network_mode == "nodal":
+        _validate_nodal_network(config)
 
     for name, value in (
         ("imports.maximum_power_mw", config.imports.maximum_power_mw),
@@ -2902,3 +2966,26 @@ def validate_config(config: ModelConfig) -> None:
         ),
     ):
         _check_nonnegative(name, value)
+
+
+def _validate_nodal_network(config: ModelConfig) -> None:
+    bus_ids = [bus.id for bus in config.portfolio.buses]
+    if len(bus_ids) <= 1:
+        return
+    if not config.portfolio.lines:
+        raise ConfigurationError("nodal network mode requires lines for multiple buses")
+    adjacency = {bus_id: set[str]() for bus_id in bus_ids}
+    for line in config.portfolio.lines:
+        adjacency[line.from_bus_id].add(line.to_bus_id)
+        adjacency[line.to_bus_id].add(line.from_bus_id)
+    visited: set[str] = set()
+    stack = [bus_ids[0]]
+    while stack:
+        bus_id = stack.pop()
+        if bus_id in visited:
+            continue
+        visited.add(bus_id)
+        stack.extend(adjacency[bus_id] - visited)
+    if visited != set(bus_ids):
+        missing = ", ".join(sorted(set(bus_ids) - visited))
+        raise ConfigurationError(f"nodal network is disconnected; unreachable buses: {missing}")

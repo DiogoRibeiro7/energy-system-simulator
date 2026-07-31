@@ -201,6 +201,8 @@ class SimulationEngine:
             storage_availability_factors=registry.storage_availability_factors(data),
             hydro_inflows_mw=registry.hydro_inflows_mw(data),
             demand_profiles_mw=demand_profiles_mw,
+            renewable_availability_by_asset_mw=renewable.by_asset_mw,
+            line_availability_factors=self._line_availability_factors(data),
         )
 
     def _source_side_demand_profiles(
@@ -210,7 +212,7 @@ class SimulationEngine:
         end_user_demand_mw: FloatArray,
         distribution: DistributionDemand,
     ) -> dict[str, FloatArray] | None:
-        if not any(
+        if self.config.network.network_mode != "nodal" and not any(
             demand.kind != "fixed" or demand.value_of_lost_load_eur_per_mwh is not None
             for demand in self.config.portfolio.demand
         ):
@@ -223,6 +225,31 @@ class SimulationEngine:
             where=end_user_demand_mw > 0.0,
         )
         return {asset_id: values * scale for asset_id, values in profiles.items()}
+
+    def _line_availability_factors(self, data: pd.DataFrame) -> dict[str, FloatArray]:
+        factors: dict[str, FloatArray] = {}
+        for line in self.config.portfolio.lines:
+            if line.availability_factor_key is None:
+                continue
+            if line.availability_factor_key not in data.columns:
+                raise OptimisationError(
+                    f"Line {line.id!r} references missing input column "
+                    f"{line.availability_factor_key!r}"
+                )
+            values = pd.to_numeric(data[line.availability_factor_key], errors="coerce").to_numpy(
+                dtype="float64"
+            )
+            if not pd.notna(values).all():
+                raise OptimisationError(
+                    f"Line availability column {line.availability_factor_key!r} "
+                    "contains non-finite values"
+                )
+            if ((values < 0.0) | (values > 1.0)).any():
+                raise OptimisationError(
+                    f"Line availability column {line.availability_factor_key!r} must be in [0, 1]"
+                )
+            factors[line.id] = values
+        return factors
 
     def _fuel_price_series(self, data: pd.DataFrame) -> dict[str, FloatArray]:
         prices: dict[str, FloatArray] = {}
@@ -272,18 +299,48 @@ class SimulationEngine:
         renewable: RenewableAvailability,
         frame: pd.DataFrame,
     ) -> AssetTimeSeries:
-        dispatch = allocate_renewable_dispatch(
-            data["timestamp"],
-            renewable.by_asset_mw,
-            renewable.aggregate_mw,
-            frame["renewable_used_mw"].to_numpy(dtype="float64"),
-        )
+        dispatch = self._renewable_dispatch_timeseries(data["timestamp"], renewable, frame)
         return (
             renewable.asset_table.append(dispatch)
             .append(self._thermal_asset_timeseries(data["timestamp"], frame))
             .append(self._storage_asset_timeseries(data["timestamp"], frame))
             .append(self._hydro_asset_timeseries(data["timestamp"], frame))
             .append(self._demand_asset_timeseries(data["timestamp"], frame))
+        )
+
+    def _renewable_dispatch_timeseries(
+        self,
+        timestamps: pd.Series,
+        renewable: RenewableAvailability,
+        frame: pd.DataFrame,
+    ) -> AssetTimeSeries:
+        if all(f"renewable_used_mw__{asset_id}" in frame for asset_id in renewable.by_asset_mw):
+            used_by_asset = {
+                asset_id: frame[f"renewable_used_mw__{asset_id}"].to_numpy(dtype="float64")
+                for asset_id in renewable.by_asset_mw
+            }
+            curtailed_by_asset = {
+                asset_id: renewable.by_asset_mw[asset_id] - used_by_asset[asset_id]
+                for asset_id in renewable.by_asset_mw
+            }
+            return AssetTimeSeries.from_variable_matrix(
+                timestamps,
+                used_by_asset,
+                "used_mw",
+                "MW",
+            ).append(
+                AssetTimeSeries.from_variable_matrix(
+                    timestamps,
+                    curtailed_by_asset,
+                    "curtailed_mw",
+                    "MW",
+                )
+            )
+        return allocate_renewable_dispatch(
+            timestamps,
+            renewable.by_asset_mw,
+            renewable.aggregate_mw,
+            frame["renewable_used_mw"].to_numpy(dtype="float64"),
         )
 
     def _thermal_asset_timeseries(
@@ -577,6 +634,7 @@ class SimulationEngine:
             "hydro_terminal_value_eur": float(frame["hydro_terminal_value_eur"].sum()),
             "hydro_assets": self._hydro_asset_summary(frame),
             "network_losses_mwh": energy("network_losses_mw"),
+            "network": self._network_summary(frame),
             "thermal_emissions_tonnes": float(frame["thermal_emissions_tonnes"].sum()),
             "import_emissions_tonnes": float(frame["import_emissions_tonnes"].sum()),
             "total_emissions_tonnes": float(
@@ -653,6 +711,19 @@ class SimulationEngine:
         if not columns:
             return 0.0
         return float(frame[columns].sum().sum())
+
+    def _network_summary(self, frame: pd.DataFrame) -> dict[str, Any]:
+        if "line_max_abs_utilisation" not in frame:
+            return {"mode": self.config.network.network_mode}
+        return {
+            "mode": self.config.network.network_mode,
+            "congested_hours": float(
+                frame["line_congested"].sum() * self.config.simulation.time_step_hours
+            ),
+            "max_abs_line_utilisation": float(frame["line_max_abs_utilisation"].max()),
+            "max_line_overload_residual_mw": float(frame["line_overload_residual_mw"].max()),
+            "max_abs_bus_balance_residual_mw": float(frame["bus_balance_residual_mw"].abs().max()),
+        }
 
     def _renewable_asset_summary(self, asset_timeseries: AssetTimeSeries) -> dict[str, Any]:
         dt = self.config.simulation.time_step_hours

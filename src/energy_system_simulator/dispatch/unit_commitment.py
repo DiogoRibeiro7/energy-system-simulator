@@ -17,6 +17,7 @@ from energy_system_simulator.config import (
     FuelConfig,
     HydroUnitConfig,
     ModelConfig,
+    RenewableGeneratorConfig,
     ThermalConfig,
 )
 from energy_system_simulator.constants import DEFAULT_NUMERICAL_POLICY
@@ -67,6 +68,8 @@ THERMAL_BLOCKS = (
 )
 THERMAL_SEGMENT_OUTPUT_BLOCK = "thermal_segment_output_mw"
 THERMAL_STARTUP_CATEGORY_BLOCK = "thermal_startup_category"
+BUS_VOLTAGE_ANGLE_BLOCK = "bus_voltage_angle_rad"
+LINE_FLOW_BLOCK = "line_flow_mw"
 
 
 def _segment_asset_id(unit_id: str, segment_id: str) -> str:
@@ -147,6 +150,36 @@ class DemandUnit:
 
 
 @dataclass(frozen=True)
+class RenewableUnit:
+    """Resolved renewable asset used by nodal dispatch."""
+
+    id: str
+    bus_id: str
+    config: RenewableGeneratorConfig
+
+
+@dataclass(frozen=True)
+class NetworkLine:
+    """Resolved transmission line used by nodal DC dispatch."""
+
+    id: str
+    from_bus_id: str
+    to_bus_id: str
+    susceptance: float
+    capacity_available_mw: FloatArray
+
+
+@dataclass(frozen=True)
+class NodalNetwork:
+    """Resolved nodal network metadata for the optimisation model."""
+
+    enabled: bool
+    bus_ids: tuple[str, ...] = ()
+    slack_bus_id: str | None = None
+    lines: tuple[NetworkLine, ...] = ()
+
+
+@dataclass(frozen=True)
 class FormulationProblem:
     """Complete linear mixed-integer problem and source input arrays."""
 
@@ -160,11 +193,14 @@ class FormulationProblem:
     storage_units: tuple[StorageUnit, ...]
     hydro_units: tuple[HydroUnit, ...]
     demand_units: tuple[DemandUnit, ...]
+    renewable_units: tuple[RenewableUnit, ...]
+    renewable_available_by_asset_mw: dict[str, FloatArray]
     demand_profiles_mw: dict[str, FloatArray]
     thermal_capacity_available_mw: dict[str, FloatArray]
     storage_availability_factor: dict[str, FloatArray]
     hydro_inflow_mw: dict[str, FloatArray]
     fuel_prices_eur_per_mwh_thermal: dict[str, FloatArray]
+    network: NodalNetwork
     registry: VariableRegistry
     statistics: FormulationStatistics
 
@@ -262,6 +298,8 @@ class UnitCommitment:
         storage_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
         hydro_inflows_mw: Mapping[str, npt.ArrayLike] | None = None,
         demand_profiles_mw: Mapping[str, npt.ArrayLike] | None = None,
+        renewable_availability_by_asset_mw: Mapping[str, npt.ArrayLike] | None = None,
+        line_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
     ) -> FormulationProblem:
         """Build the MILP formulation without solving it."""
         renewable = np.asarray(renewable_available_mw, dtype=np.float64)
@@ -283,6 +321,15 @@ class UnitCommitment:
         hydro_units = self._hydro_units()
         demand_units = self._demand_units(demand_profiles_mw)
         demand_profiles = self._demand_profiles(demand_units, demand, demand_profiles_mw or {})
+        network = self._nodal_network(periods, line_availability_factors or {})
+        if network.enabled and not demand_units:
+            raise ValueError("Nodal network mode requires demand profiles for each demand asset")
+        renewable_units = self._renewable_units() if network.enabled else ()
+        renewable_by_asset = self._renewable_availability_by_asset(
+            renewable_units,
+            renewable,
+            renewable_availability_by_asset_mw or {},
+        )
         thermal_capacity = self._thermal_capacity_available(
             thermal_units,
             periods,
@@ -301,6 +348,8 @@ class UnitCommitment:
             storage_units,
             hydro_units,
             demand_units,
+            renewable_units,
+            network,
         )
         objective = self._objective(
             registry,
@@ -321,6 +370,8 @@ class UnitCommitment:
             demand_units,
             demand_profiles,
             storage_availability,
+            renewable_by_asset,
+            network,
         )
         constraints, component_counts = self._constraints(
             registry,
@@ -332,6 +383,8 @@ class UnitCommitment:
             demand_profiles,
             thermal_capacity,
             hydro_inflow,
+            renewable_units,
+            network,
         )
 
         integer_variables = int(np.count_nonzero(integrality))
@@ -355,11 +408,14 @@ class UnitCommitment:
             storage_units=storage_units,
             hydro_units=hydro_units,
             demand_units=demand_units,
+            renewable_units=renewable_units,
+            renewable_available_by_asset_mw=renewable_by_asset,
             demand_profiles_mw=demand_profiles,
             thermal_capacity_available_mw=thermal_capacity,
             storage_availability_factor=storage_availability,
             hydro_inflow_mw=hydro_inflow,
             fuel_prices_eur_per_mwh_thermal=fuel_prices,
+            network=network,
             registry=registry,
             statistics=statistics,
         )
@@ -373,6 +429,8 @@ class UnitCommitment:
         storage_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
         hydro_inflows_mw: Mapping[str, npt.ArrayLike] | None = None,
         demand_profiles_mw: Mapping[str, npt.ArrayLike] | None = None,
+        renewable_availability_by_asset_mw: Mapping[str, npt.ArrayLike] | None = None,
+        line_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
     ) -> DispatchResult:
         """Solve unit commitment over the full input horizon."""
         problem = self.build_formulation(
@@ -383,6 +441,8 @@ class UnitCommitment:
             storage_availability_factors,
             hydro_inflows_mw,
             demand_profiles_mw,
+            renewable_availability_by_asset_mw,
+            line_availability_factors,
         )
         return self.solve_formulation(problem)
 
@@ -421,6 +481,7 @@ class UnitCommitment:
         self._add_thermal_accounting_columns(frame, problem.thermal_units, problem)
         self._add_storage_accounting_columns(frame, problem.storage_units)
         self._add_hydro_accounting_columns(frame, problem.hydro_units, problem)
+        self._add_network_accounting_columns(frame, problem)
         self._add_demand_accounting_columns(frame, problem.demand_units)
         nonnegative_cleanup_max_abs = self._clip_nonnegative_solver_noise(
             frame,
@@ -431,6 +492,7 @@ class UnitCommitment:
         )
         if problem.demand_units:
             self._add_demand_accounting_columns(frame, problem.demand_units)
+        self._add_network_accounting_columns(frame, problem)
 
         constant_curtailment_cost = (
             self.config.penalties.renewable_curtailment_eur_per_mwh
@@ -561,6 +623,86 @@ class UnitCommitment:
                 raise ValueError("Demand profiles must sum to aggregate gross demand")
         return result
 
+    def _renewable_units(self) -> tuple[RenewableUnit, ...]:
+        return tuple(
+            RenewableUnit(id=unit.id, bus_id=unit.bus_id, config=unit)
+            for unit in self.config.portfolio.renewable_generators
+        )
+
+    def _renewable_availability_by_asset(
+        self,
+        units: tuple[RenewableUnit, ...],
+        aggregate_renewable: FloatArray,
+        availability_by_asset_mw: Mapping[str, npt.ArrayLike],
+    ) -> dict[str, FloatArray]:
+        if not units:
+            return {}
+        result: dict[str, FloatArray] = {}
+        for unit in units:
+            if unit.id not in availability_by_asset_mw:
+                raise ValueError(f"Renewable availability series is required for {unit.id}")
+            values = np.asarray(availability_by_asset_mw[unit.id], dtype=np.float64)
+            if values.shape != aggregate_renewable.shape:
+                raise ValueError(f"Renewable availability series for {unit.id} has wrong shape")
+            if np.any(~np.isfinite(values)) or np.any(values < 0.0):
+                raise ValueError(
+                    f"Renewable availability for {unit.id} must be finite and non-negative"
+                )
+            result[unit.id] = values
+        aggregate = np.asarray(
+            np.sum(np.vstack(list(result.values())), axis=0, dtype=np.float64),
+            dtype=np.float64,
+        )
+        if not np.allclose(
+            aggregate,
+            aggregate_renewable,
+            atol=DEFAULT_NUMERICAL_POLICY.primal_feasibility_mw,
+            rtol=0.0,
+        ):
+            raise ValueError("Renewable asset availability must sum to aggregate availability")
+        return result
+
+    def _nodal_network(
+        self,
+        periods: int,
+        line_availability_factors: Mapping[str, npt.ArrayLike],
+    ) -> NodalNetwork:
+        if self.config.network.network_mode != "nodal":
+            return NodalNetwork(enabled=False)
+        bus_ids = tuple(bus.id for bus in self.config.portfolio.buses)
+        slack_bus_id = self.config.network.slack_bus_id or bus_ids[0]
+        if slack_bus_id not in bus_ids:
+            raise ValueError("Slack bus references unknown bus")
+        lines: list[NetworkLine] = []
+        for config in self.config.portfolio.lines:
+            availability = np.full(periods, config.availability_factor, dtype=np.float64)
+            if config.id in line_availability_factors:
+                series = np.asarray(line_availability_factors[config.id], dtype=np.float64)
+                if series.shape != (periods,):
+                    raise ValueError(f"Line availability factor for {config.id} has wrong shape")
+                availability = availability * series
+            if np.any(~np.isfinite(availability)) or np.any(
+                (availability < 0.0) | (availability > 1.0)
+            ):
+                raise ValueError(
+                    f"Line availability factors for {config.id} must be finite in [0, 1]"
+                )
+            lines.append(
+                NetworkLine(
+                    id=config.id,
+                    from_bus_id=config.from_bus_id,
+                    to_bus_id=config.to_bus_id,
+                    susceptance=config.susceptance,
+                    capacity_available_mw=availability * config.capacity_mw,
+                )
+            )
+        return NodalNetwork(
+            enabled=True,
+            bus_ids=bus_ids,
+            slack_bus_id=slack_bus_id,
+            lines=tuple(lines),
+        )
+
     def _fuels_by_id(self) -> dict[str, FuelConfig]:
         fuels = {fuel.id: fuel for fuel in self.config.portfolio.fuels}
         for generator in self.config.portfolio.thermal_generators:
@@ -656,10 +798,19 @@ class UnitCommitment:
         storage_units: tuple[StorageUnit, ...],
         hydro_units: tuple[HydroUnit, ...],
         demand_units: tuple[DemandUnit, ...],
+        renewable_units: tuple[RenewableUnit, ...],
+        network: NodalNetwork,
     ) -> VariableRegistry:
         registry = VariableRegistry()
         for block in SYSTEM_BLOCKS:
             registry.add(block, periods, binary=block == "battery_charge_mode")
+        if network.enabled:
+            for renewable in renewable_units:
+                registry.add("renewable_used_mw", periods, asset_id=renewable.id)
+            for bus_id in network.bus_ids:
+                registry.add(BUS_VOLTAGE_ANGLE_BLOCK, periods, asset_id=bus_id)
+            for line in network.lines:
+                registry.add(LINE_FLOW_BLOCK, periods, asset_id=line.id)
         for storage in storage_units:
             for block in STORAGE_BLOCKS:
                 registry.add(
@@ -849,6 +1000,8 @@ class UnitCommitment:
         demand_units: tuple[DemandUnit, ...],
         demand_profiles: dict[str, FloatArray],
         storage_availability: dict[str, FloatArray],
+        renewable_available_by_asset: dict[str, FloatArray],
+        network: NodalNetwork,
     ) -> tuple[Bounds, npt.NDArray[np.int_]]:
         periods = renewable.size
         lower = np.zeros(registry.size, dtype=np.float64)
@@ -859,6 +1012,25 @@ class UnitCommitment:
             upper[registry.at("renewable_used_mw", t)] = renewable[t]
             upper[registry.at("imports_mw", t)] = self.config.imports.maximum_power_mw
             upper[registry.at("source_load_shed_mw", t)] = 0.0 if demand_units else demand[t]
+            if network.enabled:
+                for renewable_id, values in renewable_available_by_asset.items():
+                    upper[registry.at("renewable_used_mw", t, asset_id=renewable_id)] = values[t]
+                for bus_id in network.bus_ids:
+                    column = registry.at(BUS_VOLTAGE_ANGLE_BLOCK, t, asset_id=bus_id)
+                    lower[column] = -np.inf
+                    upper[column] = np.inf
+                if network.slack_bus_id is not None:
+                    slack = registry.at(
+                        BUS_VOLTAGE_ANGLE_BLOCK,
+                        t,
+                        asset_id=network.slack_bus_id,
+                    )
+                    lower[slack] = 0.0
+                    upper[slack] = 0.0
+                for line in network.lines:
+                    column = registry.at(LINE_FLOW_BLOCK, t, asset_id=line.id)
+                    lower[column] = -line.capacity_available_mw[t]
+                    upper[column] = line.capacity_available_mw[t]
             for demand_unit in demand_units:
                 demand_config = demand_unit.config
                 baseline = demand_profiles[demand_unit.id][t]
@@ -977,18 +1149,40 @@ class UnitCommitment:
         demand_profiles: dict[str, FloatArray],
         thermal_capacity_available: dict[str, FloatArray],
         hydro_inflow: dict[str, FloatArray],
+        renewable_units: tuple[RenewableUnit, ...],
+        network: NodalNetwork,
     ) -> tuple[LinearConstraint, dict[str, int]]:
         builder = _ConstraintBuilder(registry.size)
-        self._add_balance_constraints(
-            builder,
-            registry,
-            demand,
-            thermal_units,
-            storage_units,
-            hydro_units,
-            demand_units,
-            demand_profiles,
-        )
+        if network.enabled:
+            self._add_renewable_aggregate_constraints(
+                builder,
+                registry,
+                demand.size,
+                renewable_units,
+            )
+            self._add_nodal_network_constraints(
+                builder,
+                registry,
+                demand.size,
+                thermal_units,
+                storage_units,
+                hydro_units,
+                demand_units,
+                demand_profiles,
+                renewable_units,
+                network,
+            )
+        else:
+            self._add_balance_constraints(
+                builder,
+                registry,
+                demand,
+                thermal_units,
+                storage_units,
+                hydro_units,
+                demand_units,
+                demand_profiles,
+            )
         self._add_thermal_constraints(
             builder,
             registry,
@@ -1001,6 +1195,121 @@ class UnitCommitment:
         self._add_demand_constraints(builder, registry, demand_units, demand_profiles)
         self._add_terminal_soc_constraints(builder, registry, demand.size, storage_units)
         return builder.build(), builder.component_counts
+
+    def _add_renewable_aggregate_constraints(
+        self,
+        builder: _ConstraintBuilder,
+        registry: VariableRegistry,
+        periods: int,
+        renewable_units: tuple[RenewableUnit, ...],
+    ) -> None:
+        for t in range(periods):
+            coefficients = {registry.at("renewable_used_mw", t): 1.0}
+            for renewable in renewable_units:
+                coefficients[registry.at("renewable_used_mw", t, asset_id=renewable.id)] = -1.0
+            builder.add(coefficients, 0.0, 0.0, component="renewable_aggregate")
+
+    def _add_nodal_network_constraints(
+        self,
+        builder: _ConstraintBuilder,
+        registry: VariableRegistry,
+        periods: int,
+        thermal_units: tuple[ThermalUnit, ...],
+        storage_units: tuple[StorageUnit, ...],
+        hydro_units: tuple[HydroUnit, ...],
+        demand_units: tuple[DemandUnit, ...],
+        demand_profiles: dict[str, FloatArray],
+        renewable_units: tuple[RenewableUnit, ...],
+        network: NodalNetwork,
+    ) -> None:
+        renewable_bus = {unit.id: unit.bus_id for unit in renewable_units}
+        thermal_bus = {unit.id: unit.bus_id for unit in self.config.portfolio.thermal_generators}
+        storage_bus = {unit.id: unit.bus_id for unit in self.config.portfolio.storage_units}
+        hydro_bus = {unit.id: unit.bus_id for unit in self.config.portfolio.hydro_units}
+        demand_bus = {unit.id: unit.bus_id for unit in self.config.portfolio.demand}
+        import_bus = self.config.portfolio.imports[0].bus_id
+
+        for t in range(periods):
+            for line in network.lines:
+                builder.add(
+                    {
+                        registry.at(LINE_FLOW_BLOCK, t, asset_id=line.id): 1.0,
+                        registry.at(
+                            BUS_VOLTAGE_ANGLE_BLOCK,
+                            t,
+                            asset_id=line.from_bus_id,
+                        ): -line.susceptance,
+                        registry.at(
+                            BUS_VOLTAGE_ANGLE_BLOCK,
+                            t,
+                            asset_id=line.to_bus_id,
+                        ): line.susceptance,
+                    },
+                    0.0,
+                    0.0,
+                    component="dc_line_flow",
+                )
+
+            for bus_id in network.bus_ids:
+                coefficients: dict[int, float] = {}
+                rhs = 0.0
+                for renewable in renewable_units:
+                    if renewable_bus[renewable.id] == bus_id:
+                        coefficients[registry.at("renewable_used_mw", t, asset_id=renewable.id)] = (
+                            1.0
+                        )
+                for unit in thermal_units:
+                    if thermal_bus[unit.id] == bus_id:
+                        coefficients[registry.at("thermal_output_mw", t, asset_id=unit.id)] = 1.0
+                for storage in storage_units:
+                    if storage_bus[storage.id] == bus_id:
+                        coefficients[
+                            registry.at("storage_discharge_mw", t, asset_id=storage.id)
+                        ] = 1.0
+                        coefficients[
+                            registry.at("storage_charge_mw", t, asset_id=storage.id)
+                        ] = -1.0
+                for hydro in hydro_units:
+                    if hydro_bus[hydro.id] == bus_id:
+                        coefficients[registry.at("hydro_generation_mw", t, asset_id=hydro.id)] = 1.0
+                if import_bus == bus_id:
+                    coefficients[registry.at("imports_mw", t)] = 1.0
+                for demand_unit in demand_units:
+                    if demand_bus[demand_unit.id] != bus_id:
+                        continue
+                    rhs += demand_profiles[demand_unit.id][t]
+                    coefficients[
+                        registry.at(
+                            "demand_involuntary_shed_mw",
+                            t,
+                            asset_id=demand_unit.id,
+                        )
+                    ] = 1.0
+                    if demand_unit.config.kind in {"curtailable", "shiftable"}:
+                        coefficients[
+                            registry.at(
+                                "demand_voluntary_curtailment_mw",
+                                t,
+                                asset_id=demand_unit.id,
+                            )
+                        ] = 1.0
+                    if demand_unit.config.kind == "shiftable":
+                        coefficients[
+                            registry.at("demand_shift_down_mw", t, asset_id=demand_unit.id)
+                        ] = 1.0
+                        coefficients[
+                            registry.at("demand_shift_up_mw", t, asset_id=demand_unit.id)
+                        ] = -1.0
+                    if demand_unit.config.kind in {"deferrable", "ev_charging"}:
+                        coefficients[
+                            registry.at("demand_task_charge_mw", t, asset_id=demand_unit.id)
+                        ] = -1.0
+                for line in network.lines:
+                    if line.from_bus_id == bus_id:
+                        coefficients[registry.at(LINE_FLOW_BLOCK, t, asset_id=line.id)] = -1.0
+                    elif line.to_bus_id == bus_id:
+                        coefficients[registry.at(LINE_FLOW_BLOCK, t, asset_id=line.id)] = 1.0
+                builder.add(coefficients, rhs, rhs, component="nodal_balance")
 
     def _add_balance_constraints(
         self,
@@ -1779,6 +2088,25 @@ class UnitCommitment:
                     block,
                     asset_id=hydro.id,
                 )
+        for renewable in problem.renewable_units:
+            data[f"renewable_used_mw__{renewable.id}"] = registry.values(
+                solution,
+                "renewable_used_mw",
+                asset_id=renewable.id,
+            )
+        if problem.network.enabled:
+            for bus_id in problem.network.bus_ids:
+                data[f"{BUS_VOLTAGE_ANGLE_BLOCK}__{bus_id}"] = registry.values(
+                    solution,
+                    BUS_VOLTAGE_ANGLE_BLOCK,
+                    asset_id=bus_id,
+                )
+            for line in problem.network.lines:
+                data[f"{LINE_FLOW_BLOCK}__{line.id}"] = registry.values(
+                    solution,
+                    LINE_FLOW_BLOCK,
+                    asset_id=line.id,
+                )
         for demand in problem.demand_units:
             data[f"demand_baseline_mw__{demand.id}"] = problem.demand_profiles_mw[demand.id]
             data[f"demand_involuntary_shed_mw__{demand.id}"] = registry.values(
@@ -2134,6 +2462,129 @@ class UnitCommitment:
             sum(frame[f"hydro_terminal_value_eur__{unit.id}"] for unit in units) if units else 0.0
         )
 
+    def _add_network_accounting_columns(
+        self,
+        frame: pd.DataFrame,
+        problem: FormulationProblem,
+    ) -> None:
+        network = problem.network
+        if not network.enabled:
+            return
+        bus_residual_columns: list[str] = []
+        max_abs_utilisation = np.zeros(len(frame), dtype=np.float64)
+        congested_flags = np.zeros(len(frame), dtype=bool)
+        for renewable in problem.renewable_units:
+            used = frame[f"renewable_used_mw__{renewable.id}"]
+            available = problem.renewable_available_by_asset_mw[renewable.id]
+            frame[f"renewable_available_mw__{renewable.id}"] = available
+            frame[f"renewable_curtailed_mw__{renewable.id}"] = available - used
+        for line in network.lines:
+            flow_column = f"{LINE_FLOW_BLOCK}__{line.id}"
+            capacity_column = f"line_capacity_available_mw__{line.id}"
+            signed_utilisation_column = f"line_signed_utilisation__{line.id}"
+            abs_utilisation_column = f"line_abs_utilisation__{line.id}"
+            overload_column = f"line_overload_residual_mw__{line.id}"
+            flow = frame[flow_column].to_numpy(dtype=np.float64)
+            capacity = line.capacity_available_mw
+            abs_flow = np.abs(flow)
+            utilisation = np.divide(
+                abs_flow,
+                capacity,
+                out=np.zeros_like(abs_flow, dtype=np.float64),
+                where=capacity > 0.0,
+            )
+            signed_utilisation = np.divide(
+                flow,
+                capacity,
+                out=np.zeros_like(flow, dtype=np.float64),
+                where=capacity > 0.0,
+            )
+            overload = np.maximum(0.0, abs_flow - capacity)
+            frame[capacity_column] = capacity
+            frame[signed_utilisation_column] = signed_utilisation
+            frame[abs_utilisation_column] = utilisation
+            frame[overload_column] = overload
+            max_abs_utilisation = np.maximum(max_abs_utilisation, utilisation)
+            congested_flags |= utilisation >= 1.0 - DEFAULT_NUMERICAL_POLICY.primal_feasibility_mw
+        for bus_id in network.bus_ids:
+            generation = self._bus_generation(frame, problem, bus_id)
+            load = self._bus_load(frame, problem, bus_id)
+            net_line_out = np.zeros(len(frame), dtype=np.float64)
+            for line in network.lines:
+                flow = frame[f"{LINE_FLOW_BLOCK}__{line.id}"].to_numpy(dtype=np.float64)
+                if line.from_bus_id == bus_id:
+                    net_line_out += flow
+                elif line.to_bus_id == bus_id:
+                    net_line_out -= flow
+            frame[f"bus_net_injection_mw__{bus_id}"] = net_line_out
+            residual_column = f"bus_balance_residual_mw__{bus_id}"
+            frame[residual_column] = generation - load - net_line_out
+            bus_residual_columns.append(residual_column)
+        frame["line_max_abs_utilisation"] = max_abs_utilisation
+        frame["line_congested"] = congested_flags.astype(int)
+        frame["line_overload_residual_mw"] = self._sum_prefixed_frame_columns(
+            frame,
+            "line_overload_residual_mw__",
+        )
+        frame["bus_balance_residual_mw"] = (
+            frame[bus_residual_columns].abs().max(axis=1) if bus_residual_columns else 0.0
+        )
+
+    def _bus_generation(
+        self,
+        frame: pd.DataFrame,
+        problem: FormulationProblem,
+        bus_id: str,
+    ) -> FloatArray:
+        values = np.zeros(len(frame), dtype=np.float64)
+        renewable_bus = {unit.id: unit.bus_id for unit in problem.renewable_units}
+        thermal_bus = {unit.id: unit.bus_id for unit in self.config.portfolio.thermal_generators}
+        storage_bus = {unit.id: unit.bus_id for unit in self.config.portfolio.storage_units}
+        hydro_bus = {unit.id: unit.bus_id for unit in self.config.portfolio.hydro_units}
+        for unit in problem.renewable_units:
+            if renewable_bus[unit.id] == bus_id:
+                values += frame[f"renewable_used_mw__{unit.id}"].to_numpy(dtype=np.float64)
+        for thermal in problem.thermal_units:
+            if thermal_bus[thermal.id] == bus_id:
+                values += frame[f"thermal_output_mw__{thermal.id}"].to_numpy(dtype=np.float64)
+        for storage in problem.storage_units:
+            if storage_bus[storage.id] == bus_id:
+                values += frame[f"storage_discharge_mw__{storage.id}"].to_numpy(dtype=np.float64)
+        for hydro in problem.hydro_units:
+            if hydro_bus[hydro.id] == bus_id:
+                values += frame[f"hydro_generation_mw__{hydro.id}"].to_numpy(dtype=np.float64)
+        if self.config.portfolio.imports[0].bus_id == bus_id:
+            values += frame["imports_mw"].to_numpy(dtype=np.float64)
+        return values
+
+    def _bus_load(
+        self,
+        frame: pd.DataFrame,
+        problem: FormulationProblem,
+        bus_id: str,
+    ) -> FloatArray:
+        values = np.zeros(len(frame), dtype=np.float64)
+        storage_bus = {unit.id: unit.bus_id for unit in self.config.portfolio.storage_units}
+        demand_bus = {unit.id: unit.bus_id for unit in self.config.portfolio.demand}
+        for storage in problem.storage_units:
+            if storage_bus[storage.id] == bus_id:
+                values += frame[f"storage_charge_mw__{storage.id}"].to_numpy(dtype=np.float64)
+        for demand in problem.demand_units:
+            if demand_bus[demand.id] != bus_id:
+                continue
+            values += frame[f"demand_baseline_mw__{demand.id}"].to_numpy(dtype=np.float64)
+            values -= frame[f"demand_involuntary_shed_mw__{demand.id}"].to_numpy(dtype=np.float64)
+            if demand.config.kind in {"curtailable", "shiftable"}:
+                values -= frame[f"demand_voluntary_curtailment_mw__{demand.id}"].to_numpy(
+                    dtype=np.float64
+                )
+            if demand.config.kind == "shiftable":
+                values -= frame[f"demand_shift_down_mw__{demand.id}"].to_numpy(dtype=np.float64)
+                values += frame[f"demand_shift_up_mw__{demand.id}"].to_numpy(dtype=np.float64)
+            if demand.config.kind in {"deferrable", "ev_charging"}:
+                values += frame[f"demand_task_charge_mw__{demand.id}"].to_numpy(dtype=np.float64)
+        return values
+
     def _add_demand_accounting_columns(
         self,
         frame: pd.DataFrame,
@@ -2289,6 +2740,13 @@ class UnitCommitment:
             "source_load_shed_mw",
             "renewable_curtailed_mw",
         ]
+        renewable_asset_columns = [
+            column
+            for column in frame.columns
+            if column.startswith("renewable_used_mw__")
+            or column.startswith("renewable_curtailed_mw__")
+        ]
+        columns.extend(renewable_asset_columns)
         if storage_units is None:
             columns.extend(["battery_charge_mw", "battery_discharge_mw", "battery_soc_mwh"])
         else:

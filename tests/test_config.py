@@ -303,3 +303,18 @@ def test_demand_response_configuration_loads_with_typed_entities() -> None:
     ]
     assert config.portfolio.demand[1].shift_window_hours == 6.0
     assert config.portfolio.demand[2].task_required_energy_mwh == 45.0
+
+
+def test_nodal_configuration_loads_with_dc_network() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "configs" / "portfolio_nodal_three_bus.yaml")
+
+    assert config.network.network_mode == "nodal"
+    assert config.network.slack_bus_id == "north"
+    assert [bus.id for bus in config.portfolio.buses] == ["north", "central", "south"]
+    assert [line.id for line in config.portfolio.lines] == [
+        "north-central",
+        "central-south",
+        "north-south",
+    ]
+    assert config.portfolio.lines[1].availability_factor_key == "central_south_availability"

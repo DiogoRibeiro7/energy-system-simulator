@@ -93,6 +93,13 @@ poetry run energy-sim validate --config configs/portfolio_demand_response.yaml
 poetry run energy-sim simulate --config configs/portfolio_demand_response.yaml
 ```
 
+Run the nodal DC network example:
+
+```bash
+poetry run energy-sim validate --config configs/portfolio_nodal_three_bus.yaml
+poetry run energy-sim simulate --config configs/portfolio_nodal_three_bus.yaml
+```
+
 Equivalent module invocation:
 
 ```bash

@@ -160,6 +160,18 @@ Demand entities may set:
   `cooling_sensitivity_mw_per_c`: deterministic heating- and cooling-degree
   demand adjustments applied before dispatch.
 
+Network dispatch may run in two modes:
+
+- `aggregate_network.network_mode`: `aggregate` preserves the historical
+  single-balance formulation. `nodal` enables an integrated lossless DC power
+  flow with bus voltage angles, directed line flows, symmetric thermal limits,
+  and per-bus balances.
+- `aggregate_network.slack_bus_id`: optional slack bus for nodal mode. When
+  omitted, the first configured bus is used.
+- `lines[].availability_factor` and `lines[].availability_factor_key`: static
+  and time-varying line outage multipliers. The effective rating is
+  `capacity_mw * availability_factor * availability_factor_key`.
+
 ## Migration
 
 Convert a legacy configuration with:
@@ -182,6 +194,8 @@ generator, one storage unit, one import resource, and one demand entry.
   a run-of-river unit, and synthetic seasonal hydro inflows.
 - `configs/portfolio_demand_response.yaml` is a schema v2 example with
   residential fixed demand, industrial shiftable demand, and an EV fleet.
+- `configs/portfolio_nodal_three_bus.yaml` is a schema v2 example with a
+  three-bus DC network, line-flow exports, and a time-varying line outage.
 - `tests/fixtures/invalid_portfolio_missing_bus.yaml` is intentionally invalid
   and is used by the validation tests.
 
