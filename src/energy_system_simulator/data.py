@@ -30,7 +30,7 @@ def load_input_data(path: str | Path, time_step_hours: float) -> pd.DataFrame:
     if frame.empty:
         raise DataValidationError("Input data must contain at least one row")
 
-    result = frame.loc[:, REQUIRED_COLUMNS].copy()
+    result = frame.copy()
     result["timestamp"] = pd.to_datetime(result["timestamp"], utc=True, errors="coerce")
     if result["timestamp"].isna().any():
         raise DataValidationError("One or more timestamps cannot be parsed")

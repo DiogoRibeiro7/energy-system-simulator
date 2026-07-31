@@ -10,13 +10,20 @@ from energy_system_simulator.config import ModelConfig
 from energy_system_simulator.constants import DEFAULT_NUMERICAL_POLICY
 from energy_system_simulator.data import load_input_data
 from energy_system_simulator.dispatch import (
+    DispatchResult,
     FormulationStatistics,
     TerminalCommitmentState,
     UnitCommitment,
 )
 from energy_system_simulator.exceptions import OptimisationError
-from energy_system_simulator.generation import SolarPlant, WindFarm
-from energy_system_simulator.network import DistributionNetwork
+from energy_system_simulator.network import DistributionDemand, DistributionNetwork
+from energy_system_simulator.simulation.assets import (
+    AssetRegistry,
+    AssetTimeSeries,
+    FloatArray,
+    RenewableAvailability,
+    allocate_renewable_dispatch,
+)
 
 
 @dataclass(frozen=True)
@@ -24,6 +31,7 @@ class SimulationResult:
     """Complete simulation output and aggregate metrics."""
 
     timeseries: pd.DataFrame
+    asset_timeseries: pd.DataFrame
     summary: dict[str, Any]
     objective_eur: float
     solver_message: str
@@ -49,31 +57,15 @@ class SimulationEngine:
 
     def run(self) -> SimulationResult:
         """Execute the configured simulation."""
-        data = load_input_data(
-            self.config.paths.input_csv,
-            self.config.simulation.time_step_hours,
-        )
-        solar = SolarPlant(self.config.solar).output_mw(
-            data["irradiance_w_m2"].to_numpy(),
-            data["ambient_temperature_c"].to_numpy(),
-        )
-        wind = WindFarm(self.config.wind).output_mw(data["wind_speed_m_s"].to_numpy())
-        renewable = solar + wind
-
+        data = self._load_data()
+        registry = self._resolve_assets()
+        renewable = self._calculate_renewable_availability(registry, data)
+        demand = self._calculate_demand(registry, data)
         network = DistributionNetwork(self.config.network)
-        distribution = network.prepare_demand(data["demand_mw"].to_numpy())
-        dispatch = UnitCommitment(self.config).solve(
-            renewable,
-            distribution.gross_demand_mw,
-        )
-
-        frame = dispatch.frame.copy()
-        frame.insert(0, "timestamp", data["timestamp"].to_numpy())
-        frame.insert(1, "end_user_demand_mw", distribution.end_user_demand_mw)
-        frame.insert(2, "deliverable_demand_mw", distribution.deliverable_demand_mw)
-        frame.insert(3, "network_capacity_shed_mw", distribution.network_capacity_shed_mw)
-        frame.insert(4, "solar_available_mw", solar)
-        frame.insert(5, "wind_available_mw", wind)
+        distribution = network.prepare_demand(demand)
+        dispatch = self._solve_dispatch(renewable, distribution.gross_demand_mw)
+        frame = self._assemble_timeseries(data, renewable, distribution, dispatch)
+        asset_timeseries = self._asset_timeseries(data, renewable, frame)
 
         efficiency = network.efficiency
         frame["dispatch_load_shed_mw"] = efficiency * frame["source_load_shed_mw"]
@@ -113,6 +105,7 @@ class SimulationEngine:
             raise OptimisationError("Total cost components do not reconcile with objective")
         summary = self._summary(
             frame,
+            asset_timeseries,
             total_objective_eur,
             cost_components,
             dispatch.terminal_commitment_state,
@@ -120,6 +113,7 @@ class SimulationEngine:
         )
         return SimulationResult(
             timeseries=frame,
+            asset_timeseries=asset_timeseries.table,
             summary=summary,
             objective_eur=total_objective_eur,
             solver_message=dispatch.solver_message,
@@ -141,9 +135,85 @@ class SimulationEngine:
             numerical_diagnostics=dispatch.numerical_diagnostics,
         )
 
+    def _load_data(self) -> pd.DataFrame:
+        return load_input_data(
+            self.config.paths.input_csv,
+            self.config.simulation.time_step_hours,
+        )
+
+    def _resolve_assets(self) -> AssetRegistry:
+        return AssetRegistry.from_config(self.config)
+
+    def _calculate_renewable_availability(
+        self,
+        registry: AssetRegistry,
+        data: pd.DataFrame,
+    ) -> RenewableAvailability:
+        return registry.renewable_availability(data)
+
+    def _calculate_demand(self, registry: AssetRegistry, data: pd.DataFrame) -> FloatArray:
+        return registry.demand_mw(data)
+
+    def _solve_dispatch(
+        self,
+        renewable: RenewableAvailability,
+        gross_demand_mw: FloatArray,
+    ) -> DispatchResult:
+        return UnitCommitment(self.config).solve(
+            renewable.aggregate_mw,
+            gross_demand_mw,
+        )
+
+    def _assemble_timeseries(
+        self,
+        data: pd.DataFrame,
+        renewable: RenewableAvailability,
+        distribution: DistributionDemand,
+        dispatch: DispatchResult,
+    ) -> pd.DataFrame:
+        frame = dispatch.frame.copy()
+        frame.insert(0, "timestamp", data["timestamp"].to_numpy())
+        frame.insert(1, "end_user_demand_mw", distribution.end_user_demand_mw)
+        frame.insert(2, "deliverable_demand_mw", distribution.deliverable_demand_mw)
+        frame.insert(3, "network_capacity_shed_mw", distribution.network_capacity_shed_mw)
+        for asset_id, values in renewable.by_asset_mw.items():
+            frame[f"renewable_available_mw__{asset_id}"] = values
+        frame["solar_available_mw"] = self._renewable_kind_available(renewable, "solar")
+        frame["wind_available_mw"] = self._renewable_kind_available(renewable, "wind")
+        return frame
+
+    def _asset_timeseries(
+        self,
+        data: pd.DataFrame,
+        renewable: RenewableAvailability,
+        frame: pd.DataFrame,
+    ) -> AssetTimeSeries:
+        dispatch = allocate_renewable_dispatch(
+            data["timestamp"],
+            renewable.by_asset_mw,
+            renewable.aggregate_mw,
+            frame["renewable_used_mw"].to_numpy(dtype="float64"),
+        )
+        return renewable.asset_table.append(dispatch)
+
+    def _renewable_kind_available(
+        self,
+        renewable: RenewableAvailability,
+        kind: str,
+    ) -> pd.Series:
+        values = [
+            renewable.by_asset_mw[asset.id]
+            for asset in self.config.portfolio.renewable_generators
+            if asset.kind == kind
+        ]
+        if not values:
+            return pd.Series([0.0] * len(renewable.aggregate_mw), dtype="float64")
+        return pd.Series(pd.DataFrame(values).sum(axis=0).to_numpy(), dtype="float64")
+
     def _summary(
         self,
         frame: pd.DataFrame,
+        asset_timeseries: AssetTimeSeries,
         objective_eur: float,
         cost_components: dict[str, float],
         terminal_commitment_state: TerminalCommitmentState,
@@ -180,6 +250,7 @@ class SimulationEngine:
             "renewable_available_mwh": energy("renewable_available_mw"),
             "renewable_used_mwh": renewable_used_mwh,
             "renewable_curtailed_mwh": energy("renewable_curtailed_mw"),
+            "renewable_assets": self._renewable_asset_summary(asset_timeseries),
             "renewable_share_of_primary_generation": (
                 renewable_used_mwh / primary_source_generation_mwh
                 if primary_source_generation_mwh > 0.0
@@ -252,6 +323,24 @@ class SimulationEngine:
                 },
             },
         }
+
+    def _renewable_asset_summary(self, asset_timeseries: AssetTimeSeries) -> dict[str, Any]:
+        dt = self.config.simulation.time_step_hours
+        if asset_timeseries.table.empty:
+            return {}
+        pivot = (
+            asset_timeseries.table.groupby(["asset_id", "variable"], sort=True)["value"]
+            .sum()
+            .unstack(fill_value=0)
+        )
+        result: dict[str, Any] = {}
+        for asset_id, row in pivot.iterrows():
+            result[str(asset_id)] = {
+                "available_mwh": float(row.get("available_mw", 0.0) * dt),
+                "used_mwh": float(row.get("used_mw", 0.0) * dt),
+                "curtailed_mwh": float(row.get("curtailed_mw", 0.0) * dt),
+            }
+        return result
 
     def _add_energy_reconciliation(self, frame: pd.DataFrame) -> None:
         dt = self.config.simulation.time_step_hours

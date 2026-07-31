@@ -17,6 +17,7 @@ def test_write_outputs_includes_machine_readable_manifest(tmp_path: Path) -> Non
     write_outputs(result, tmp_path, config=config, config_path=config_path, create_plots=False)
 
     manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
+    assert (tmp_path / "asset_timeseries.csv").is_file()
     assert manifest["package_version"] == "0.1.1"
     assert len(manifest["input_file_sha256"]) == 64
     assert len(manifest["configuration_sha256"]) == 64

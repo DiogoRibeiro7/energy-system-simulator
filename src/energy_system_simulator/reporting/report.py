@@ -31,6 +31,7 @@ def write_outputs(
     output = Path(output_directory)
     output.mkdir(parents=True, exist_ok=True)
     result.timeseries.to_csv(output / "timeseries.csv", index=False)
+    result.asset_timeseries.to_csv(output / "asset_timeseries.csv", index=False)
     (output / "summary.json").write_text(
         json.dumps(result.summary, indent=2, sort_keys=True),
         encoding="utf-8",

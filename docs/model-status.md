@@ -7,8 +7,9 @@ keeps the current aggregate optimisation formulation while fixing packaging
 metadata, finite-horizon commitment semantics, solver-status reporting,
 transition-ramp validation, configuration strictness, numerical policy, and DC
 power-flow diagnostics. The `Unreleased` line adds typed portfolio
-configuration that resolves to this aggregate formulation until later
-multi-asset formulation work is implemented.
+configuration and asset-level renewable availability reporting that resolves to
+this aggregate formulation until later multi-asset commitment work is
+implemented.
 
 ## Release Decision
 

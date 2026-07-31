@@ -11,6 +11,8 @@ and this project follows semantic versioning.
 
 - Typed portfolio configuration schema, legacy config migration, canonical
   resolved configuration serialization, and portfolio validation fixtures.
+- Multi-asset renewable availability orchestration with tidy asset time-series
+  output and asset-level renewable reconciliation.
 
 ## [0.1.1] - 2026-07-31
 

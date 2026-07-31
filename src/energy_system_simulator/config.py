@@ -413,11 +413,7 @@ def _id_at(section: Mapping[str, Any], key: str, path: str) -> str:
 
 
 def _input_key_at(section: Mapping[str, Any], key: str, path: str) -> str:
-    value = _string_at(section, key, path)
-    if value not in INPUT_DATA_KEYS:
-        allowed = ", ".join(sorted(INPUT_DATA_KEYS))
-        raise ConfigurationError(f"{_field_path(path, key)} must be one of: {allowed}")
-    return value
+    return _string_at(section, key, path)
 
 
 def _optional_input_key_at(
@@ -1301,10 +1297,6 @@ def _validate_schema_v2_assets(portfolio: PortfolioConfig) -> None:
 
 
 def _validate_solar_generator_at(generator: RenewableGeneratorConfig, path: str) -> None:
-    if generator.time_series_key != "irradiance_w_m2":
-        raise ConfigurationError(f"{path}.time_series_key must be irradiance_w_m2")
-    if generator.ambient_temperature_key != "ambient_temperature_c":
-        raise ConfigurationError(f"{path}.ambient_temperature_key must be ambient_temperature_c")
     _check_fraction_at(
         f"{path}.performance_ratio",
         _required_float(generator.performance_ratio, path),
@@ -1317,8 +1309,6 @@ def _validate_solar_generator_at(generator: RenewableGeneratorConfig, path: str)
 
 
 def _validate_wind_generator_at(generator: RenewableGeneratorConfig, path: str) -> None:
-    if generator.time_series_key != "wind_speed_m_s":
-        raise ConfigurationError(f"{path}.time_series_key must be wind_speed_m_s")
     cut_in = _required_float(generator.cut_in_speed_m_s, path)
     rated = _required_float(generator.rated_speed_m_s, path)
     cut_out = _required_float(generator.cut_out_speed_m_s, path)

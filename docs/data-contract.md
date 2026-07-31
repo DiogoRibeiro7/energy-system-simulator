@@ -10,6 +10,10 @@ The simulator reads a CSV table with one row per interval.
 - `ambient_temperature_c`: finite.
 - `wind_speed_m_s`: finite and non-negative.
 
+Portfolio configurations may reference additional numeric weather or demand
+columns through asset `time_series_key` fields. Extra columns are preserved by
+the loader and validated when a configured asset reads them.
+
 ## Temporal rules
 
 - Intervals must be equally spaced.

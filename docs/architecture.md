@@ -8,15 +8,18 @@ CSV weather and demand
         ▼
 Input validation
         │
-        ├── Solar model
-        ├── Wind model
-        └── Distribution preprocessing
+        ▼
+AssetRegistry resolves portfolio assets
+        │
+        ├── renewable availability by asset
+        ├── demand by configured column
+        └── aggregate distribution preprocessing
                   │
                   ▼
           MILP unit commitment
                   │
                   ▼
-          Results and diagnostics
+          Aggregate and asset-level results
 ```
 
 ## Design principles
@@ -29,6 +32,8 @@ Input validation
 
 ## Extension points
 
+- Additional renewable assets are resolved through the asset registry without
+  changing the dispatch formulation.
 - Multiple thermal units can be added by introducing a generator index to the MILP.
 - Hydro reservoirs can use intertemporal water-balance constraints.
 - Zonal or nodal networks can replace the aggregated distribution representation.

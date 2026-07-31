@@ -30,10 +30,13 @@ storage, imports, or source-side load shedding.
 
 ## Renewable generation
 
-Available renewable production is the sum of solar and wind availability:
+Let \(K^{\mathrm{ren}}\) be the configured renewable asset set. Each asset \(k\)
+has exogenous availability \(a_{k,t}\) from its configured weather columns.
+Available renewable production passed to the current aggregate dispatch
+formulation is:
 
 \[
-a_t^{\mathrm{ren}}=a_t^{\mathrm{solar}}+a_t^{\mathrm{wind}}.
+a_t^{\mathrm{ren}}=\sum_{k\in K^{\mathrm{ren}}} a_{k,t}.
 \]
 
 The used renewable variable satisfies
@@ -42,7 +45,17 @@ The used renewable variable satisfies
 0\le r_t\le a_t^{\mathrm{ren}}.
 \]
 
-Curtailment is \(a_t^{\mathrm{ren}}-r_t\).
+Aggregate curtailment is \(a_t^{\mathrm{ren}}-r_t\). Until renewable dispatch is
+indexed in the optimisation, asset-level used output is reported by availability
+share:
+
+\[
+r_{k,t}=r_t\frac{a_{k,t}}{a_t^{\mathrm{ren}}}
+\]
+
+when \(a_t^{\mathrm{ren}}>0\), and zero otherwise. Asset-level curtailment is
+\(a_{k,t}-r_{k,t}\). These reported asset quantities reconcile exactly to the
+aggregate dispatch variables.
 
 ## Power balance
 

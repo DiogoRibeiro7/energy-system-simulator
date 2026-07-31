@@ -67,6 +67,7 @@ def test_cli_simulate_writes_outputs_without_plots(tmp_path: Path, capsys) -> No
     output = tmp_path / "outputs"
     assert "Simulation complete" in captured.out
     assert (output / "timeseries.csv").is_file()
+    assert (output / "asset_timeseries.csv").is_file()
     assert (output / "summary.json").is_file()
     assert (output / "manifest.json").is_file()
     assert not (output / "dispatch.png").exists()

@@ -18,10 +18,10 @@ resolved into the same typed portfolio model used by newer configurations.
 - `imports`
 - `demand`
 
-The current optimisation engine still solves the aggregate model using the first
-compatible thermal, storage, import, solar, and wind resources. The full
-multi-asset optimisation formulation is reserved for the portfolio architecture
-work.
+The current optimisation engine evaluates multiple renewable assets by ID and
+reports their availability, used output, and curtailment. Thermal, storage, and
+import resources are still projected to the first compatible aggregate resource
+until the multi-unit formulation is introduced.
 
 ## Validation Approach
 
@@ -50,16 +50,20 @@ must reference a declared zone. Line endpoints must reference declared buses.
 
 ## Time-Series Keys
 
-Time-series references must use columns from the input data contract:
+Time-series references are non-empty column names. The default example uses the
+base input data contract columns:
 
 - `demand_mw`
 - `irradiance_w_m2`
 - `ambient_temperature_c`
 - `wind_speed_m_s`
 
-Solar generators require `time_series_key: irradiance_w_m2` and an ambient
-temperature key. Wind generators require `time_series_key: wind_speed_m_s`.
-Demand entries use `time_series_key: demand_mw`.
+Solar generators default to `time_series_key: irradiance_w_m2` and
+`ambient_temperature_key: ambient_temperature_c`, but portfolio files may point
+different solar assets at different irradiance and ambient-temperature columns.
+Wind generators default to `time_series_key: wind_speed_m_s`. Demand entries
+default to `time_series_key: demand_mw`. Referenced columns are validated after
+the input CSV is loaded.
 
 ## Migration
 
