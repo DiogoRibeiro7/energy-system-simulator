@@ -147,15 +147,48 @@ thermal_generators:
 storage_units:
   - id: south-battery
     bus_id: south-hub
+    technology: battery
     energy_capacity_mwh: 240.0
     power_capacity_mw: 80.0
+    charge_power_capacity_mw: 80.0
+    discharge_power_capacity_mw: 80.0
     minimum_soc_mwh: 24.0
     maximum_soc_mwh: 240.0
     initial_soc_mwh: 120.0
     charge_efficiency: 0.94
     discharge_efficiency: 0.94
+    self_discharge_rate_per_hour: 0.0002
+    minimum_charge_mw: 0.0
+    minimum_discharge_mw: 0.0
     throughput_cost_eur_per_mwh: 2.0
     minimum_final_soc_mwh: 100.0
+    terminal_soc_mode: minimum
+    degradation_bands:
+      - id: shallow
+        capacity_mwh: 120.0
+        cost_eur_per_mwh: 1.0
+      - id: deep
+        capacity_mwh: 120.0
+        cost_eur_per_mwh: 4.0
+  - id: north-pumped-storage
+    bus_id: north-hub
+    technology: pumped_storage
+    energy_capacity_mwh: 900.0
+    power_capacity_mw: 120.0
+    charge_power_capacity_mw: 100.0
+    discharge_power_capacity_mw: 120.0
+    minimum_soc_mwh: 90.0
+    maximum_soc_mwh: 900.0
+    initial_soc_mwh: 450.0
+    charge_efficiency: 0.88
+    discharge_efficiency: 0.9
+    self_discharge_rate_per_hour: 0.0
+    minimum_charge_mw: 0.0
+    minimum_discharge_mw: 0.0
+    charge_ramp_mw_per_hour: 60.0
+    discharge_ramp_mw_per_hour: 80.0
+    throughput_cost_eur_per_mwh: 0.8
+    minimum_final_soc_mwh: 400.0
     terminal_soc_mode: minimum
 
 hydro_units: []

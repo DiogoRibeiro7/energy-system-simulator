@@ -18,6 +18,9 @@ and this project follows semantic versioning.
 - Typed fuel definitions, piecewise heat-rate segment variables, fuel-price
   time series, startup categories, fuel-input accounting, and non-CO2 thermal
   emissions diagnostics.
+- Indexed storage portfolio dispatch for batteries and pumped storage,
+  including exact operating modes, self-discharge, per-asset terminal SOC,
+  availability factors, ramp limits, and degradation accounting.
 
 ## [0.1.1] - 2026-07-31
 

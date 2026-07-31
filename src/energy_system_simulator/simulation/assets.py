@@ -152,11 +152,28 @@ class IntertemporalAsset:
     asset_id: str
     bus_id: str
     config: BatteryConfig
+    availability_factor_key: str | None = None
     role: AssetRole = "intertemporal"
 
     @classmethod
     def from_config(cls, config: StorageUnitConfig) -> IntertemporalAsset:
-        return cls(asset_id=config.id, bus_id=config.bus_id, config=config.config)
+        return cls(
+            asset_id=config.id,
+            bus_id=config.bus_id,
+            config=config.config,
+            availability_factor_key=config.config.availability_factor_key,
+        )
+
+    def availability_factor(self, data: pd.DataFrame) -> FloatArray | None:
+        if self.availability_factor_key is None:
+            return None
+        values = _column(data, self.availability_factor_key, self.asset_id, nonnegative=True)
+        if np.any(values > 1.0):
+            raise DataValidationError(
+                f"Input column {self.availability_factor_key!r} for asset "
+                f"{self.asset_id!r} must be in [0, 1]"
+            )
+        return values
 
 
 @dataclass(frozen=True)
@@ -312,6 +329,14 @@ class AssetRegistry:
     def thermal_availability_factors(self, data: pd.DataFrame) -> dict[str, FloatArray]:
         factors: dict[str, FloatArray] = {}
         for asset in self.dispatchable_assets:
+            factor = asset.availability_factor(data)
+            if factor is not None:
+                factors[asset.asset_id] = factor
+        return factors
+
+    def storage_availability_factors(self, data: pd.DataFrame) -> dict[str, FloatArray]:
+        factors: dict[str, FloatArray] = {}
+        for asset in self.intertemporal_assets:
             factor = asset.availability_factor(data)
             if factor is not None:
                 factors[asset.asset_id] = factor

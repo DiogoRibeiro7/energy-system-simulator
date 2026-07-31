@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 
-from energy_system_simulator.config import ModelConfig
+from energy_system_simulator.config import ModelConfig, StorageUnitConfig
 from energy_system_simulator.constants import DEFAULT_NUMERICAL_POLICY
 from energy_system_simulator.data import load_input_data
 from energy_system_simulator.dispatch import (
@@ -174,6 +174,7 @@ class SimulationEngine:
             gross_demand_mw,
             thermal_availability_factors=registry.thermal_availability_factors(data),
             fuel_price_series=self._fuel_price_series(data),
+            storage_availability_factors=registry.storage_availability_factors(data),
         )
 
     def _fuel_price_series(self, data: pd.DataFrame) -> dict[str, FloatArray]:
@@ -230,8 +231,10 @@ class SimulationEngine:
             renewable.aggregate_mw,
             frame["renewable_used_mw"].to_numpy(dtype="float64"),
         )
-        return renewable.asset_table.append(dispatch).append(
-            self._thermal_asset_timeseries(data["timestamp"], frame)
+        return (
+            renewable.asset_table.append(dispatch)
+            .append(self._thermal_asset_timeseries(data["timestamp"], frame))
+            .append(self._storage_asset_timeseries(data["timestamp"], frame))
         )
 
     def _thermal_asset_timeseries(
@@ -279,6 +282,46 @@ class SimulationEngine:
                         {
                             "timestamp": timestamps.to_numpy(),
                             "asset_id": generator.id,
+                            "variable": variable,
+                            "value": frame[column].to_numpy(),
+                            "unit": unit,
+                        }
+                    )
+                )
+        if not pieces:
+            return AssetTimeSeries.empty()
+        return AssetTimeSeries(pd.concat(pieces, ignore_index=True))
+
+    def _storage_asset_timeseries(
+        self,
+        timestamps: pd.Series,
+        frame: pd.DataFrame,
+    ) -> AssetTimeSeries:
+        pieces: list[pd.DataFrame] = []
+        variable_map = {
+            "storage_charge_mw": ("charge_mw", "MW"),
+            "storage_discharge_mw": ("discharge_mw", "MW"),
+            "storage_charge_mode": ("charge_mode", "binary"),
+            "storage_discharge_mode": ("discharge_mode", "binary"),
+            "storage_soc_mwh": ("stored_energy_mwh", "MWh"),
+            "storage_throughput_mwh": ("throughput_mwh", "MWh"),
+            "storage_throughput_cost_eur": ("throughput_cost_eur", "EUR"),
+            "storage_degradation_cost_eur": ("degradation_cost_eur", "EUR"),
+            "storage_energy_residual_mwh": ("energy_residual_mwh", "MWh"),
+            "storage_round_trip_losses_mwh": ("round_trip_losses_mwh", "MWh"),
+            "storage_depth_of_discharge": ("depth_of_discharge", "fraction"),
+            "storage_equivalent_full_cycles": ("equivalent_full_cycles", "cycles"),
+        }
+        for storage in self._storage_units_for_reporting():
+            for prefix, (variable, unit) in variable_map.items():
+                column = f"{prefix}__{storage.id}"
+                if column not in frame:
+                    continue
+                pieces.append(
+                    pd.DataFrame(
+                        {
+                            "timestamp": timestamps.to_numpy(),
+                            "asset_id": storage.id,
                             "variable": variable,
                             "value": frame[column].to_numpy(),
                             "unit": unit,
@@ -391,6 +434,7 @@ class SimulationEngine:
             "battery_charge_mwh": energy("battery_charge_mw"),
             "battery_discharge_mwh": energy("battery_discharge_mw"),
             "final_battery_soc_mwh": float(frame["battery_soc_mwh"].iloc[-1]),
+            "storage_assets": self._storage_asset_summary(frame),
             "network_losses_mwh": energy("network_losses_mw"),
             "thermal_emissions_tonnes": float(frame["thermal_emissions_tonnes"].sum()),
             "import_emissions_tonnes": float(frame["import_emissions_tonnes"].sum()),
@@ -414,6 +458,7 @@ class SimulationEngine:
                 ),
                 "total_network_losses_mwh": energy("network_losses_mw"),
                 "total_unserved_energy_mwh": energy("total_load_shed_mw"),
+                "storage_assets": self._storage_reconciliation_summary(frame),
                 "residual_summaries": {
                     "source_balance": self._residual_summary(
                         frame,
@@ -522,9 +567,73 @@ class SimulationEngine:
             / total_generation,
         }
 
+    def _storage_asset_summary(self, frame: pd.DataFrame) -> dict[str, Any]:
+        dt = self.config.simulation.time_step_hours
+        result: dict[str, Any] = {}
+        for storage in self._storage_units_for_reporting():
+            battery = storage.config
+            usable_energy = battery.maximum_soc_mwh - battery.minimum_soc_mwh
+            throughput = float(frame[f"storage_throughput_mwh__{storage.id}"].sum())
+            result[storage.id] = {
+                "technology": battery.technology,
+                "charged_mwh": float(frame[f"storage_charged_mwh__{storage.id}"].sum()),
+                "discharged_mwh": float(frame[f"storage_discharged_mwh__{storage.id}"].sum()),
+                "throughput_mwh": throughput,
+                "equivalent_full_cycles": (
+                    throughput / (2.0 * usable_energy) if usable_energy > 0.0 else 0.0
+                ),
+                "round_trip_losses_mwh": float(
+                    frame[f"storage_round_trip_losses_mwh__{storage.id}"].sum()
+                ),
+                "average_depth_of_discharge": float(
+                    frame[f"storage_depth_of_discharge__{storage.id}"].mean()
+                ),
+                "maximum_depth_of_discharge": float(
+                    frame[f"storage_depth_of_discharge__{storage.id}"].max()
+                ),
+                "time_at_min_soc_hours": float(
+                    frame[f"storage_at_min_soc__{storage.id}"].sum() * dt
+                ),
+                "time_at_max_soc_hours": float(
+                    frame[f"storage_at_max_soc__{storage.id}"].sum() * dt
+                ),
+                "throughput_cost_eur": float(
+                    frame[f"storage_throughput_cost_eur__{storage.id}"].sum()
+                ),
+                "degradation_cost_eur": float(
+                    frame[f"storage_degradation_cost_eur__{storage.id}"].sum()
+                ),
+                "max_abs_energy_residual_mwh": float(
+                    frame[f"storage_energy_residual_mwh__{storage.id}"].abs().max()
+                ),
+            }
+        return result
+
+    def _storage_reconciliation_summary(self, frame: pd.DataFrame) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for storage in self._storage_units_for_reporting():
+            residual_column = f"storage_energy_residual_mwh__{storage.id}"
+            result[storage.id] = self._residual_summary(
+                frame,
+                f"storage_energy[{storage.id}]",
+                residual_column,
+                (
+                    f"storage_soc_mwh__{storage.id}",
+                    f"storage_charge_mw__{storage.id}",
+                    f"storage_discharge_mw__{storage.id}",
+                ),
+            )
+        return result
+
+    def _storage_units_for_reporting(self) -> tuple[StorageUnitConfig, ...]:
+        units = self.config.portfolio.storage_units
+        if len(units) == 1:
+            unit = units[0]
+            return (StorageUnitConfig(id=unit.id, bus_id=unit.bus_id, config=self.config.battery),)
+        return units
+
     def _add_energy_reconciliation(self, frame: pd.DataFrame) -> None:
         dt = self.config.simulation.time_step_hours
-        battery = self.config.battery
         source_left = (
             frame["renewable_used_mw"]
             + frame["thermal_output_mw"]
@@ -537,14 +646,31 @@ class SimulationEngine:
         frame["delivered_demand_balance_residual_mw"] = (
             frame["served_demand_mw"] + frame["total_load_shed_mw"] - frame["end_user_demand_mw"]
         )
-        previous_soc = frame["battery_soc_mwh"].shift(1)
-        previous_soc.iloc[0] = battery.initial_soc_mwh
-        frame["battery_energy_change_mwh"] = frame["battery_soc_mwh"] - previous_soc
-        expected_change = (
-            battery.charge_efficiency * frame["battery_charge_mw"] * dt
-            - frame["battery_discharge_mw"] * dt / battery.discharge_efficiency
+        storage_units = self._storage_units_for_reporting()
+        storage_residual_columns: list[str] = []
+        storage_change_columns: list[str] = []
+        for storage in storage_units:
+            battery = storage.config
+            soc = frame[f"storage_soc_mwh__{storage.id}"]
+            previous_soc = soc.shift(1)
+            previous_soc.iloc[0] = battery.initial_soc_mwh
+            retention = (1.0 - battery.self_discharge_rate_per_hour) ** dt
+            frame[f"storage_energy_change_mwh__{storage.id}"] = soc - previous_soc
+            expected_soc = (
+                retention * previous_soc
+                + battery.charge_efficiency * frame[f"storage_charge_mw__{storage.id}"] * dt
+                - frame[f"storage_discharge_mw__{storage.id}"] * dt / battery.discharge_efficiency
+            )
+            residual = f"storage_energy_residual_mwh__{storage.id}"
+            frame[residual] = soc - expected_soc
+            storage_residual_columns.append(residual)
+            storage_change_columns.append(f"storage_energy_change_mwh__{storage.id}")
+        frame["battery_energy_change_mwh"] = (
+            frame[storage_change_columns].sum(axis=1) if storage_change_columns else 0.0
         )
-        frame["battery_energy_residual_mwh"] = frame["battery_energy_change_mwh"] - expected_change
+        frame["battery_energy_residual_mwh"] = (
+            frame[storage_residual_columns].sum(axis=1) if storage_residual_columns else 0.0
+        )
         frame["curtailment_residual_mw"] = (
             frame["renewable_available_mw"]
             - frame["renewable_used_mw"]

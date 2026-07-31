@@ -12,7 +12,9 @@ The model is designed for research, teaching, and policy experiments. It uses ex
   start-up and shutdown decisions, minimum up/down times, terminal commitment
   policy, fuel definitions, piecewise heat-rate segments, startup categories,
   fuel cost, and emissions.
-- Battery charging, discharging, state-of-charge limits, efficiency losses, and throughput cost.
+- Storage portfolio dispatch for batteries and pumped storage with exact
+  charge/discharge modes, state-of-charge limits, efficiency losses,
+  self-discharge, terminal policies, throughput cost, and degradation metrics.
 - Aggregated distribution losses and transfer-capacity constraints.
 - Optional electricity imports.
 - Renewable curtailment and involuntary load shedding.
@@ -137,7 +139,7 @@ make stress
 |---|---|
 | Dispatch | Multi-unit thermal commitment with startup, shutdown, ramp, minimum-duration, terminal policy, must-run, availability-factor, fuel, heat-rate segment, and startup-category constraints |
 | Renewables | Multiple configured solar and wind assets with asset-level availability, used output, and curtailment reporting |
-| Storage | One battery with exact charge/discharge exclusivity and configurable terminal SOC |
+| Storage | Multiple batteries and pumped-storage assets with exact charge/discharge modes, independent power limits, self-discharge, terminal SOC policies, and degradation accounting |
 | Network | Aggregate delivery losses and transfer-capacity shedding in dispatch |
 | DC flow | Standalone fixed-injection DC power flow with overload diagnostics |
 | Outputs | Aggregate CSV time series, tidy renewable and thermal asset time series, fuel and emissions accounting, JSON summary, manifest, plots, benchmark, baseline, and stress comparison table |

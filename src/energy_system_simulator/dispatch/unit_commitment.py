@@ -11,7 +11,7 @@ import pandas as pd
 from scipy.optimize import Bounds, LinearConstraint
 from scipy.sparse import coo_matrix
 
-from energy_system_simulator.config import FuelConfig, ModelConfig, ThermalConfig
+from energy_system_simulator.config import BatteryConfig, FuelConfig, ModelConfig, ThermalConfig
 from energy_system_simulator.constants import DEFAULT_NUMERICAL_POLICY
 from energy_system_simulator.dispatch.solver import (
     absolute_gap,
@@ -27,13 +27,17 @@ FloatArray = npt.NDArray[np.float64]
 
 SYSTEM_BLOCKS = (
     "renewable_used_mw",
-    "battery_charge_mw",
-    "battery_discharge_mw",
-    "battery_charge_mode",
-    "battery_soc_mwh",
     "imports_mw",
     "source_load_shed_mw",
 )
+STORAGE_BLOCKS = (
+    "storage_charge_mw",
+    "storage_discharge_mw",
+    "storage_charge_mode",
+    "storage_discharge_mode",
+    "storage_soc_mwh",
+)
+STORAGE_DEGRADATION_BLOCK = "storage_degradation_throughput_mwh"
 THERMAL_BLOCKS = (
     "thermal_output_mw",
     "thermal_on",
@@ -50,6 +54,26 @@ def _segment_asset_id(unit_id: str, segment_id: str) -> str:
 
 def _startup_category_asset_id(unit_id: str, category_id: str) -> str:
     return f"{unit_id}::{category_id}"
+
+
+def _storage_degradation_asset_id(unit_id: str, band_id: str) -> str:
+    return f"{unit_id}::{band_id}"
+
+
+def _storage_charge_capacity(config: BatteryConfig) -> float:
+    return (
+        config.charge_power_capacity_mw
+        if config.charge_power_capacity_mw is not None
+        else config.power_capacity_mw
+    )
+
+
+def _storage_discharge_capacity(config: BatteryConfig) -> float:
+    return (
+        config.discharge_power_capacity_mw
+        if config.discharge_power_capacity_mw is not None
+        else config.power_capacity_mw
+    )
 
 
 @dataclass(frozen=True)
@@ -78,6 +102,14 @@ class ThermalUnit:
 
 
 @dataclass(frozen=True)
+class StorageUnit:
+    """Resolved storage asset used by the indexed formulation."""
+
+    id: str
+    config: BatteryConfig
+
+
+@dataclass(frozen=True)
 class FormulationProblem:
     """Complete linear mixed-integer problem and source input arrays."""
 
@@ -88,7 +120,9 @@ class FormulationProblem:
     renewable_available_mw: FloatArray
     gross_demand_mw: FloatArray
     thermal_units: tuple[ThermalUnit, ...]
+    storage_units: tuple[StorageUnit, ...]
     thermal_capacity_available_mw: dict[str, FloatArray]
+    storage_availability_factor: dict[str, FloatArray]
     fuel_prices_eur_per_mwh_thermal: dict[str, FloatArray]
     registry: VariableRegistry
     statistics: FormulationStatistics
@@ -184,6 +218,7 @@ class UnitCommitment:
         gross_demand_mw: npt.ArrayLike,
         thermal_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
         fuel_price_series: Mapping[str, npt.ArrayLike] | None = None,
+        storage_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
     ) -> FormulationProblem:
         """Build the MILP formulation without solving it."""
         renewable = np.asarray(renewable_available_mw, dtype=np.float64)
@@ -201,19 +236,33 @@ class UnitCommitment:
 
         periods = renewable.size
         thermal_units = self._thermal_units()
+        storage_units = self._storage_units()
         thermal_capacity = self._thermal_capacity_available(
             thermal_units,
             periods,
             thermal_availability_factors or {},
         )
+        storage_availability = self._storage_availability_factors(
+            storage_units,
+            periods,
+            storage_availability_factors or {},
+        )
         fuel_prices = self._fuel_prices(periods, fuel_price_series or {})
-        registry = self._variable_registry(periods, thermal_units)
-        objective = self._objective(registry, renewable, thermal_units, fuel_prices)
-        bounds, integrality = self._bounds(registry, renewable, demand, thermal_units)
+        registry = self._variable_registry(periods, thermal_units, storage_units)
+        objective = self._objective(registry, renewable, thermal_units, storage_units, fuel_prices)
+        bounds, integrality = self._bounds(
+            registry,
+            renewable,
+            demand,
+            thermal_units,
+            storage_units,
+            storage_availability,
+        )
         constraints, component_counts = self._constraints(
             registry,
             demand,
             thermal_units,
+            storage_units,
             thermal_capacity,
         )
 
@@ -235,7 +284,9 @@ class UnitCommitment:
             renewable_available_mw=renewable,
             gross_demand_mw=demand,
             thermal_units=thermal_units,
+            storage_units=storage_units,
             thermal_capacity_available_mw=thermal_capacity,
+            storage_availability_factor=storage_availability,
             fuel_prices_eur_per_mwh_thermal=fuel_prices,
             registry=registry,
             statistics=statistics,
@@ -247,6 +298,7 @@ class UnitCommitment:
         gross_demand_mw: npt.ArrayLike,
         thermal_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
         fuel_price_series: Mapping[str, npt.ArrayLike] | None = None,
+        storage_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
     ) -> DispatchResult:
         """Solve unit commitment over the full input horizon."""
         problem = self.build_formulation(
@@ -254,6 +306,7 @@ class UnitCommitment:
             gross_demand_mw,
             thermal_availability_factors,
             fuel_price_series,
+            storage_availability_factors,
         )
         return self.solve_formulation(problem)
 
@@ -279,16 +332,22 @@ class UnitCommitment:
             )
 
         frame = self._solution_frame(problem, solver.solution)
-        integrality_max_deviation = self._coerce_binary_columns(frame, problem.thermal_units)
+        integrality_max_deviation = self._coerce_binary_columns(
+            frame,
+            problem.thermal_units,
+            problem.storage_units,
+        )
         frame["renewable_available_mw"] = problem.renewable_available_mw
         frame["renewable_curtailed_mw"] = (
             problem.renewable_available_mw - frame["renewable_used_mw"]
         )
         frame["gross_demand_mw"] = problem.gross_demand_mw
         self._add_thermal_accounting_columns(frame, problem.thermal_units, problem)
+        self._add_storage_accounting_columns(frame, problem.storage_units)
         nonnegative_cleanup_max_abs = self._clip_nonnegative_solver_noise(
             frame,
             problem.thermal_units,
+            problem.storage_units,
         )
 
         constant_curtailment_cost = (
@@ -301,7 +360,7 @@ class UnitCommitment:
             if solver.objective_value is not None
             else None
         )
-        cost_components = self._cost_components(frame, problem.thermal_units)
+        cost_components = self._cost_components(frame, problem.thermal_units, problem.storage_units)
         objective_eur = float(sum(cost_components.values()))
         if (
             primal_objective_eur is not None
@@ -370,6 +429,13 @@ class UnitCommitment:
             for unit in configured
         )
 
+    def _storage_units(self) -> tuple[StorageUnit, ...]:
+        configured = self.config.portfolio.storage_units
+        if len(configured) == 1:
+            unit = configured[0]
+            return (StorageUnit(id=unit.id, config=self.config.battery),)
+        return tuple(StorageUnit(id=unit.id, config=unit.config) for unit in configured)
+
     def _fuels_by_id(self) -> dict[str, FuelConfig]:
         fuels = {fuel.id: fuel for fuel in self.config.portfolio.fuels}
         for generator in self.config.portfolio.thermal_generators:
@@ -400,6 +466,27 @@ class UnitCommitment:
             prices[fuel.id] = values
         return prices
 
+    def _storage_availability_factors(
+        self,
+        units: tuple[StorageUnit, ...],
+        periods: int,
+        storage_availability_factors: Mapping[str, npt.ArrayLike],
+    ) -> dict[str, FloatArray]:
+        result: dict[str, FloatArray] = {}
+        for unit in units:
+            factor = np.full(periods, unit.config.availability_factor, dtype=np.float64)
+            if unit.id in storage_availability_factors:
+                series_factor = np.asarray(storage_availability_factors[unit.id], dtype=np.float64)
+                if series_factor.shape != (periods,):
+                    raise ValueError(f"Storage availability factor for {unit.id} has wrong shape")
+                factor = factor * series_factor
+            if np.any(~np.isfinite(factor)) or np.any((factor < 0.0) | (factor > 1.0)):
+                raise ValueError(
+                    f"Storage availability factors for {unit.id} must be finite in [0, 1]"
+                )
+            result[unit.id] = factor
+        return result
+
     def _thermal_capacity_available(
         self,
         units: tuple[ThermalUnit, ...],
@@ -423,29 +510,44 @@ class UnitCommitment:
         self,
         periods: int,
         thermal_units: tuple[ThermalUnit, ...],
+        storage_units: tuple[StorageUnit, ...],
     ) -> VariableRegistry:
         registry = VariableRegistry()
         for block in SYSTEM_BLOCKS:
             registry.add(block, periods, binary=block == "battery_charge_mode")
-        for unit in thermal_units:
+        for storage in storage_units:
+            for block in STORAGE_BLOCKS:
+                registry.add(
+                    block,
+                    periods,
+                    asset_id=storage.id,
+                    binary=block in {"storage_charge_mode", "storage_discharge_mode"},
+                )
+            for band in storage.config.degradation_bands:
+                registry.add(
+                    STORAGE_DEGRADATION_BLOCK,
+                    periods,
+                    asset_id=_storage_degradation_asset_id(storage.id, band.id),
+                )
+        for thermal_unit in thermal_units:
             for block in THERMAL_BLOCKS:
                 registry.add(
                     block,
                     periods,
-                    asset_id=unit.id,
+                    asset_id=thermal_unit.id,
                     binary=block in {"thermal_on", "thermal_startup", "thermal_shutdown"},
                 )
-            for segment in unit.config.heat_rate_segments:
+            for segment in thermal_unit.config.heat_rate_segments:
                 registry.add(
                     THERMAL_SEGMENT_OUTPUT_BLOCK,
                     periods,
-                    asset_id=_segment_asset_id(unit.id, segment.id),
+                    asset_id=_segment_asset_id(thermal_unit.id, segment.id),
                 )
-            for category in unit.config.startup_categories:
+            for category in thermal_unit.config.startup_categories:
                 registry.add(
                     THERMAL_STARTUP_CATEGORY_BLOCK,
                     periods,
-                    asset_id=_startup_category_asset_id(unit.id, category.id),
+                    asset_id=_startup_category_asset_id(thermal_unit.id, category.id),
                     binary=True,
                 )
         return registry
@@ -455,12 +557,12 @@ class UnitCommitment:
         registry: VariableRegistry,
         renewable: FloatArray,
         thermal_units: tuple[ThermalUnit, ...],
+        storage_units: tuple[StorageUnit, ...],
         fuel_prices: dict[str, FloatArray],
     ) -> FloatArray:
         periods = renewable.size
         dt = self.config.simulation.time_step_hours
         imports = self.config.imports
-        battery = self.config.battery
         penalties = self.config.penalties
         fuels = self._fuels_by_id()
         coefficients = np.zeros(registry.size, dtype=np.float64)
@@ -469,12 +571,22 @@ class UnitCommitment:
             coefficients[registry.at("renewable_used_mw", t)] = (
                 -penalties.renewable_curtailment_eur_per_mwh * dt
             )
-            coefficients[registry.at("battery_charge_mw", t)] = (
-                battery.throughput_cost_eur_per_mwh * dt
-            )
-            coefficients[registry.at("battery_discharge_mw", t)] = (
-                battery.throughput_cost_eur_per_mwh * dt
-            )
+            for storage in storage_units:
+                battery = storage.config
+                coefficients[registry.at("storage_charge_mw", t, asset_id=storage.id)] = (
+                    battery.throughput_cost_eur_per_mwh * dt
+                )
+                coefficients[registry.at("storage_discharge_mw", t, asset_id=storage.id)] = (
+                    battery.throughput_cost_eur_per_mwh * dt
+                )
+                for band in battery.degradation_bands:
+                    coefficients[
+                        registry.at(
+                            STORAGE_DEGRADATION_BLOCK,
+                            t,
+                            asset_id=_storage_degradation_asset_id(storage.id, band.id),
+                        )
+                    ] = band.cost_eur_per_mwh
             coefficients[registry.at("imports_mw", t)] = dt * (
                 imports.price_eur_per_mwh
                 + penalties.carbon_price_eur_per_tonne * imports.emission_factor_tonnes_per_mwh
@@ -541,6 +653,8 @@ class UnitCommitment:
         renewable: FloatArray,
         demand: FloatArray,
         thermal_units: tuple[ThermalUnit, ...],
+        storage_units: tuple[StorageUnit, ...],
+        storage_availability: dict[str, FloatArray],
     ) -> tuple[Bounds, npt.NDArray[np.int_]]:
         periods = renewable.size
         lower = np.zeros(registry.size, dtype=np.float64)
@@ -549,13 +663,33 @@ class UnitCommitment:
 
         for t in range(periods):
             upper[registry.at("renewable_used_mw", t)] = renewable[t]
-            upper[registry.at("battery_charge_mw", t)] = self.config.battery.power_capacity_mw
-            upper[registry.at("battery_discharge_mw", t)] = self.config.battery.power_capacity_mw
-            lower[registry.at("battery_soc_mwh", t)] = self.config.battery.minimum_soc_mwh
-            upper[registry.at("battery_soc_mwh", t)] = self.config.battery.maximum_soc_mwh
-            upper[registry.at("battery_charge_mode", t)] = 1.0
             upper[registry.at("imports_mw", t)] = self.config.imports.maximum_power_mw
             upper[registry.at("source_load_shed_mw", t)] = demand[t]
+            for storage in storage_units:
+                battery = storage.config
+                availability = storage_availability[storage.id][t]
+                upper[registry.at("storage_charge_mw", t, asset_id=storage.id)] = (
+                    _storage_charge_capacity(battery) * availability
+                )
+                upper[registry.at("storage_discharge_mw", t, asset_id=storage.id)] = (
+                    _storage_discharge_capacity(battery) * availability
+                )
+                lower[registry.at("storage_soc_mwh", t, asset_id=storage.id)] = (
+                    battery.minimum_soc_mwh
+                )
+                upper[registry.at("storage_soc_mwh", t, asset_id=storage.id)] = (
+                    battery.maximum_soc_mwh
+                )
+                upper[registry.at("storage_charge_mode", t, asset_id=storage.id)] = 1.0
+                upper[registry.at("storage_discharge_mode", t, asset_id=storage.id)] = 1.0
+                for band in battery.degradation_bands:
+                    upper[
+                        registry.at(
+                            STORAGE_DEGRADATION_BLOCK,
+                            t,
+                            asset_id=_storage_degradation_asset_id(storage.id, band.id),
+                        )
+                    ] = band.capacity_mwh
             for unit in thermal_units:
                 upper[registry.at("thermal_output_mw", t, asset_id=unit.id)] = (
                     unit.config.maximum_output_mw
@@ -585,10 +719,11 @@ class UnitCommitment:
         registry: VariableRegistry,
         demand: FloatArray,
         thermal_units: tuple[ThermalUnit, ...],
+        storage_units: tuple[StorageUnit, ...],
         thermal_capacity_available: dict[str, FloatArray],
     ) -> tuple[LinearConstraint, dict[str, int]]:
         builder = _ConstraintBuilder(registry.size)
-        self._add_balance_constraints(builder, registry, demand, thermal_units)
+        self._add_balance_constraints(builder, registry, demand, thermal_units, storage_units)
         self._add_thermal_constraints(
             builder,
             registry,
@@ -596,8 +731,8 @@ class UnitCommitment:
             thermal_units,
             thermal_capacity_available,
         )
-        self._add_storage_constraints(builder, registry, demand.size)
-        self._add_terminal_soc_constraint(builder, registry, demand.size)
+        self._add_storage_constraints(builder, registry, demand.size, storage_units)
+        self._add_terminal_soc_constraints(builder, registry, demand.size, storage_units)
         return builder.build(), builder.component_counts
 
     def _add_balance_constraints(
@@ -606,17 +741,19 @@ class UnitCommitment:
         registry: VariableRegistry,
         demand: FloatArray,
         thermal_units: tuple[ThermalUnit, ...],
+        storage_units: tuple[StorageUnit, ...],
     ) -> None:
         for t, value in enumerate(demand):
             coefficients = {
                 registry.at("renewable_used_mw", t): 1.0,
-                registry.at("battery_discharge_mw", t): 1.0,
                 registry.at("imports_mw", t): 1.0,
                 registry.at("source_load_shed_mw", t): 1.0,
-                registry.at("battery_charge_mw", t): -1.0,
             }
             for unit in thermal_units:
                 coefficients[registry.at("thermal_output_mw", t, asset_id=unit.id)] = 1.0
+            for storage in storage_units:
+                coefficients[registry.at("storage_discharge_mw", t, asset_id=storage.id)] = 1.0
+                coefficients[registry.at("storage_charge_mw", t, asset_id=storage.id)] = -1.0
             builder.add(coefficients, value, value, component="balance")
 
     def _add_thermal_constraints(
@@ -1003,67 +1140,156 @@ class UnitCommitment:
         builder: _ConstraintBuilder,
         registry: VariableRegistry,
         periods: int,
+        storage_units: tuple[StorageUnit, ...],
     ) -> None:
         dt = self.config.simulation.time_step_hours
-        battery = self.config.battery
-        for t in range(periods):
-            builder.add(
-                {
-                    registry.at("battery_charge_mw", t): 1.0,
-                    registry.at("battery_charge_mode", t): -battery.power_capacity_mw,
-                },
-                -np.inf,
-                0.0,
-                component="storage_charge_mode",
-            )
-            builder.add(
-                {
-                    registry.at("battery_discharge_mw", t): 1.0,
-                    registry.at("battery_charge_mode", t): battery.power_capacity_mw,
-                },
-                -np.inf,
-                battery.power_capacity_mw,
-                component="storage_discharge_mode",
-            )
-            soc_coefficients = {
-                registry.at("battery_soc_mwh", t): 1.0,
-                registry.at("battery_charge_mw", t): -battery.charge_efficiency * dt,
-                registry.at("battery_discharge_mw", t): dt / battery.discharge_efficiency,
-            }
-            soc_rhs = battery.initial_soc_mwh if t == 0 else 0.0
-            if t > 0:
-                soc_coefficients[registry.at("battery_soc_mwh", t - 1)] = -1.0
-            builder.add(soc_coefficients, soc_rhs, soc_rhs, component="storage_soc")
+        for storage in storage_units:
+            battery = storage.config
+            charge_capacity = _storage_charge_capacity(battery)
+            discharge_capacity = _storage_discharge_capacity(battery)
+            retention = (1.0 - battery.self_discharge_rate_per_hour) ** dt
+            for t in range(periods):
+                charge = registry.at("storage_charge_mw", t, asset_id=storage.id)
+                discharge = registry.at("storage_discharge_mw", t, asset_id=storage.id)
+                charge_mode = registry.at("storage_charge_mode", t, asset_id=storage.id)
+                discharge_mode = registry.at("storage_discharge_mode", t, asset_id=storage.id)
+                builder.add(
+                    {charge: 1.0, charge_mode: -charge_capacity},
+                    -np.inf,
+                    0.0,
+                    component="storage_charge_mode",
+                )
+                builder.add(
+                    {discharge: 1.0, discharge_mode: -discharge_capacity},
+                    -np.inf,
+                    0.0,
+                    component="storage_discharge_mode",
+                )
+                if battery.minimum_charge_mw > 0.0:
+                    builder.add(
+                        {charge: 1.0, charge_mode: -battery.minimum_charge_mw},
+                        0.0,
+                        np.inf,
+                        component="storage_minimum_charge",
+                    )
+                if battery.minimum_discharge_mw > 0.0:
+                    builder.add(
+                        {discharge: 1.0, discharge_mode: -battery.minimum_discharge_mw},
+                        0.0,
+                        np.inf,
+                        component="storage_minimum_discharge",
+                    )
+                builder.add(
+                    {charge_mode: 1.0, discharge_mode: 1.0},
+                    -np.inf,
+                    1.0,
+                    component="storage_mode_exclusivity",
+                )
+                soc_coefficients = {
+                    registry.at("storage_soc_mwh", t, asset_id=storage.id): 1.0,
+                    charge: -battery.charge_efficiency * dt,
+                    discharge: dt / battery.discharge_efficiency,
+                }
+                soc_rhs = retention * battery.initial_soc_mwh if t == 0 else 0.0
+                if t > 0:
+                    soc_coefficients[
+                        registry.at("storage_soc_mwh", t - 1, asset_id=storage.id)
+                    ] = -retention
+                builder.add(soc_coefficients, soc_rhs, soc_rhs, component="storage_soc")
+                self._add_storage_ramp_constraints(builder, registry, storage, t, dt)
+                self._add_storage_degradation_constraints(builder, registry, storage, t, dt)
 
-    def _add_terminal_soc_constraint(
+    def _add_storage_ramp_constraints(
+        self,
+        builder: _ConstraintBuilder,
+        registry: VariableRegistry,
+        storage: StorageUnit,
+        period: int,
+        dt: float,
+    ) -> None:
+        battery = storage.config
+        for block, limit, component in (
+            ("storage_charge_mw", battery.charge_ramp_mw_per_hour, "storage_charge_ramp"),
+            (
+                "storage_discharge_mw",
+                battery.discharge_ramp_mw_per_hour,
+                "storage_discharge_ramp",
+            ),
+        ):
+            if limit is None:
+                continue
+            current = registry.at(block, period, asset_id=storage.id)
+            previous_value = 0.0
+            coefficients = {current: 1.0}
+            if period > 0:
+                previous = registry.at(block, period - 1, asset_id=storage.id)
+                coefficients[previous] = -1.0
+            builder.add(coefficients, -np.inf, previous_value + limit * dt, component=component)
+            coefficients_down = {current: -1.0}
+            if period > 0:
+                coefficients_down[registry.at(block, period - 1, asset_id=storage.id)] = 1.0
+            builder.add(
+                coefficients_down,
+                -np.inf,
+                previous_value + limit * dt,
+                component=component,
+            )
+
+    def _add_storage_degradation_constraints(
+        self,
+        builder: _ConstraintBuilder,
+        registry: VariableRegistry,
+        storage: StorageUnit,
+        period: int,
+        dt: float,
+    ) -> None:
+        if not storage.config.degradation_bands:
+            return
+        coefficients = {
+            registry.at("storage_charge_mw", period, asset_id=storage.id): -dt,
+            registry.at("storage_discharge_mw", period, asset_id=storage.id): -dt,
+        }
+        for band in storage.config.degradation_bands:
+            coefficients[
+                registry.at(
+                    STORAGE_DEGRADATION_BLOCK,
+                    period,
+                    asset_id=_storage_degradation_asset_id(storage.id, band.id),
+                )
+            ] = 1.0
+        builder.add(coefficients, 0.0, 0.0, component="storage_degradation_throughput")
+
+    def _add_terminal_soc_constraints(
         self,
         builder: _ConstraintBuilder,
         registry: VariableRegistry,
         periods: int,
+        storage_units: tuple[StorageUnit, ...],
     ) -> None:
-        battery = self.config.battery
-        terminal = {registry.at("battery_soc_mwh", periods - 1): 1.0}
-        if battery.terminal_soc_mode == "minimum":
-            builder.add(
-                terminal,
-                battery.minimum_final_soc_mwh,
-                np.inf,
-                component="storage_terminal",
-            )
-        elif battery.terminal_soc_mode == "exact":
-            builder.add(
-                terminal,
-                battery.minimum_final_soc_mwh,
-                battery.minimum_final_soc_mwh,
-                component="storage_terminal",
-            )
-        elif battery.terminal_soc_mode == "cyclic":
-            builder.add(
-                terminal,
-                battery.initial_soc_mwh,
-                battery.initial_soc_mwh,
-                component="storage_terminal",
-            )
+        for storage in storage_units:
+            battery = storage.config
+            terminal = {registry.at("storage_soc_mwh", periods - 1, asset_id=storage.id): 1.0}
+            if battery.terminal_soc_mode == "minimum":
+                builder.add(
+                    terminal,
+                    battery.minimum_final_soc_mwh,
+                    np.inf,
+                    component="storage_terminal",
+                )
+            elif battery.terminal_soc_mode == "exact":
+                builder.add(
+                    terminal,
+                    battery.minimum_final_soc_mwh,
+                    battery.minimum_final_soc_mwh,
+                    component="storage_terminal",
+                )
+            elif battery.terminal_soc_mode == "cyclic":
+                builder.add(
+                    terminal,
+                    battery.initial_soc_mwh,
+                    battery.initial_soc_mwh,
+                    component="storage_terminal",
+                )
 
     def _duration_periods(self, duration_hours: float) -> int:
         return max(1, ceil(duration_hours / self.config.simulation.time_step_hours))
@@ -1073,6 +1299,21 @@ class UnitCommitment:
         data: dict[str, FloatArray] = {
             block: registry.values(solution, block) for block in SYSTEM_BLOCKS
         }
+        for storage in problem.storage_units:
+            for block in STORAGE_BLOCKS:
+                data[f"{block}__{storage.id}"] = registry.values(
+                    solution,
+                    block,
+                    asset_id=storage.id,
+                )
+            for band in storage.config.degradation_bands:
+                data[f"storage_degradation_throughput_mwh__{storage.id}__{band.id}"] = (
+                    registry.values(
+                        solution,
+                        STORAGE_DEGRADATION_BLOCK,
+                        asset_id=_storage_degradation_asset_id(storage.id, band.id),
+                    )
+                )
         for unit in problem.thermal_units:
             for block in THERMAL_BLOCKS:
                 data[f"{block}__{unit.id}"] = registry.values(
@@ -1093,10 +1334,26 @@ class UnitCommitment:
                     asset_id=_startup_category_asset_id(unit.id, category.id),
                 )
         frame = pd.DataFrame(data)
+        self._add_storage_aggregate_columns(frame, problem.storage_units)
         for block in THERMAL_BLOCKS:
             columns = [f"{block}__{unit.id}" for unit in problem.thermal_units]
             frame[block] = frame[columns].sum(axis=1)
         return frame
+
+    @staticmethod
+    def _add_storage_aggregate_columns(
+        frame: pd.DataFrame,
+        storage_units: tuple[StorageUnit, ...],
+    ) -> None:
+        mapping = {
+            "battery_charge_mw": "storage_charge_mw",
+            "battery_discharge_mw": "storage_discharge_mw",
+            "battery_charge_mode": "storage_charge_mode",
+            "battery_soc_mwh": "storage_soc_mwh",
+        }
+        for aggregate, block in mapping.items():
+            columns = [f"{block}__{unit.id}" for unit in storage_units]
+            frame[aggregate] = frame[columns].sum(axis=1)
 
     def _add_thermal_accounting_columns(
         self,
@@ -1230,12 +1487,83 @@ class UnitCommitment:
             for unit in units
         )
 
+    def _add_storage_accounting_columns(
+        self,
+        frame: pd.DataFrame,
+        units: tuple[StorageUnit, ...],
+    ) -> None:
+        dt = self.config.simulation.time_step_hours
+        for unit in units:
+            battery = unit.config
+            charge = frame[f"storage_charge_mw__{unit.id}"]
+            discharge = frame[f"storage_discharge_mw__{unit.id}"]
+            soc = frame[f"storage_soc_mwh__{unit.id}"]
+            throughput_mwh = (charge + discharge) * dt
+            frame[f"storage_throughput_mwh__{unit.id}"] = throughput_mwh
+            frame[f"storage_throughput_cost_eur__{unit.id}"] = (
+                throughput_mwh * battery.throughput_cost_eur_per_mwh
+            )
+            degradation_cost = np.zeros(len(frame), dtype=np.float64)
+            for band in battery.degradation_bands:
+                column = f"storage_degradation_throughput_mwh__{unit.id}__{band.id}"
+                degradation_cost += frame[column].to_numpy(dtype=np.float64) * band.cost_eur_per_mwh
+            frame[f"storage_degradation_cost_eur__{unit.id}"] = degradation_cost
+            charged = charge * dt
+            discharged = discharge * dt
+            frame[f"storage_charged_mwh__{unit.id}"] = charged
+            frame[f"storage_discharged_mwh__{unit.id}"] = discharged
+            previous_soc = soc.shift(1)
+            previous_soc.iloc[0] = battery.initial_soc_mwh
+            retention = (1.0 - battery.self_discharge_rate_per_hour) ** dt
+            expected_soc = (
+                retention * previous_soc
+                + battery.charge_efficiency * charged
+                - discharged / battery.discharge_efficiency
+            )
+            frame[f"storage_energy_residual_mwh__{unit.id}"] = soc - expected_soc
+            frame[f"storage_round_trip_losses_mwh__{unit.id}"] = (
+                (1.0 - battery.charge_efficiency) * charged
+                + (1.0 / battery.discharge_efficiency - 1.0) * discharged
+                + (1.0 - retention) * previous_soc
+            )
+            usable_energy = battery.maximum_soc_mwh - battery.minimum_soc_mwh
+            frame[f"storage_depth_of_discharge__{unit.id}"] = (
+                (battery.maximum_soc_mwh - soc) / usable_energy if usable_energy > 0.0 else 0.0
+            )
+            frame[f"storage_at_min_soc__{unit.id}"] = (
+                soc <= battery.minimum_soc_mwh + DEFAULT_NUMERICAL_POLICY.primal_feasibility_mw
+            ).astype(int)
+            frame[f"storage_at_max_soc__{unit.id}"] = (
+                soc >= battery.maximum_soc_mwh - DEFAULT_NUMERICAL_POLICY.primal_feasibility_mw
+            ).astype(int)
+            frame[f"storage_equivalent_full_cycles__{unit.id}"] = (
+                throughput_mwh / (2.0 * usable_energy) if usable_energy > 0.0 else 0.0
+            )
+        frame["storage_throughput_cost_eur"] = sum(
+            frame[f"storage_throughput_cost_eur__{unit.id}"] for unit in units
+        )
+        frame["storage_degradation_cost_eur"] = sum(
+            frame[f"storage_degradation_cost_eur__{unit.id}"] for unit in units
+        )
+        frame["battery_throughput_cost_eur"] = frame["storage_throughput_cost_eur"]
+
     def _coerce_binary_columns(
         self,
         frame: pd.DataFrame,
         thermal_units: tuple[ThermalUnit, ...] | None = None,
+        storage_units: tuple[StorageUnit, ...] | None = None,
     ) -> float:
-        columns = ["battery_charge_mode"]
+        columns: list[str] = []
+        if storage_units is None:
+            columns.append("battery_charge_mode")
+        else:
+            for storage in storage_units:
+                columns.extend(
+                    [
+                        f"storage_charge_mode__{storage.id}",
+                        f"storage_discharge_mode__{storage.id}",
+                    ]
+                )
         if thermal_units is None:
             columns.extend(["thermal_on", "thermal_startup", "thermal_shutdown"])
         else:
@@ -1269,22 +1597,37 @@ class UnitCommitment:
             for block in ("thermal_on", "thermal_startup", "thermal_shutdown"):
                 columns_for_block = [f"{block}__{unit.id}" for unit in thermal_units]
                 frame[block] = frame[columns_for_block].sum(axis=1)
+        if storage_units is not None:
+            self._add_storage_aggregate_columns(frame, storage_units)
         return max_deviation
 
     def _clip_nonnegative_solver_noise(
         self,
         frame: pd.DataFrame,
         thermal_units: tuple[ThermalUnit, ...] | None = None,
+        storage_units: tuple[StorageUnit, ...] | None = None,
     ) -> float:
         columns = [
             "renewable_used_mw",
-            "battery_charge_mw",
-            "battery_discharge_mw",
-            "battery_soc_mwh",
             "imports_mw",
             "source_load_shed_mw",
             "renewable_curtailed_mw",
         ]
+        if storage_units is None:
+            columns.extend(["battery_charge_mw", "battery_discharge_mw", "battery_soc_mwh"])
+        else:
+            for storage in storage_units:
+                columns.extend(
+                    [
+                        f"storage_charge_mw__{storage.id}",
+                        f"storage_discharge_mw__{storage.id}",
+                        f"storage_soc_mwh__{storage.id}",
+                    ]
+                )
+                columns.extend(
+                    f"storage_degradation_throughput_mwh__{storage.id}__{band.id}"
+                    for band in storage.config.degradation_bands
+                )
         if thermal_units is None:
             columns.append("thermal_output_mw")
         else:
@@ -1313,16 +1656,18 @@ class UnitCommitment:
             frame["thermal_output_mw"] = sum(
                 frame[f"thermal_output_mw__{unit.id}"] for unit in thermal_units
             )
+        if storage_units:
+            self._add_storage_aggregate_columns(frame, storage_units)
         return max_clipped
 
     def _cost_components(
         self,
         frame: pd.DataFrame,
         thermal_units: tuple[ThermalUnit, ...],
+        storage_units: tuple[StorageUnit, ...],
     ) -> dict[str, float]:
         dt = self.config.simulation.time_step_hours
         imports = self.config.imports
-        battery = self.config.battery
         penalties = self.config.penalties
         network_efficiency = 1.0 - self.config.network.loss_fraction
         return {
@@ -1342,9 +1687,15 @@ class UnitCommitment:
                 frame["imports_mw"].sum() * dt * imports.price_eur_per_mwh
             ),
             "battery_throughput_cost_eur": float(
-                (frame["battery_charge_mw"].sum() + frame["battery_discharge_mw"].sum())
-                * dt
-                * battery.throughput_cost_eur_per_mwh
+                sum(
+                    frame[f"storage_throughput_cost_eur__{unit.id}"].sum() for unit in storage_units
+                )
+            ),
+            "storage_degradation_cost_eur": float(
+                sum(
+                    frame[f"storage_degradation_cost_eur__{unit.id}"].sum()
+                    for unit in storage_units
+                )
             ),
             "thermal_carbon_cost_eur": float(
                 sum(frame[f"thermal_carbon_cost_eur__{unit.id}"].sum() for unit in thermal_units)

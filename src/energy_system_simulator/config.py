@@ -78,11 +78,18 @@ LEGACY_SECTION_KEYS = {
     "battery": {
         "energy_capacity_mwh",
         "power_capacity_mw",
+        "charge_power_capacity_mw",
+        "discharge_power_capacity_mw",
         "minimum_soc_mwh",
         "maximum_soc_mwh",
         "initial_soc_mwh",
         "charge_efficiency",
         "discharge_efficiency",
+        "self_discharge_rate_per_hour",
+        "minimum_charge_mw",
+        "minimum_discharge_mw",
+        "charge_ramp_mw_per_hour",
+        "discharge_ramp_mw_per_hour",
         "throughput_cost_eur_per_mwh",
         "minimum_final_soc_mwh",
         "terminal_soc_mode",
@@ -106,7 +113,16 @@ OPTIONAL_SECTION_KEYS = {
         "terminal_commitment_mode",
         "terminal_on",
     },
-    "battery": {"terminal_soc_mode"},
+    "battery": {
+        "terminal_soc_mode",
+        "charge_power_capacity_mw",
+        "discharge_power_capacity_mw",
+        "self_discharge_rate_per_hour",
+        "minimum_charge_mw",
+        "minimum_discharge_mw",
+        "charge_ramp_mw_per_hour",
+        "discharge_ramp_mw_per_hour",
+    },
 }
 LEGACY_REQUIRED_SECTION_KEYS = {
     section: keys - OPTIONAL_SECTION_KEYS.get(section, set())
@@ -185,7 +201,15 @@ LIST_SECTION_KEYS = {
         "nox_factor_kg_per_mwh_thermal",
         "sox_factor_kg_per_mwh_thermal",
     },
-    "storage_units": LEGACY_SECTION_KEYS["battery"] | {"id", "bus_id"},
+    "storage_units": LEGACY_SECTION_KEYS["battery"]
+    | {
+        "id",
+        "bus_id",
+        "technology",
+        "availability_factor",
+        "availability_factor_key",
+        "degradation_bands",
+    },
     "hydro_units": {"id", "bus_id"},
     "imports": LEGACY_SECTION_KEYS["imports"] | {"id", "bus_id"},
     "demand": {"id", "bus_id", "time_series_key"},
@@ -217,7 +241,20 @@ LIST_OPTIONAL_KEYS = {
         "nox_factor_kg_per_mwh_thermal",
         "sox_factor_kg_per_mwh_thermal",
     },
-    "storage_units": OPTIONAL_SECTION_KEYS["battery"],
+    "storage_units": OPTIONAL_SECTION_KEYS["battery"]
+    | {
+        "technology",
+        "charge_power_capacity_mw",
+        "discharge_power_capacity_mw",
+        "self_discharge_rate_per_hour",
+        "minimum_charge_mw",
+        "minimum_discharge_mw",
+        "charge_ramp_mw_per_hour",
+        "discharge_ramp_mw_per_hour",
+        "availability_factor",
+        "availability_factor_key",
+        "degradation_bands",
+    },
     "hydro_units": set(),
     "imports": set(),
     "demand": set(),
@@ -643,6 +680,13 @@ class ThermalGeneratorConfig:
 
 
 @dataclass(frozen=True)
+class StorageDegradationBandConfig:
+    id: str
+    capacity_mwh: float
+    cost_eur_per_mwh: float
+
+
+@dataclass(frozen=True)
 class BatteryConfig:
     energy_capacity_mwh: float
     power_capacity_mw: float
@@ -654,6 +698,17 @@ class BatteryConfig:
     throughput_cost_eur_per_mwh: float
     minimum_final_soc_mwh: float
     terminal_soc_mode: Literal["minimum", "exact", "cyclic", "free"]
+    technology: Literal["battery", "pumped_storage"] = "battery"
+    charge_power_capacity_mw: float | None = None
+    discharge_power_capacity_mw: float | None = None
+    self_discharge_rate_per_hour: float = 0.0
+    minimum_charge_mw: float = 0.0
+    minimum_discharge_mw: float = 0.0
+    charge_ramp_mw_per_hour: float | None = None
+    discharge_ramp_mw_per_hour: float | None = None
+    availability_factor: float = 1.0
+    availability_factor_key: str | None = None
+    degradation_bands: tuple[StorageDegradationBandConfig, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -880,6 +935,39 @@ def _load_legacy_config(
         terminal_soc_mode=cast(
             Literal["minimum", "exact", "cyclic", "free"],
             _optional_string(battery_raw, "terminal_soc_mode", "minimum"),
+        ),
+        charge_power_capacity_mw=(
+            _number(battery_raw, "charge_power_capacity_mw", float)
+            if "charge_power_capacity_mw" in battery_raw
+            else None
+        ),
+        discharge_power_capacity_mw=(
+            _number(battery_raw, "discharge_power_capacity_mw", float)
+            if "discharge_power_capacity_mw" in battery_raw
+            else None
+        ),
+        self_discharge_rate_per_hour=_optional_number(
+            battery_raw,
+            "self_discharge_rate_per_hour",
+            float,
+            0.0,
+        ),
+        minimum_charge_mw=_optional_number(battery_raw, "minimum_charge_mw", float, 0.0),
+        minimum_discharge_mw=_optional_number(
+            battery_raw,
+            "minimum_discharge_mw",
+            float,
+            0.0,
+        ),
+        charge_ramp_mw_per_hour=(
+            _number(battery_raw, "charge_ramp_mw_per_hour", float)
+            if "charge_ramp_mw_per_hour" in battery_raw
+            else None
+        ),
+        discharge_ramp_mw_per_hour=(
+            _number(battery_raw, "discharge_ramp_mw_per_hour", float)
+            if "discharge_ramp_mw_per_hour" in battery_raw
+            else None
         ),
     )
     network = NetworkConfig(
@@ -1351,17 +1439,55 @@ def _parse_startup_categories(
 
 
 def _parse_storage_unit(item: Mapping[str, Any], path: str) -> StorageUnitConfig:
+    technology = _optional_string_at(item, "technology", "battery", path)
+    if technology not in {"battery", "pumped_storage"}:
+        raise ConfigurationError(f"{path}.technology must be one of: battery, pumped_storage")
     return StorageUnitConfig(
         id=_id_at(item, "id", path),
         bus_id=_id_at(item, "bus_id", path),
         config=BatteryConfig(
             energy_capacity_mwh=_number_at(item, "energy_capacity_mwh", float, path),
             power_capacity_mw=_number_at(item, "power_capacity_mw", float, path),
+            charge_power_capacity_mw=(
+                _number_at(item, "charge_power_capacity_mw", float, path)
+                if "charge_power_capacity_mw" in item
+                else None
+            ),
+            discharge_power_capacity_mw=(
+                _number_at(item, "discharge_power_capacity_mw", float, path)
+                if "discharge_power_capacity_mw" in item
+                else None
+            ),
             minimum_soc_mwh=_number_at(item, "minimum_soc_mwh", float, path),
             maximum_soc_mwh=_number_at(item, "maximum_soc_mwh", float, path),
             initial_soc_mwh=_number_at(item, "initial_soc_mwh", float, path),
             charge_efficiency=_number_at(item, "charge_efficiency", float, path),
             discharge_efficiency=_number_at(item, "discharge_efficiency", float, path),
+            self_discharge_rate_per_hour=_optional_number_at(
+                item,
+                "self_discharge_rate_per_hour",
+                float,
+                0.0,
+                path,
+            ),
+            minimum_charge_mw=_optional_number_at(item, "minimum_charge_mw", float, 0.0, path),
+            minimum_discharge_mw=_optional_number_at(
+                item,
+                "minimum_discharge_mw",
+                float,
+                0.0,
+                path,
+            ),
+            charge_ramp_mw_per_hour=(
+                _number_at(item, "charge_ramp_mw_per_hour", float, path)
+                if "charge_ramp_mw_per_hour" in item
+                else None
+            ),
+            discharge_ramp_mw_per_hour=(
+                _number_at(item, "discharge_ramp_mw_per_hour", float, path)
+                if "discharge_ramp_mw_per_hour" in item
+                else None
+            ),
             throughput_cost_eur_per_mwh=_number_at(
                 item,
                 "throughput_cost_eur_per_mwh",
@@ -1373,8 +1499,49 @@ def _parse_storage_unit(item: Mapping[str, Any], path: str) -> StorageUnitConfig
                 Literal["minimum", "exact", "cyclic", "free"],
                 _optional_string_at(item, "terminal_soc_mode", "minimum", path),
             ),
+            technology=cast(Literal["battery", "pumped_storage"], technology),
+            availability_factor=_optional_number_at(
+                item,
+                "availability_factor",
+                float,
+                1.0,
+                path,
+            ),
+            availability_factor_key=(
+                _string_at(item, "availability_factor_key", path)
+                if "availability_factor_key" in item
+                else None
+            ),
+            degradation_bands=_parse_degradation_bands(item, path),
         ),
     )
+
+
+def _parse_degradation_bands(
+    item: Mapping[str, Any],
+    path: str,
+) -> tuple[StorageDegradationBandConfig, ...]:
+    if "degradation_bands" not in item:
+        return ()
+    raw = item["degradation_bands"]
+    if not isinstance(raw, list):
+        raise ConfigurationError(f"{path}.degradation_bands must be a list")
+    allowed = {"id", "capacity_mwh", "cost_eur_per_mwh"}
+    bands: list[StorageDegradationBandConfig] = []
+    for index, band in enumerate(raw):
+        band_path = f"{path}.degradation_bands[{index}]"
+        if not isinstance(band, Mapping):
+            raise ConfigurationError(f"{band_path} must be a mapping")
+        _validate_allowed_keys(band, band_path, allowed)
+        _validate_required_keys(band, band_path, allowed)
+        bands.append(
+            StorageDegradationBandConfig(
+                id=_id_at(band, "id", band_path),
+                capacity_mwh=_number_at(band, "capacity_mwh", float, band_path),
+                cost_eur_per_mwh=_number_at(band, "cost_eur_per_mwh", float, band_path),
+            )
+        )
+    return tuple(bands)
 
 
 def _legacy_portfolio(
@@ -1724,14 +1891,33 @@ def _validate_storage_config_at(bat: BatteryConfig, path: str) -> None:
         ("minimum_soc_mwh", bat.minimum_soc_mwh),
         ("maximum_soc_mwh", bat.maximum_soc_mwh),
         ("initial_soc_mwh", bat.initial_soc_mwh),
+        ("self_discharge_rate_per_hour", bat.self_discharge_rate_per_hour),
+        ("minimum_charge_mw", bat.minimum_charge_mw),
+        ("minimum_discharge_mw", bat.minimum_discharge_mw),
         ("throughput_cost_eur_per_mwh", bat.throughput_cost_eur_per_mwh),
         ("minimum_final_soc_mwh", bat.minimum_final_soc_mwh),
     ):
         _check_nonnegative_at(f"{path}.{name}", value)
+    for optional_name, optional_value in (
+        ("charge_power_capacity_mw", bat.charge_power_capacity_mw),
+        ("discharge_power_capacity_mw", bat.discharge_power_capacity_mw),
+        ("charge_ramp_mw_per_hour", bat.charge_ramp_mw_per_hour),
+        ("discharge_ramp_mw_per_hour", bat.discharge_ramp_mw_per_hour),
+    ):
+        if optional_value is not None:
+            _check_nonnegative_at(f"{path}.{optional_name}", optional_value)
+    _check_fraction_at(f"{path}.self_discharge_rate_per_hour", bat.self_discharge_rate_per_hour)
+    _check_fraction_at(f"{path}.availability_factor", bat.availability_factor)
     _check_fraction_at(f"{path}.charge_efficiency", bat.charge_efficiency)
     _check_fraction_at(f"{path}.discharge_efficiency", bat.discharge_efficiency)
     if bat.charge_efficiency == 0.0 or bat.discharge_efficiency == 0.0:
         raise ConfigurationError(f"{path} battery efficiencies must be positive")
+    charge_capacity = _storage_charge_capacity(bat)
+    discharge_capacity = _storage_discharge_capacity(bat)
+    if bat.minimum_charge_mw > charge_capacity:
+        raise ConfigurationError(f"{path}.minimum_charge_mw exceeds charge power capacity")
+    if bat.minimum_discharge_mw > discharge_capacity:
+        raise ConfigurationError(f"{path}.minimum_discharge_mw exceeds discharge power capacity")
     if bat.maximum_soc_mwh > bat.energy_capacity_mwh:
         raise ConfigurationError(f"{path}.maximum_soc_mwh exceeds energy capacity")
     if not bat.minimum_soc_mwh <= bat.initial_soc_mwh <= bat.maximum_soc_mwh:
@@ -1740,6 +1926,42 @@ def _validate_storage_config_at(bat: BatteryConfig, path: str) -> None:
         raise ConfigurationError(f"{path}.minimum_final_soc_mwh is outside bounds")
     if bat.terminal_soc_mode not in {"minimum", "exact", "cyclic", "free"}:
         raise ConfigurationError(f"{path}.terminal_soc_mode has an unsupported value")
+    if bat.technology not in {"battery", "pumped_storage"}:
+        raise ConfigurationError(f"{path}.technology has an unsupported value")
+    _validate_degradation_bands_at(bat, path)
+
+
+def _storage_charge_capacity(bat: BatteryConfig) -> float:
+    return (
+        bat.charge_power_capacity_mw
+        if bat.charge_power_capacity_mw is not None
+        else bat.power_capacity_mw
+    )
+
+
+def _storage_discharge_capacity(bat: BatteryConfig) -> float:
+    return (
+        bat.discharge_power_capacity_mw
+        if bat.discharge_power_capacity_mw is not None
+        else bat.power_capacity_mw
+    )
+
+
+def _validate_degradation_bands_at(bat: BatteryConfig, path: str) -> None:
+    seen: set[str] = set()
+    previous_cost = -1.0
+    for index, band in enumerate(bat.degradation_bands):
+        band_path = f"{path}.degradation_bands[{index}]"
+        if band.id in seen:
+            raise ConfigurationError(f"Duplicate identifier at {band_path}.id: {band.id}")
+        seen.add(band.id)
+        if band.capacity_mwh <= 0.0:
+            raise ConfigurationError(f"{band_path}.capacity_mwh must be positive")
+        if band.cost_eur_per_mwh < 0.0:
+            raise ConfigurationError(f"{band_path}.cost_eur_per_mwh must be non-negative")
+        if band.cost_eur_per_mwh < previous_cost:
+            raise ConfigurationError(f"{band_path}.cost_eur_per_mwh must be nondecreasing")
+        previous_cost = band.cost_eur_per_mwh
 
 
 def _check_nonnegative_at(name: str, value: float) -> None:
@@ -2014,9 +2236,10 @@ def _thermal_generator_mapping(generator: ThermalGeneratorConfig) -> dict[str, A
 
 def _storage_unit_mapping(unit: StorageUnitConfig) -> dict[str, Any]:
     battery = unit.config
-    return {
+    item: dict[str, Any] = {
         "id": unit.id,
         "bus_id": unit.bus_id,
+        "technology": battery.technology,
         "energy_capacity_mwh": battery.energy_capacity_mwh,
         "power_capacity_mw": battery.power_capacity_mw,
         "minimum_soc_mwh": battery.minimum_soc_mwh,
@@ -2024,10 +2247,35 @@ def _storage_unit_mapping(unit: StorageUnitConfig) -> dict[str, Any]:
         "initial_soc_mwh": battery.initial_soc_mwh,
         "charge_efficiency": battery.charge_efficiency,
         "discharge_efficiency": battery.discharge_efficiency,
+        "self_discharge_rate_per_hour": battery.self_discharge_rate_per_hour,
+        "minimum_charge_mw": battery.minimum_charge_mw,
+        "minimum_discharge_mw": battery.minimum_discharge_mw,
         "throughput_cost_eur_per_mwh": battery.throughput_cost_eur_per_mwh,
         "minimum_final_soc_mwh": battery.minimum_final_soc_mwh,
         "terminal_soc_mode": battery.terminal_soc_mode,
     }
+    if battery.charge_power_capacity_mw is not None:
+        item["charge_power_capacity_mw"] = battery.charge_power_capacity_mw
+    if battery.discharge_power_capacity_mw is not None:
+        item["discharge_power_capacity_mw"] = battery.discharge_power_capacity_mw
+    if battery.charge_ramp_mw_per_hour is not None:
+        item["charge_ramp_mw_per_hour"] = battery.charge_ramp_mw_per_hour
+    if battery.discharge_ramp_mw_per_hour is not None:
+        item["discharge_ramp_mw_per_hour"] = battery.discharge_ramp_mw_per_hour
+    if battery.availability_factor != 1.0:
+        item["availability_factor"] = battery.availability_factor
+    if battery.availability_factor_key is not None:
+        item["availability_factor_key"] = battery.availability_factor_key
+    if battery.degradation_bands:
+        item["degradation_bands"] = [
+            {
+                "id": band.id,
+                "capacity_mwh": band.capacity_mwh,
+                "cost_eur_per_mwh": band.cost_eur_per_mwh,
+            }
+            for band in battery.degradation_bands
+        ]
+    return item
 
 
 def _json_ready(value: Any) -> Any:
@@ -2134,14 +2382,31 @@ def validate_config(config: ModelConfig) -> None:
         ("minimum_soc_mwh", bat.minimum_soc_mwh),
         ("maximum_soc_mwh", bat.maximum_soc_mwh),
         ("initial_soc_mwh", bat.initial_soc_mwh),
+        ("self_discharge_rate_per_hour", bat.self_discharge_rate_per_hour),
+        ("minimum_charge_mw", bat.minimum_charge_mw),
+        ("minimum_discharge_mw", bat.minimum_discharge_mw),
         ("throughput_cost_eur_per_mwh", bat.throughput_cost_eur_per_mwh),
         ("minimum_final_soc_mwh", bat.minimum_final_soc_mwh),
     ):
         _check_nonnegative(f"battery.{name}", value)
+    for optional_name, optional_value in (
+        ("charge_power_capacity_mw", bat.charge_power_capacity_mw),
+        ("discharge_power_capacity_mw", bat.discharge_power_capacity_mw),
+        ("charge_ramp_mw_per_hour", bat.charge_ramp_mw_per_hour),
+        ("discharge_ramp_mw_per_hour", bat.discharge_ramp_mw_per_hour),
+    ):
+        if optional_value is not None:
+            _check_nonnegative(f"battery.{optional_name}", optional_value)
     _check_fraction("battery.charge_efficiency", bat.charge_efficiency)
     _check_fraction("battery.discharge_efficiency", bat.discharge_efficiency)
+    _check_fraction("battery.self_discharge_rate_per_hour", bat.self_discharge_rate_per_hour)
+    _check_fraction("battery.availability_factor", bat.availability_factor)
     if bat.charge_efficiency == 0.0 or bat.discharge_efficiency == 0.0:
         raise ConfigurationError("Battery efficiencies must be positive")
+    if bat.minimum_charge_mw > _storage_charge_capacity(bat):
+        raise ConfigurationError("battery.minimum_charge_mw exceeds charge power capacity")
+    if bat.minimum_discharge_mw > _storage_discharge_capacity(bat):
+        raise ConfigurationError("battery.minimum_discharge_mw exceeds discharge power capacity")
     if bat.maximum_soc_mwh > bat.energy_capacity_mwh:
         raise ConfigurationError("maximum_soc_mwh exceeds energy capacity")
     if not bat.minimum_soc_mwh <= bat.initial_soc_mwh <= bat.maximum_soc_mwh:
@@ -2152,6 +2417,9 @@ def validate_config(config: ModelConfig) -> None:
         raise ConfigurationError(
             "battery.terminal_soc_mode must be one of minimum, exact, cyclic, free"
         )
+    if bat.technology not in {"battery", "pumped_storage"}:
+        raise ConfigurationError("battery.technology must be one of battery, pumped_storage")
+    _validate_degradation_bands_at(bat, "battery")
 
     _check_fraction("network.loss_fraction", config.network.loss_fraction, allow_one=False)
     if config.network.transfer_capacity_mw <= 0.0:

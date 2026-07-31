@@ -189,3 +189,11 @@ def test_portfolio_run_exports_thermal_asset_metrics() -> None:
     }
     assert "thermal_fleet_capacity_factor" in result.summary
     assert "terminal_commitment_by_unit" in result.summary
+
+    storage_rows = result.asset_timeseries[
+        result.asset_timeseries["asset_id"].isin({"south-battery", "north-pumped-storage"})
+    ]
+    assert {"charge_mw", "discharge_mw", "stored_energy_mwh", "energy_residual_mwh"}.issubset(
+        set(storage_rows["variable"])
+    )
+    assert set(result.summary["storage_assets"]) == {"south-battery", "north-pumped-storage"}

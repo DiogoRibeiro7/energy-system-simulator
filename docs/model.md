@@ -244,28 +244,56 @@ uses explicit lookback constraints over previous commitment states and the
 configured initial down time. Category-specific startup fuel contributes to
 fuel input, direct emissions, fuel cost, and carbon cost.
 
-## Battery
+## Storage
+
+For each storage asset \(s\), the model uses charge power \(c_{s,t}\),
+discharge power \(d_{s,t}\), stored energy \(e_{s,t}\), and binary charge and
+discharge modes \(m^c_{s,t},m^d_{s,t}\in\{0,1\}\).
 
 The state of charge evolves as
 
 \[
-e_t=e_{t-1}+\eta_c c_t^{\mathrm{bat}}\Delta t
--\frac{d_t^{\mathrm{bat}}\Delta t}{\eta_d}.
+e_{s,t}=\rho_s e_{s,t-1}
++\eta^c_s c_{s,t}\Delta t
+-\frac{d_{s,t}\Delta t}{\eta^d_s},
 \]
 
-Power and energy bounds are applied each period. A binary charge-mode variable
-\(m_t^{\mathrm{bat}}\in\{0,1\}\) enforces exact charge/discharge exclusivity:
+where \(\rho_s=(1-\lambda_s)^{\Delta t}\) applies standing self-discharge over
+the model interval. For \(t=1\), \(e_{s,t-1}\) is the configured initial stored
+energy.
 
 \[
-c_t^{\mathrm{bat}}\le P^{\max}_{\mathrm{bat}}m_t^{\mathrm{bat}},
+0\le c_{s,t}\le P^{c,\max}_{s,t}m^c_{s,t},
 \]
 
 \[
-d_t^{\mathrm{bat}}\le P^{\max}_{\mathrm{bat}}(1-m_t^{\mathrm{bat}}).
+0\le d_{s,t}\le P^{d,\max}_{s,t}m^d_{s,t},
 \]
 
-The terminal state of charge supports four modes: minimum final state, exact
-final state, cyclic final state equal to the initial state, and unconstrained.
+\[
+m^c_{s,t}+m^d_{s,t}\le 1.
+\]
+
+Optional minimum operating powers bind \(c_{s,t}\) and \(d_{s,t}\) from below
+when their modes are active. Optional ramp limits apply to charge and discharge
+power separately. Static and time-series availability factors scale the charge
+and discharge power limits.
+
+The terminal state of charge is enforced per asset and supports four modes:
+minimum final state, exact final state, cyclic final state equal to the initial
+state, and unconstrained.
+
+Optional degradation bands introduce non-negative variables \(b_{s,k,t}\) that
+allocate throughput to cost bands:
+
+\[
+\sum_k b_{s,k,t}=(c_{s,t}+d_{s,t})\Delta t.
+\]
+
+Band costs must be nondecreasing. With a linear objective, throughput is assigned
+to lower-cost bands first without extra binary variables. The approximation is
+throughput-based; it reports equivalent full cycles and depth-of-discharge
+metrics but does not model electrochemical ageing states.
 
 ## Objective
 
@@ -286,11 +314,11 @@ thermal units, running cost is scalar variable cost times output. For segmented
 thermal units, running cost is fuel input times fuel price.
 
 Reported cost components reconcile the solver objective into thermal variable,
-thermal no-load, startup, shutdown, import energy, battery throughput, thermal
-carbon, import carbon, renewable curtailment, dispatch load-shedding, and
-network-capacity load-shedding costs. The simulator raises an error if the
-reported component sum diverges from the objective beyond the configured
-tolerance.
+thermal no-load, startup, shutdown, import energy, battery throughput, storage
+degradation, thermal carbon, import carbon, renewable curtailment, dispatch
+load-shedding, and network-capacity load-shedding costs. The simulator raises an
+error if the reported component sum diverges from the objective beyond the
+configured tolerance.
 
 ## Solver status and reconciliation
 

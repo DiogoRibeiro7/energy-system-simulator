@@ -17,13 +17,13 @@
     "imports_mwh": 707.2247487293,
     "unserved_energy_mwh": 0.0,
     "continuous_variables": 2352,
-    "integer_variables": 1344,
-    "binary_variables": 1344,
-    "linear_constraints": 4036,
-    "matrix_nonzeros": 13099,
-    "max_abs_source_balance_residual_mw": 5.684341886080802e-14,
+    "integer_variables": 1680,
+    "binary_variables": 1680,
+    "linear_constraints": 4372,
+    "matrix_nonzeros": 13771,
+    "max_abs_source_balance_residual_mw": 8.526512829121202e-14,
     "max_abs_delivered_demand_residual_mw": 0.0,
-    "max_abs_battery_energy_residual_mwh": 2.842170943040401e-14,
+    "max_abs_battery_energy_residual_mwh": 7.105427357601002e-14,
     "objective_reconciliation_error_eur": 0.0
   }
 }

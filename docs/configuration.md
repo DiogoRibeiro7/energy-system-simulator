@@ -94,6 +94,26 @@ When `heat_rate_segments` is omitted, the generator remains in compatibility
 mode and uses `variable_cost_eur_per_mwh` plus
 `emission_factor_tonnes_per_mwh`.
 
+Storage units may set:
+
+- `technology`: `battery` or `pumped_storage`; this is metadata for reporting
+  while both use the same linear energy-storage equations.
+- `charge_power_capacity_mw` and `discharge_power_capacity_mw`: optional
+  independent power limits. When omitted, `power_capacity_mw` is used for both.
+- `self_discharge_rate_per_hour`: hourly standing energy loss fraction.
+- `minimum_charge_mw` and `minimum_discharge_mw`: optional minimum power when
+  the corresponding operating mode is active.
+- `charge_ramp_mw_per_hour` and `discharge_ramp_mw_per_hour`: optional ramp
+  limits on charge and discharge power.
+- `availability_factor` and `availability_factor_key`: static and optional
+  time-series multipliers in `[0, 1]`.
+- `degradation_bands`: optional throughput bands with nondecreasing
+  `cost_eur_per_mwh`. The approximation assigns charge-plus-discharge
+  throughput to the cheapest available bands each period.
+
+Each storage asset has its own terminal SOC mode: `minimum`, `exact`, `cyclic`,
+or `free`.
+
 ## Migration
 
 Convert a legacy configuration with:

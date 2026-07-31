@@ -216,6 +216,12 @@ def test_portfolio_configuration_loads_with_typed_assets() -> None:
     assert [fuel.id for fuel in config.portfolio.fuels] == ["gas"]
     assert config.portfolio.thermal_generators[0].config.heat_rate_segments[0].id == "efficient"
     assert config.portfolio.thermal_generators[1].config.startup_categories[-1].id == "cold"
+    assert [unit.id for unit in config.portfolio.storage_units] == [
+        "south-battery",
+        "north-pumped-storage",
+    ]
+    assert config.portfolio.storage_units[1].config.technology == "pumped_storage"
+    assert config.portfolio.storage_units[0].config.degradation_bands[-1].id == "deep"
     assert config.thermal.name == "North combined-cycle gas plant"
 
 
