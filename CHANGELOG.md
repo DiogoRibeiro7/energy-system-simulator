@@ -13,6 +13,9 @@ and this project follows semantic versioning.
 - Business Source License 1.1 licensing documentation and validation.
 - Baseline audit, reproducibility checks, formulation benchmark, run manifest,
   and coverage enforcement.
+- Numerical tolerances, duration-aware unit commitment constraints, exact
+  battery operating-mode exclusivity, detailed objective accounting, solver
+  diagnostics, and energy reconciliation metrics.
 
 ## [0.1.0] - 2026-07-31
 

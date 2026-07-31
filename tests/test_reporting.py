@@ -21,7 +21,7 @@ def test_write_outputs_includes_machine_readable_manifest(tmp_path: Path) -> Non
     assert len(manifest["input_file_sha256"]) == 64
     assert len(manifest["configuration_sha256"]) == 64
     assert manifest["solver"]["name"] == "scipy.optimize.milp"
-    assert manifest["formulation"]["integer_variables"] == 1008
+    assert manifest["formulation"]["integer_variables"] == 1344
     assert manifest["resolved_configuration"]["paths"]["input_csv"].endswith(
         "data\\example_hourly.csv"
     ) or manifest["resolved_configuration"]["paths"]["input_csv"].endswith(

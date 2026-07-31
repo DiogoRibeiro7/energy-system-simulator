@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar, cast
 
 import yaml
 
@@ -31,6 +31,29 @@ def _boolean(section: Mapping[str, Any], key: str) -> bool:
     if not isinstance(value, bool):
         raise ConfigurationError(f"{key!r} must be boolean")
     return value
+
+
+def _optional_number(
+    section: Mapping[str, Any],
+    key: str,
+    expected: type[T],
+    default: T,
+) -> T:
+    if key not in section:
+        return default
+    return _number(section, key, expected)
+
+
+def _optional_boolean(section: Mapping[str, Any], key: str, default: bool) -> bool:
+    if key not in section:
+        return default
+    return _boolean(section, key)
+
+
+def _optional_string(section: Mapping[str, Any], key: str, default: str) -> str:
+    if key not in section:
+        return default
+    return _string(section, key)
 
 
 def _string(section: Mapping[str, Any], key: str) -> str:
@@ -64,6 +87,7 @@ class SimulationConfig:
     time_step_hours: float
     solver_time_limit_seconds: float
     mip_relative_gap: float
+    allow_non_optimal_solution: bool
 
 
 @dataclass(frozen=True)
@@ -90,15 +114,19 @@ class ThermalConfig:
     maximum_output_mw: float
     ramp_up_mw_per_hour: float
     ramp_down_mw_per_hour: float
+    startup_ramp_mw: float
+    shutdown_ramp_mw: float
     variable_cost_eur_per_mwh: float
     no_load_cost_eur_per_hour: float
     startup_cost_eur: float
     shutdown_cost_eur: float
     emission_factor_tonnes_per_mwh: float
-    minimum_up_hours: int
-    minimum_down_hours: int
+    minimum_up_hours: float
+    minimum_down_hours: float
     initial_on: bool
     initial_output_mw: float
+    initial_up_time_hours: float
+    initial_down_time_hours: float
 
 
 @dataclass(frozen=True)
@@ -112,6 +140,7 @@ class BatteryConfig:
     discharge_efficiency: float
     throughput_cost_eur_per_mwh: float
     minimum_final_soc_mwh: float
+    terminal_soc_mode: Literal["minimum", "exact", "cyclic", "free"]
 
 
 @dataclass(frozen=True)
@@ -177,6 +206,11 @@ def load_config(path: str | Path) -> ModelConfig:
         time_step_hours=_number(simulation_raw, "time_step_hours", float),
         solver_time_limit_seconds=_number(simulation_raw, "solver_time_limit_seconds", float),
         mip_relative_gap=_number(simulation_raw, "mip_relative_gap", float),
+        allow_non_optimal_solution=_optional_boolean(
+            simulation_raw,
+            "allow_non_optimal_solution",
+            False,
+        ),
     )
     solar = SolarConfig(
         capacity_mw=_number(solar_raw, "capacity_mw", float),
@@ -199,6 +233,18 @@ def load_config(path: str | Path) -> ModelConfig:
         maximum_output_mw=_number(thermal_raw, "maximum_output_mw", float),
         ramp_up_mw_per_hour=_number(thermal_raw, "ramp_up_mw_per_hour", float),
         ramp_down_mw_per_hour=_number(thermal_raw, "ramp_down_mw_per_hour", float),
+        startup_ramp_mw=_optional_number(
+            thermal_raw,
+            "startup_ramp_mw",
+            float,
+            _number(thermal_raw, "maximum_output_mw", float),
+        ),
+        shutdown_ramp_mw=_optional_number(
+            thermal_raw,
+            "shutdown_ramp_mw",
+            float,
+            _number(thermal_raw, "maximum_output_mw", float),
+        ),
         variable_cost_eur_per_mwh=_number(thermal_raw, "variable_cost_eur_per_mwh", float),
         no_load_cost_eur_per_hour=_number(thermal_raw, "no_load_cost_eur_per_hour", float),
         startup_cost_eur=_number(thermal_raw, "startup_cost_eur", float),
@@ -206,10 +252,22 @@ def load_config(path: str | Path) -> ModelConfig:
         emission_factor_tonnes_per_mwh=_number(
             thermal_raw, "emission_factor_tonnes_per_mwh", float
         ),
-        minimum_up_hours=_integer(thermal_raw, "minimum_up_hours"),
-        minimum_down_hours=_integer(thermal_raw, "minimum_down_hours"),
+        minimum_up_hours=_number(thermal_raw, "minimum_up_hours", float),
+        minimum_down_hours=_number(thermal_raw, "minimum_down_hours", float),
         initial_on=_boolean(thermal_raw, "initial_on"),
         initial_output_mw=_number(thermal_raw, "initial_output_mw", float),
+        initial_up_time_hours=_optional_number(
+            thermal_raw,
+            "initial_up_time_hours",
+            float,
+            0.0,
+        ),
+        initial_down_time_hours=_optional_number(
+            thermal_raw,
+            "initial_down_time_hours",
+            float,
+            0.0,
+        ),
     )
     battery = BatteryConfig(
         energy_capacity_mwh=_number(battery_raw, "energy_capacity_mwh", float),
@@ -221,6 +279,10 @@ def load_config(path: str | Path) -> ModelConfig:
         discharge_efficiency=_number(battery_raw, "discharge_efficiency", float),
         throughput_cost_eur_per_mwh=_number(battery_raw, "throughput_cost_eur_per_mwh", float),
         minimum_final_soc_mwh=_number(battery_raw, "minimum_final_soc_mwh", float),
+        terminal_soc_mode=cast(
+            Literal["minimum", "exact", "cyclic", "free"],
+            _optional_string(battery_raw, "terminal_soc_mode", "minimum"),
+        ),
     )
     network = NetworkConfig(
         loss_fraction=_number(network_raw, "loss_fraction", float),
@@ -287,6 +349,8 @@ def validate_config(config: ModelConfig) -> None:
     for name, value in (
         ("ramp_up_mw_per_hour", th.ramp_up_mw_per_hour),
         ("ramp_down_mw_per_hour", th.ramp_down_mw_per_hour),
+        ("startup_ramp_mw", th.startup_ramp_mw),
+        ("shutdown_ramp_mw", th.shutdown_ramp_mw),
         ("variable_cost_eur_per_mwh", th.variable_cost_eur_per_mwh),
         ("no_load_cost_eur_per_hour", th.no_load_cost_eur_per_hour),
         ("startup_cost_eur", th.startup_cost_eur),
@@ -294,13 +358,23 @@ def validate_config(config: ModelConfig) -> None:
         ("emission_factor_tonnes_per_mwh", th.emission_factor_tonnes_per_mwh),
     ):
         _check_nonnegative(f"thermal.{name}", value)
-    if th.minimum_up_hours < 1 or th.minimum_down_hours < 1:
-        raise ConfigurationError("Minimum up/down times must be at least one period")
+    if th.minimum_up_hours <= 0.0 or th.minimum_down_hours <= 0.0:
+        raise ConfigurationError("Minimum up/down times must be positive")
     if th.initial_on:
         if not th.minimum_output_mw <= th.initial_output_mw <= th.maximum_output_mw:
             raise ConfigurationError("Initial thermal output is outside operating bounds")
+        if th.initial_down_time_hours != 0.0:
+            raise ConfigurationError(
+                "initial_down_time_hours must be zero when thermal.initial_on is true"
+            )
     elif th.initial_output_mw != 0.0:
         raise ConfigurationError("Initial thermal output must be zero when initially off")
+    elif th.initial_up_time_hours != 0.0:
+        raise ConfigurationError(
+            "initial_up_time_hours must be zero when thermal.initial_on is false"
+        )
+    _check_nonnegative("thermal.initial_up_time_hours", th.initial_up_time_hours)
+    _check_nonnegative("thermal.initial_down_time_hours", th.initial_down_time_hours)
 
     bat = config.battery
     for name, value in (
@@ -323,6 +397,10 @@ def validate_config(config: ModelConfig) -> None:
         raise ConfigurationError("Initial battery SOC is outside bounds")
     if not bat.minimum_soc_mwh <= bat.minimum_final_soc_mwh <= bat.maximum_soc_mwh:
         raise ConfigurationError("Minimum final SOC is outside bounds")
+    if bat.terminal_soc_mode not in {"minimum", "exact", "cyclic", "free"}:
+        raise ConfigurationError(
+            "battery.terminal_soc_mode must be one of minimum, exact, cyclic, free"
+        )
 
     _check_fraction("network.loss_fraction", config.network.loss_fraction, allow_one=False)
     if config.network.transfer_capacity_mw <= 0.0:

@@ -39,9 +39,13 @@ def run_benchmark(config_path: Path) -> dict[str, Any]:
         **asdict(formulation.statistics),
         "build_time_seconds": build_time_seconds,
         "solve_time_seconds": solve_time_seconds,
+        "solver_status": result.solver_status,
         "solver_termination_status": result.solver_message,
         "objective_eur": result.objective_eur,
+        "objective_bound_eur": result.objective_bound_eur,
+        "absolute_gap_eur": result.absolute_gap_eur,
         "mip_gap": result.mip_gap,
+        "solver_node_count": result.solver_node_count,
     }
 
 

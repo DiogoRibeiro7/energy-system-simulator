@@ -22,6 +22,8 @@ thermal:
   maximum_output_mw: 220.0
   ramp_up_mw_per_hour: 80.0
   ramp_down_mw_per_hour: 80.0
+  startup_ramp_mw: 220.0
+  shutdown_ramp_mw: 220.0
   variable_cost_eur_per_mwh: 72.0
   no_load_cost_eur_per_hour: 700.0
   startup_cost_eur: 9000.0
@@ -31,6 +33,8 @@ thermal:
   minimum_down_hours: 2
   initial_on: true
   initial_output_mw: 70.0
+  initial_up_time_hours: 3.0
+  initial_down_time_hours: 0.0
 
 battery:
   energy_capacity_mwh: 240.0
@@ -42,6 +46,7 @@ battery:
   discharge_efficiency: 0.94
   throughput_cost_eur_per_mwh: 2.0
   minimum_final_soc_mwh: 100.0
+  terminal_soc_mode: minimum
 
 network:
   loss_fraction: 0.065

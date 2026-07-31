@@ -63,17 +63,35 @@ Start-up and shutdown variables \(y_t,z_t\in\{0,1\}\) satisfy
 u_t-u_{t-1}=y_t-z_t.
 \]
 
-Ramping constraints use start-up and shutdown relaxations:
+They are mutually exclusive in each period:
 
 \[
-p_t-p_{t-1}\le R^{\uparrow}+P^{\max}y_t,
+y_t + z_t \le 1.
+\]
+
+Minimum up and down durations are configured in hours and converted to periods
+with a conservative ceiling rule:
+
+\[
+N^{\uparrow}=\left\lceil H^{\uparrow}/\Delta t\right\rceil,\quad
+N^{\downarrow}=\left\lceil H^{\downarrow}/\Delta t\right\rceil.
+\]
+
+Residual initial up-time and down-time obligations are enforced at the start of
+the horizon from the configured initial state.
+
+Ramping constraints use explicit start-up and shutdown ramp limits:
+
+\[
+p_t-p_{t-1}\le R^{\uparrow}\Delta t\,u_{t-1}+S^{\uparrow}y_t,
 \]
 
 \[
-p_{t-1}-p_t\le R^{\downarrow}+P^{\max}z_t.
+p_{t-1}-p_t\le R^{\downarrow}\Delta t\,u_t+S^{\downarrow}z_t.
 \]
 
-Minimum up and down times are imposed through rolling sums of recent starts and shutdowns.
+Minimum up and down times are imposed through rolling sums of recent starts and
+shutdowns.
 
 ## Battery
 
@@ -84,7 +102,19 @@ e_t=e_{t-1}+\eta_c c_t^{\mathrm{bat}}\Delta t
 -\frac{d_t^{\mathrm{bat}}\Delta t}{\eta_d}.
 \]
 
-Power and energy bounds are applied each period. Simultaneous charging and discharging are not explicitly forbidden. With positive throughput costs and round-trip losses, such behaviour is dominated in the default model.
+Power and energy bounds are applied each period. A binary charge-mode variable
+\(m_t^{\mathrm{bat}}\in\{0,1\}\) enforces exact charge/discharge exclusivity:
+
+\[
+c_t^{\mathrm{bat}}\le P^{\max}_{\mathrm{bat}}m_t^{\mathrm{bat}},
+\]
+
+\[
+d_t^{\mathrm{bat}}\le P^{\max}_{\mathrm{bat}}(1-m_t^{\mathrm{bat}}).
+\]
+
+The terminal state of charge supports four modes: minimum final state, exact
+final state, cyclic final state equal to the initial state, and unconstrained.
 
 ## Objective
 
@@ -100,6 +130,24 @@ C^{\mathrm{var}}p_t+C^{\mathrm{imp}}i_t
 \]
 
 plus no-load, start-up, shutdown, and renewable-curtailment costs.
+
+Reported cost components reconcile the solver objective into thermal variable,
+thermal no-load, startup, shutdown, import energy, battery throughput, thermal
+carbon, import carbon, renewable curtailment, dispatch load-shedding, and
+network-capacity load-shedding costs. The simulator raises an error if the
+reported component sum diverges from the objective beyond the configured
+tolerance.
+
+## Solver status and reconciliation
+
+The simulator reports solver status, primal objective, objective bound, absolute
+gap, relative gap, runtime, and node count when the SciPy HiGHS result exposes
+them. A feasible non-optimal incumbent is accepted only when explicitly enabled
+in configuration.
+
+Per-period reconciliation columns report source balance residual, delivered
+demand balance residual, battery energy residual, curtailment residual, network
+losses, and unserved energy.
 
 ## Interpretation limits
 

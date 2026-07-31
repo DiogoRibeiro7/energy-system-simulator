@@ -1,0 +1,7 @@
+"""Numerical tolerances used across optimisation and reporting."""
+
+FEASIBILITY_TOLERANCE = 1e-7
+BALANCE_TOLERANCE_MW = 1e-6
+INTEGRALITY_TOLERANCE = 1e-7
+REPORTING_TOLERANCE = 1e-6
+OBJECTIVE_TOLERANCE_EUR = 1e-4

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import ceil
+from time import perf_counter
 from typing import Final
 
 import numpy as np
@@ -10,6 +12,7 @@ from scipy.optimize import Bounds, LinearConstraint, milp
 from scipy.sparse import coo_matrix
 
 from energy_system_simulator.config import ModelConfig
+from energy_system_simulator.constants import OBJECTIVE_TOLERANCE_EUR
 from energy_system_simulator.exceptions import OptimisationError
 
 FloatArray = npt.NDArray[np.float64]
@@ -22,10 +25,19 @@ BLOCKS: Final[tuple[str, ...]] = (
     "thermal_shutdown",
     "battery_charge_mw",
     "battery_discharge_mw",
+    "battery_charge_mode",
     "battery_soc_mwh",
     "imports_mw",
     "source_load_shed_mw",
 )
+
+SOLVER_STATUS_NAMES: Final[dict[int, str]] = {
+    0: "optimal",
+    1: "limit_reached",
+    2: "infeasible",
+    3: "unbounded",
+    4: "solver_error",
+}
 
 
 @dataclass(frozen=True)
@@ -59,8 +71,16 @@ class DispatchResult:
     frame: pd.DataFrame
     objective_eur: float
     solver_message: str
+    solver_status: str
     mip_gap: float | None
+    primal_objective_eur: float | None
+    objective_bound_eur: float | None
+    absolute_gap_eur: float | None
+    relative_gap: float | None
+    solver_runtime_seconds: float
+    solver_node_count: int | None
     formulation_statistics: FormulationStatistics
+    cost_components_eur: dict[str, float]
 
 
 class _VariableIndex:
@@ -169,6 +189,7 @@ class UnitCommitment:
 
     def solve_formulation(self, problem: FormulationProblem) -> DispatchResult:
         """Solve a previously built formulation."""
+        solve_started = perf_counter()
         result = milp(
             c=problem.objective,
             integrality=problem.integrality,
@@ -180,7 +201,15 @@ class UnitCommitment:
                 "presolve": True,
             },
         )
-        if result.x is None or not result.success:
+        solver_runtime_seconds = perf_counter() - solve_started
+        solver_status = SOLVER_STATUS_NAMES.get(int(result.status), "unknown")
+        has_feasible_solution = result.x is not None
+        allowed_non_optimal = (
+            solver_status == "limit_reached"
+            and has_feasible_solution
+            and self.config.simulation.allow_non_optimal_solution
+        )
+        if not has_feasible_solution or (solver_status != "optimal" and not allowed_non_optimal):
             raise OptimisationError(
                 f"Unit commitment failed with status {result.status}: {result.message}"
             )
@@ -201,15 +230,45 @@ class UnitCommitment:
             * problem.renewable_available_mw.sum()
             * self.config.simulation.time_step_hours
         )
-        objective_eur = float(result.fun + constant_curtailment_cost)
+        primal_objective_eur = (
+            float(result.fun + constant_curtailment_cost) if result.fun is not None else None
+        )
+        cost_components = self._cost_components(frame)
+        objective_eur = float(sum(cost_components.values()))
+        if (
+            primal_objective_eur is not None
+            and abs(primal_objective_eur - objective_eur) > OBJECTIVE_TOLERANCE_EUR
+        ):
+            raise OptimisationError(
+                "Reported dispatch cost components do not reconcile with solver objective"
+            )
+        objective_bound_raw = getattr(result, "mip_dual_bound", None)
+        objective_bound_eur = (
+            float(objective_bound_raw + constant_curtailment_cost)
+            if objective_bound_raw is not None
+            else None
+        )
+        absolute_gap_eur = (
+            abs(objective_eur - objective_bound_eur) if objective_bound_eur is not None else None
+        )
         mip_gap_raw = getattr(result, "mip_gap", None)
         mip_gap = float(mip_gap_raw) if mip_gap_raw is not None else None
+        node_count_raw = getattr(result, "mip_node_count", None)
+        node_count = int(node_count_raw) if node_count_raw is not None else None
         return DispatchResult(
             frame=frame,
             objective_eur=objective_eur,
             solver_message=str(result.message),
+            solver_status=solver_status,
             mip_gap=mip_gap,
+            primal_objective_eur=primal_objective_eur,
+            objective_bound_eur=objective_bound_eur,
+            absolute_gap_eur=absolute_gap_eur,
+            relative_gap=mip_gap,
+            solver_runtime_seconds=solver_runtime_seconds,
+            solver_node_count=node_count,
             formulation_statistics=problem.statistics,
+            cost_components_eur=cost_components,
         )
 
     def _objective(self, index: _VariableIndex, renewable: FloatArray) -> FloatArray:
@@ -268,6 +327,8 @@ class UnitCommitment:
             upper[index.at("battery_discharge_mw", t)] = self.config.battery.power_capacity_mw
             lower[index.at("battery_soc_mwh", t)] = self.config.battery.minimum_soc_mwh
             upper[index.at("battery_soc_mwh", t)] = self.config.battery.maximum_soc_mwh
+            upper[index.at("battery_charge_mode", t)] = 1.0
+            integrality[index.at("battery_charge_mode", t)] = 1
             upper[index.at("imports_mw", t)] = self.config.imports.maximum_power_mw
             upper[index.at("source_load_shed_mw", t)] = demand[t]
 
@@ -330,27 +391,60 @@ class UnitCommitment:
                 1.0,
             )
 
-            previous_output = thermal.initial_output_mw if t == 0 else 0.0
             ramp_up_coefficients = {
                 index.at("thermal_output_mw", t): 1.0,
-                index.at("thermal_startup", t): -thermal.maximum_output_mw,
+                index.at("thermal_startup", t): -thermal.startup_ramp_mw,
             }
             ramp_down_coefficients = {
                 index.at("thermal_output_mw", t): -1.0,
-                index.at("thermal_shutdown", t): -thermal.maximum_output_mw,
+                index.at("thermal_shutdown", t): -thermal.shutdown_ramp_mw,
             }
             if t > 0:
                 ramp_up_coefficients[index.at("thermal_output_mw", t - 1)] = -1.0
+                ramp_up_coefficients[index.at("thermal_on", t - 1)] = (
+                    -thermal.ramp_up_mw_per_hour * dt
+                )
                 ramp_down_coefficients[index.at("thermal_output_mw", t - 1)] = 1.0
+                ramp_down_coefficients[index.at("thermal_on", t)] = (
+                    -thermal.ramp_down_mw_per_hour * dt
+                )
+                ramp_up_upper = 0.0
+                ramp_down_upper = 0.0
+            else:
+                ramp_up_upper = (
+                    thermal.initial_output_mw
+                    + thermal.ramp_up_mw_per_hour * dt * float(thermal.initial_on)
+                )
+                ramp_down_coefficients[index.at("thermal_on", t)] = (
+                    -thermal.ramp_down_mw_per_hour * dt
+                )
+                ramp_down_upper = -thermal.initial_output_mw
             builder.add(
                 ramp_up_coefficients,
                 -np.inf,
-                thermal.ramp_up_mw_per_hour * dt + previous_output,
+                ramp_up_upper,
             )
             builder.add(
                 ramp_down_coefficients,
                 -np.inf,
-                thermal.ramp_down_mw_per_hour * dt - previous_output,
+                ramp_down_upper,
+            )
+
+            builder.add(
+                {
+                    index.at("battery_charge_mw", t): 1.0,
+                    index.at("battery_charge_mode", t): -battery.power_capacity_mw,
+                },
+                -np.inf,
+                0.0,
+            )
+            builder.add(
+                {
+                    index.at("battery_discharge_mw", t): 1.0,
+                    index.at("battery_charge_mode", t): battery.power_capacity_mw,
+                },
+                -np.inf,
+                battery.power_capacity_mw,
             )
 
             soc_coefficients = {
@@ -363,8 +457,8 @@ class UnitCommitment:
                 soc_coefficients[index.at("battery_soc_mwh", t - 1)] = -1.0
             builder.add(soc_coefficients, soc_rhs, soc_rhs)
 
-        up = thermal.minimum_up_hours
-        down = thermal.minimum_down_hours
+        up = self._duration_periods(thermal.minimum_up_hours)
+        down = self._duration_periods(thermal.minimum_down_hours)
         for t in range(periods):
             recent_startups = {
                 index.at("thermal_startup", k): 1.0 for k in range(max(0, t - up + 1), t + 1)
@@ -378,9 +472,94 @@ class UnitCommitment:
             recent_shutdowns[index.at("thermal_on", t)] = 1.0
             builder.add(recent_shutdowns, -np.inf, 1.0)
 
-        builder.add(
-            {index.at("battery_soc_mwh", periods - 1): 1.0},
-            battery.minimum_final_soc_mwh,
-            np.inf,
-        )
+        self._add_initial_duration_obligations(builder, index, periods)
+        self._add_terminal_soc_constraint(builder, index, periods)
         return builder.build()
+
+    def _duration_periods(self, duration_hours: float) -> int:
+        return max(1, ceil(duration_hours / self.config.simulation.time_step_hours))
+
+    def _add_initial_duration_obligations(
+        self,
+        builder: _ConstraintBuilder,
+        index: _VariableIndex,
+        periods: int,
+    ) -> None:
+        thermal = self.config.thermal
+        dt = self.config.simulation.time_step_hours
+        if thermal.initial_on:
+            remaining_hours = max(0.0, thermal.minimum_up_hours - thermal.initial_up_time_hours)
+            forced_periods = min(periods, ceil(remaining_hours / dt))
+            for t in range(forced_periods):
+                builder.add({index.at("thermal_on", t): 1.0}, 1.0, 1.0)
+            return
+
+        remaining_hours = max(0.0, thermal.minimum_down_hours - thermal.initial_down_time_hours)
+        forced_periods = min(periods, ceil(remaining_hours / dt))
+        for t in range(forced_periods):
+            builder.add({index.at("thermal_on", t): 1.0}, 0.0, 0.0)
+
+    def _add_terminal_soc_constraint(
+        self,
+        builder: _ConstraintBuilder,
+        index: _VariableIndex,
+        periods: int,
+    ) -> None:
+        battery = self.config.battery
+        terminal = {index.at("battery_soc_mwh", periods - 1): 1.0}
+        if battery.terminal_soc_mode == "minimum":
+            builder.add(terminal, battery.minimum_final_soc_mwh, np.inf)
+        elif battery.terminal_soc_mode == "exact":
+            builder.add(terminal, battery.minimum_final_soc_mwh, battery.minimum_final_soc_mwh)
+        elif battery.terminal_soc_mode == "cyclic":
+            builder.add(terminal, battery.initial_soc_mwh, battery.initial_soc_mwh)
+
+    def _cost_components(self, frame: pd.DataFrame) -> dict[str, float]:
+        dt = self.config.simulation.time_step_hours
+        thermal = self.config.thermal
+        imports = self.config.imports
+        battery = self.config.battery
+        penalties = self.config.penalties
+        network_efficiency = 1.0 - self.config.network.loss_fraction
+
+        return {
+            "thermal_variable_cost_eur": float(
+                frame["thermal_output_mw"].sum() * dt * thermal.variable_cost_eur_per_mwh
+            ),
+            "thermal_no_load_cost_eur": float(
+                frame["thermal_on"].sum() * dt * thermal.no_load_cost_eur_per_hour
+            ),
+            "startup_cost_eur": float(frame["thermal_startup"].sum() * thermal.startup_cost_eur),
+            "shutdown_cost_eur": float(frame["thermal_shutdown"].sum() * thermal.shutdown_cost_eur),
+            "import_energy_cost_eur": float(
+                frame["imports_mw"].sum() * dt * imports.price_eur_per_mwh
+            ),
+            "battery_throughput_cost_eur": float(
+                (frame["battery_charge_mw"].sum() + frame["battery_discharge_mw"].sum())
+                * dt
+                * battery.throughput_cost_eur_per_mwh
+            ),
+            "thermal_carbon_cost_eur": float(
+                frame["thermal_output_mw"].sum()
+                * dt
+                * thermal.emission_factor_tonnes_per_mwh
+                * penalties.carbon_price_eur_per_tonne
+            ),
+            "import_carbon_cost_eur": float(
+                frame["imports_mw"].sum()
+                * dt
+                * imports.emission_factor_tonnes_per_mwh
+                * penalties.carbon_price_eur_per_tonne
+            ),
+            "renewable_curtailment_cost_eur": float(
+                frame["renewable_curtailed_mw"].sum()
+                * dt
+                * penalties.renewable_curtailment_eur_per_mwh
+            ),
+            "dispatch_load_shedding_cost_eur": float(
+                frame["source_load_shed_mw"].sum()
+                * network_efficiency
+                * dt
+                * penalties.lost_load_eur_per_mwh
+            ),
+        }

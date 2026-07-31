@@ -7,8 +7,10 @@ from typing import Any
 import pandas as pd
 
 from energy_system_simulator.config import ModelConfig
+from energy_system_simulator.constants import BALANCE_TOLERANCE_MW, OBJECTIVE_TOLERANCE_EUR
 from energy_system_simulator.data import load_input_data
 from energy_system_simulator.dispatch import FormulationStatistics, UnitCommitment
+from energy_system_simulator.exceptions import OptimisationError
 from energy_system_simulator.generation import SolarPlant, WindFarm
 from energy_system_simulator.network import DistributionNetwork
 
@@ -21,7 +23,13 @@ class SimulationResult:
     summary: dict[str, Any]
     objective_eur: float
     solver_message: str
+    solver_status: str
     mip_gap: float | None
+    objective_bound_eur: float | None
+    absolute_gap_eur: float | None
+    relative_gap: float | None
+    solver_runtime_seconds: float
+    solver_node_count: int | None
     formulation_statistics: FormulationStatistics
 
 
@@ -77,24 +85,47 @@ class SimulationEngine:
             * self.config.imports.emission_factor_tonnes_per_mwh
             * self.config.simulation.time_step_hours
         )
+        self._add_energy_reconciliation(frame)
 
         fixed_network_shedding_cost = (
             frame["network_capacity_shed_mw"].sum()
             * self.config.penalties.lost_load_eur_per_mwh
             * self.config.simulation.time_step_hours
         )
+        cost_components = {
+            **dispatch.cost_components_eur,
+            "network_capacity_load_shedding_cost_eur": float(fixed_network_shedding_cost),
+        }
+        reconciled_objective_eur = float(sum(cost_components.values()))
         total_objective_eur = dispatch.objective_eur + float(fixed_network_shedding_cost)
-        summary = self._summary(frame, total_objective_eur)
+        if abs(total_objective_eur - reconciled_objective_eur) > OBJECTIVE_TOLERANCE_EUR:
+            raise OptimisationError("Total cost components do not reconcile with objective")
+        summary = self._summary(frame, total_objective_eur, cost_components)
         return SimulationResult(
             timeseries=frame,
             summary=summary,
             objective_eur=total_objective_eur,
             solver_message=dispatch.solver_message,
+            solver_status=dispatch.solver_status,
             mip_gap=dispatch.mip_gap,
+            objective_bound_eur=(
+                dispatch.objective_bound_eur + fixed_network_shedding_cost
+                if dispatch.objective_bound_eur is not None
+                else None
+            ),
+            absolute_gap_eur=dispatch.absolute_gap_eur,
+            relative_gap=dispatch.relative_gap,
+            solver_runtime_seconds=dispatch.solver_runtime_seconds,
+            solver_node_count=dispatch.solver_node_count,
             formulation_statistics=dispatch.formulation_statistics,
         )
 
-    def _summary(self, frame: pd.DataFrame, objective_eur: float) -> dict[str, Any]:
+    def _summary(
+        self,
+        frame: pd.DataFrame,
+        objective_eur: float,
+        cost_components: dict[str, float],
+    ) -> dict[str, Any]:
         dt = self.config.simulation.time_step_hours
 
         def energy(column: str) -> float:
@@ -110,6 +141,10 @@ class SimulationEngine:
             "periods": len(frame),
             "time_step_hours": dt,
             "objective_eur": objective_eur,
+            "cost_components_eur": cost_components,
+            "objective_reconciliation_error_eur": abs(
+                objective_eur - sum(cost_components.values())
+            ),
             "total_demand_mwh": demand_mwh,
             "served_demand_mwh": served_mwh,
             "unserved_energy_mwh": energy("total_load_shed_mw"),
@@ -136,7 +171,54 @@ class SimulationEngine:
             ),
             "peak_demand_mw": float(frame["end_user_demand_mw"].max()),
             "peak_thermal_output_mw": float(frame["thermal_output_mw"].max()),
+            "energy_reconciliation": {
+                "max_abs_source_balance_residual_mw": float(
+                    frame["source_balance_residual_mw"].abs().max()
+                ),
+                "max_abs_delivered_demand_residual_mw": float(
+                    frame["delivered_demand_balance_residual_mw"].abs().max()
+                ),
+                "max_abs_battery_energy_residual_mwh": float(
+                    frame["battery_energy_residual_mwh"].abs().max()
+                ),
+                "max_abs_curtailment_residual_mw": float(
+                    frame["curtailment_residual_mw"].abs().max()
+                ),
+                "total_network_losses_mwh": energy("network_losses_mw"),
+                "total_unserved_energy_mwh": energy("total_load_shed_mw"),
+            },
         }
+
+    def _add_energy_reconciliation(self, frame: pd.DataFrame) -> None:
+        dt = self.config.simulation.time_step_hours
+        battery = self.config.battery
+        source_left = (
+            frame["renewable_used_mw"]
+            + frame["thermal_output_mw"]
+            + frame["battery_discharge_mw"]
+            + frame["imports_mw"]
+            + frame["source_load_shed_mw"]
+        )
+        source_right = frame["gross_demand_mw"] + frame["battery_charge_mw"]
+        frame["source_balance_residual_mw"] = source_left - source_right
+        frame["delivered_demand_balance_residual_mw"] = (
+            frame["served_demand_mw"] + frame["total_load_shed_mw"] - frame["end_user_demand_mw"]
+        )
+        previous_soc = frame["battery_soc_mwh"].shift(1)
+        previous_soc.iloc[0] = battery.initial_soc_mwh
+        frame["battery_energy_change_mwh"] = frame["battery_soc_mwh"] - previous_soc
+        expected_change = (
+            battery.charge_efficiency * frame["battery_charge_mw"] * dt
+            - frame["battery_discharge_mw"] * dt / battery.discharge_efficiency
+        )
+        frame["battery_energy_residual_mwh"] = frame["battery_energy_change_mwh"] - expected_change
+        frame["curtailment_residual_mw"] = (
+            frame["renewable_available_mw"]
+            - frame["renewable_used_mw"]
+            - frame["renewable_curtailed_mw"]
+        )
+        if frame["source_balance_residual_mw"].abs().max() > BALANCE_TOLERANCE_MW:
+            raise OptimisationError("Source balance residual exceeds tolerance")
 
     @staticmethod
     def ensure_output_directory(path: Path) -> None:
