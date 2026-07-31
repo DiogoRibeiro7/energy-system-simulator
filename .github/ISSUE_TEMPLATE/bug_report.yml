@@ -1,0 +1,48 @@
+name: Bug report
+description: Report a reproducible problem.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Please include enough detail to reproduce it.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: List the exact commands, config, or data needed to reproduce the issue.
+      placeholder: |
+        1. Run `poetry run ...`
+        2. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Python version, OS, Poetry version, and relevant dependency versions.
+      placeholder: |
+        Python:
+        OS:
+        Poetry:
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      render: text
