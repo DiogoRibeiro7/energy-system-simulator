@@ -1,0 +1,26 @@
+{
+  "title": "Energy System Simulator",
+  "description": "<p>A transparent, optimisation-based simulator for an electrical energy system with renewable generation, a dispatchable thermal plant, battery storage, imports, distribution constraints, and hourly end-user consumption.</p><p>The model is designed for research, teaching, and policy experiments. It uses explicit physical and economic constraints rather than machine-learning methods. Capabilities include solar generation from irradiance and ambient temperature, wind generation from a configurable turbine power curve, thermal unit commitment with ramp limits and minimum up/down times, battery state-of-charge and efficiency modelling, aggregated distribution losses and transfer-capacity limits, electricity imports, renewable curtailment and involuntary load shedding, and a small DC power-flow module for network experiments. Dispatch is solved as a mixed-integer programme with <code>scipy.optimize.milp</code>, and results are reported as CSV time series, JSON summary metrics, and diagnostic plots.</p>",
+  "upload_type": "software",
+  "access_right": "open",
+  "license": "busl-1.1",
+  "version": "0.1.1",
+  "language": "eng",
+  "creators": [
+    {
+      "name": "Ribeiro, Diogo"
+    }
+  ],
+  "keywords": [
+    "energy system modelling",
+    "unit commitment",
+    "mixed-integer optimisation",
+    "power systems",
+    "renewable energy",
+    "battery storage",
+    "economic dispatch",
+    "DC power flow",
+    "simulation",
+    "Python"
+  ]
+}
