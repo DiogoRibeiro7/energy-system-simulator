@@ -7,7 +7,6 @@ import subprocess
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 import matplotlib
 import pandas as pd
@@ -15,7 +14,7 @@ import pandas as pd
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from energy_system_simulator.config import ModelConfig
+from energy_system_simulator.config import ModelConfig, resolved_config_to_dict
 from energy_system_simulator.metadata import get_package_version
 from energy_system_simulator.simulation.engine import SimulationResult
 
@@ -77,7 +76,7 @@ def _write_manifest(
         "formulation": asdict(result.formulation_statistics),
         "terminal_commitment": asdict(result.terminal_commitment_state),
         "numerical_diagnostics": result.numerical_diagnostics,
-        "resolved_configuration": _json_ready(asdict(config)),
+        "resolved_configuration": resolved_config_to_dict(config),
     }
     path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
 
@@ -101,16 +100,6 @@ def _git_commit_hash() -> str | None:
     except (OSError, subprocess.CalledProcessError):
         return None
     return completed.stdout.strip() or None
-
-
-def _json_ready(value: Any) -> Any:
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, dict):
-        return {str(key): _json_ready(item) for key, item in value.items()}
-    if isinstance(value, list | tuple):
-        return [_json_ready(item) for item in value]
-    return value
 
 
 def _plot_dispatch(frame: pd.DataFrame, path: Path) -> None:

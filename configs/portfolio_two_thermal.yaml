@@ -1,0 +1,136 @@
+schema_version: 2
+
+scenario:
+  id: two-thermal-example
+
+simulation:
+  time_step_hours: 1.0
+
+solver:
+  solver_time_limit_seconds: 60.0
+  mip_relative_gap: 0.001
+  allow_non_optimal_solution: false
+
+zones:
+  - id: north
+  - id: south
+
+buses:
+  - id: north-hub
+    zone_id: north
+  - id: south-hub
+    zone_id: south
+
+lines:
+  - id: north-south
+    from_bus_id: north-hub
+    to_bus_id: south-hub
+    susceptance: 1.0
+    capacity_mw: 250.0
+
+aggregate_network:
+  loss_fraction: 0.065
+  transfer_capacity_mw: 420.0
+
+renewable_generators:
+  - id: north-solar
+    kind: solar
+    bus_id: north-hub
+    capacity_mw: 90.0
+    performance_ratio: 0.86
+    reference_irradiance_w_m2: 1000.0
+    temperature_coefficient_per_c: -0.004
+    nominal_operating_cell_temperature_c: 45.0
+    time_series_key: irradiance_w_m2
+    ambient_temperature_key: ambient_temperature_c
+  - id: south-wind
+    kind: wind
+    bus_id: south-hub
+    capacity_mw: 150.0
+    cut_in_speed_m_s: 3.0
+    rated_speed_m_s: 12.0
+    cut_out_speed_m_s: 25.0
+    time_series_key: wind_speed_m_s
+
+thermal_generators:
+  - id: north-ccgt
+    bus_id: north-hub
+    fuel_id: gas
+    name: North combined-cycle gas plant
+    minimum_output_mw: 35.0
+    maximum_output_mw: 220.0
+    ramp_up_mw_per_hour: 80.0
+    ramp_down_mw_per_hour: 80.0
+    startup_ramp_mw: 220.0
+    shutdown_ramp_mw: 220.0
+    variable_cost_eur_per_mwh: 72.0
+    no_load_cost_eur_per_hour: 700.0
+    startup_cost_eur: 9000.0
+    shutdown_cost_eur: 1500.0
+    emission_factor_tonnes_per_mwh: 0.36
+    minimum_up_hours: 3.0
+    minimum_down_hours: 2.0
+    initial_on: true
+    initial_output_mw: 70.0
+    initial_up_time_hours: 3.0
+    initial_down_time_hours: 0.0
+    terminal_commitment_mode: forbid_incomplete_transitions
+  - id: south-peaker
+    bus_id: south-hub
+    fuel_id: gas
+    name: South peaking gas turbine
+    minimum_output_mw: 10.0
+    maximum_output_mw: 80.0
+    ramp_up_mw_per_hour: 80.0
+    ramp_down_mw_per_hour: 80.0
+    startup_ramp_mw: 80.0
+    shutdown_ramp_mw: 80.0
+    variable_cost_eur_per_mwh: 105.0
+    no_load_cost_eur_per_hour: 250.0
+    startup_cost_eur: 2500.0
+    shutdown_cost_eur: 500.0
+    emission_factor_tonnes_per_mwh: 0.48
+    minimum_up_hours: 1.0
+    minimum_down_hours: 1.0
+    initial_on: false
+    initial_output_mw: 0.0
+    initial_up_time_hours: 0.0
+    initial_down_time_hours: 2.0
+    terminal_commitment_mode: forbid_incomplete_transitions
+
+storage_units:
+  - id: south-battery
+    bus_id: south-hub
+    energy_capacity_mwh: 240.0
+    power_capacity_mw: 80.0
+    minimum_soc_mwh: 24.0
+    maximum_soc_mwh: 240.0
+    initial_soc_mwh: 120.0
+    charge_efficiency: 0.94
+    discharge_efficiency: 0.94
+    throughput_cost_eur_per_mwh: 2.0
+    minimum_final_soc_mwh: 100.0
+    terminal_soc_mode: minimum
+
+hydro_units: []
+
+imports:
+  - id: market-imports
+    bus_id: north-hub
+    maximum_power_mw: 100.0
+    price_eur_per_mwh: 115.0
+    emission_factor_tonnes_per_mwh: 0.22
+
+demand:
+  - id: system-demand
+    bus_id: south-hub
+    time_series_key: demand_mw
+
+penalties:
+  renewable_curtailment_eur_per_mwh: 1.0
+  lost_load_eur_per_mwh: 10000.0
+  carbon_price_eur_per_tonne: 85.0
+
+paths:
+  input_csv: ../data/example_hourly.csv
+  output_directory: ../outputs/portfolio-two-thermal

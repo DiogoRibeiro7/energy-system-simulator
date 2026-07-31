@@ -96,6 +96,10 @@ The hourly CSV must contain:
 
 See [`docs/data-contract.md`](docs/data-contract.md) for validation rules.
 
+Configuration supports the legacy aggregate schema and the newer typed portfolio
+schema. See [`docs/configuration.md`](docs/configuration.md) for schema versions,
+validation rules, examples, and `energy-sim migrate-config`.
+
 ## Quality checks
 
 ```bash

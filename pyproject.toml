@@ -46,6 +46,7 @@ addopts = "-q --strict-markers"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+extend-exclude = [".tmp", ".tmp*"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]

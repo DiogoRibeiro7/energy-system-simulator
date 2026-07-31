@@ -1,0 +1,94 @@
+schema_version: 2
+
+scenario:
+  id: invalid-missing-bus
+
+simulation:
+  time_step_hours: 1.0
+
+solver:
+  solver_time_limit_seconds: 60.0
+  mip_relative_gap: 0.001
+  allow_non_optimal_solution: false
+
+zones:
+  - id: system
+
+buses:
+  - id: system-bus
+    zone_id: system
+
+lines: []
+
+aggregate_network:
+  loss_fraction: 0.065
+  transfer_capacity_mw: 420.0
+
+renewable_generators:
+  - id: solar
+    kind: solar
+    bus_id: missing-bus
+    capacity_mw: 120.0
+    performance_ratio: 0.86
+    reference_irradiance_w_m2: 1000.0
+    temperature_coefficient_per_c: -0.004
+    nominal_operating_cell_temperature_c: 45.0
+    time_series_key: irradiance_w_m2
+    ambient_temperature_key: ambient_temperature_c
+
+thermal_generators:
+  - id: thermal
+    bus_id: system-bus
+    fuel_id: gas
+    name: Combined-cycle gas plant
+    minimum_output_mw: 35.0
+    maximum_output_mw: 220.0
+    ramp_up_mw_per_hour: 80.0
+    ramp_down_mw_per_hour: 80.0
+    startup_ramp_mw: 220.0
+    shutdown_ramp_mw: 220.0
+    variable_cost_eur_per_mwh: 72.0
+    no_load_cost_eur_per_hour: 700.0
+    startup_cost_eur: 9000.0
+    shutdown_cost_eur: 1500.0
+    emission_factor_tonnes_per_mwh: 0.36
+    minimum_up_hours: 3.0
+    minimum_down_hours: 2.0
+    initial_on: true
+    initial_output_mw: 70.0
+    initial_up_time_hours: 3.0
+    initial_down_time_hours: 0.0
+
+storage_units:
+  - id: battery
+    bus_id: system-bus
+    energy_capacity_mwh: 240.0
+    power_capacity_mw: 80.0
+    minimum_soc_mwh: 24.0
+    maximum_soc_mwh: 240.0
+    initial_soc_mwh: 120.0
+    charge_efficiency: 0.94
+    discharge_efficiency: 0.94
+    throughput_cost_eur_per_mwh: 2.0
+    minimum_final_soc_mwh: 100.0
+
+imports:
+  - id: imports
+    bus_id: system-bus
+    maximum_power_mw: 100.0
+    price_eur_per_mwh: 115.0
+    emission_factor_tonnes_per_mwh: 0.22
+
+demand:
+  - id: demand
+    bus_id: system-bus
+    time_series_key: demand_mw
+
+penalties:
+  renewable_curtailment_eur_per_mwh: 1.0
+  lost_load_eur_per_mwh: 10000.0
+  carbon_price_eur_per_tonne: 85.0
+
+paths:
+  input_csv: ../../data/example_hourly.csv
+  output_directory: ../../outputs/invalid

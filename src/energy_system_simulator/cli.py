@@ -6,7 +6,9 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from energy_system_simulator.config import load_config
+import yaml
+
+from energy_system_simulator.config import load_config, migrate_legacy_config
 from energy_system_simulator.data import load_input_data
 from energy_system_simulator.exceptions import EnergySystemError
 from energy_system_simulator.metadata import get_package_version
@@ -43,6 +45,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip PNG plot generation",
     )
+    migrate = subparsers.add_parser(
+        "migrate-config",
+        help="Migrate a schema_version 1 config to the portfolio schema",
+    )
+    migrate.add_argument("--config", type=Path, required=True)
+    migrate.add_argument("--output", type=Path)
     return parser
 
 
@@ -51,6 +59,17 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     json_output = bool(getattr(args, "json_output", False))
     try:
+        if args.command == "migrate-config":
+            migrated = migrate_legacy_config(args.config)
+            text = yaml.safe_dump(migrated, sort_keys=False)
+            if args.output is not None:
+                args.output.parent.mkdir(parents=True, exist_ok=True)
+                args.output.write_text(text, encoding="utf-8")
+                print(f"Migrated configuration written: {args.output}")
+            else:
+                print(text, end="")
+            return
+
         config = load_config(args.config)
 
         if args.command == "validate":

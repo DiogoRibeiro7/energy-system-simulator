@@ -7,6 +7,11 @@ and this project follows semantic versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Typed portfolio configuration schema, legacy config migration, canonical
+  resolved configuration serialization, and portfolio validation fixtures.
+
 ## [0.1.1] - 2026-07-31
 
 ### Added

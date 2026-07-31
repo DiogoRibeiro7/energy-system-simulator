@@ -70,3 +70,24 @@ def test_cli_simulate_writes_outputs_without_plots(tmp_path: Path, capsys) -> No
     assert (output / "summary.json").is_file()
     assert (output / "manifest.json").is_file()
     assert not (output / "dispatch.png").exists()
+
+
+def test_cli_migrate_config_writes_portfolio_schema(tmp_path: Path, capsys) -> None:
+    root = Path(__file__).resolve().parents[1]
+    output = tmp_path / "portfolio.yaml"
+
+    main(
+        [
+            "migrate-config",
+            "--config",
+            str(root / "configs" / "example.yaml"),
+            "--output",
+            str(output),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = yaml.safe_load(output.read_text(encoding="utf-8"))
+    assert "Migrated configuration written" in captured.out
+    assert payload["schema_version"] == 2
+    assert payload["thermal_generators"][0]["id"] == "thermal_1"

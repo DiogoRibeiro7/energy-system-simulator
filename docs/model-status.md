@@ -3,15 +3,17 @@
 Current corrected baseline: `0.1.1`.
 
 The `0.1.1` release is a correction release for the single-system simulator. It
-keeps the current single solar, wind, thermal, battery, import, and aggregate
-network shape while fixing packaging metadata, finite-horizon commitment
-semantics, solver-status reporting, transition-ramp validation, configuration
-strictness, numerical policy, and DC power-flow diagnostics.
+keeps the current aggregate optimisation formulation while fixing packaging
+metadata, finite-horizon commitment semantics, solver-status reporting,
+transition-ramp validation, configuration strictness, numerical policy, and DC
+power-flow diagnostics. The `Unreleased` line adds typed portfolio
+configuration that resolves to this aggregate formulation until later
+multi-asset formulation work is implemented.
 
 ## Release Decision
 
 The release remains in the `0.1.x` line because the core single-system modelling
-surface is unchanged and the new `schema_version: 1` field remains optional for
+surface is unchanged and the `schema_version: 1` field remains optional for
 existing valid configurations. Strict rejection of unknown configuration fields
 is treated as a correctness fix because previously misspelled fields could be
 silently ignored.
