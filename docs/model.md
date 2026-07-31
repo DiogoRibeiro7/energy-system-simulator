@@ -62,40 +62,55 @@ aggregate dispatch variables.
 All dispatch variables are represented on the source side:
 
 \[
-r_t+p_t+d_t^{\mathrm{bat}}+i_t+\ell_t
+r_t+\sum_{g\in G}p_{g,t}+d_t^{\mathrm{bat}}+i_t+\ell_t
 =g_t+c_t^{\mathrm{bat}}.
 \]
 
 Here \(\ell_t\) is source-equivalent involuntary load shedding. Delivered involuntary shedding is \(\eta_n\ell_t\).
 
-## Thermal generator
+## Thermal generators
 
-For commitment status \(u_t\in\{0,1\}\):
-
-\[
-P^{\min}u_t\le p_t\le P^{\max}u_t.
-\]
-
-Start-up and shutdown variables \(y_t,z_t\in\{0,1\}\) satisfy
+Let \(G\) be the configured thermal generator set. For each generator \(g\in G\)
+and period \(t\), commitment status \(u_{g,t}\), startup \(y_{g,t}\), shutdown
+\(z_{g,t}\), and output \(p_{g,t}\) are indexed by generator. The power balance
+uses total thermal output:
 
 \[
-u_t-u_{t-1}=y_t-z_t.
+r_t+\sum_{g\in G}p_{g,t}+d_t^{\mathrm{bat}}+i_t+\ell_t
+=g_t+c_t^{\mathrm{bat}}.
 \]
 
-For \(t=1\), \(u_{t-1}\) is the configured initial commitment state.
+Generator availability is an exogenous multiplier
+\(\alpha_{g,t}\in[0,1]\), combining the static `availability_factor` and an
+optional configured availability time-series column. Output bounds are:
+
+\[
+P_g^{\min}u_{g,t}\le p_{g,t}\le
+\alpha_{g,t}P_g^{\max}u_{g,t}.
+\]
+
+When `must_run` is true, \(u_{g,t}=1\) for every period. Start-up and shutdown
+variables \(y_{g,t},z_{g,t}\in\{0,1\}\) satisfy
+
+\[
+u_{g,t}-u_{g,t-1}=y_{g,t}-z_{g,t}.
+\]
+
+For \(t=1\), \(u_{g,t-1}\) is the configured initial commitment state for unit
+\(g\).
 
 They are mutually exclusive in each period:
 
 \[
-y_t + z_t \le 1.
+y_{g,t} + z_{g,t} \le 1.
 \]
 
 Minimum up and down durations are configured in hours and converted to periods
 with a conservative ceiling rule:
 
 \[
-N^{\uparrow}=\left\lceil H^{\uparrow}/\Delta t\right\rceil,\quad
-N^{\downarrow}=\left\lceil H^{\downarrow}/\Delta t\right\rceil.
+N_g^{\uparrow}=\left\lceil H_g^{\uparrow}/\Delta t\right\rceil,\quad
+N_g^{\downarrow}=\left\lceil H_g^{\downarrow}/\Delta t\right\rceil.
 \]
 
 Residual initial up-time and down-time obligations are enforced at the start of
@@ -116,11 +131,13 @@ period immediately before a shutdown, including the configured initial output
 when the unit shuts down in period 1.
 
 \[
-p_t-p_{t-1}\le R^{\uparrow}\Delta t\,u_{t-1}+S^{\uparrow}y_t,
+p_{g,t}-p_{g,t-1}\le
+R_g^{\uparrow}\Delta t\,u_{g,t-1}+S_g^{\uparrow}y_{g,t},
 \]
 
 \[
-p_{t-1}-p_t\le R^{\downarrow}\Delta t\,u_t+S^{\downarrow}z_t.
+p_{g,t-1}-p_{g,t}\le
+R_g^{\downarrow}\Delta t\,u_{g,t}+S_g^{\downarrow}z_{g,t}.
 \]
 
 Because this formulation does not model multi-period startup or shutdown
@@ -132,11 +149,11 @@ Minimum up and down times are imposed through rolling sums of recent starts and
 shutdowns:
 
 \[
-\sum_{k=\max(1,t-N^{\uparrow}+1)}^t y_k \le u_t,
+\sum_{k=\max(1,t-N_g^{\uparrow}+1)}^t y_{g,k} \le u_{g,t},
 \]
 
 \[
-\sum_{k=\max(1,t-N^{\downarrow}+1)}^t z_k \le 1-u_t.
+\sum_{k=\max(1,t-N_g^{\downarrow}+1)}^t z_{g,k} \le 1-u_{g,t}.
 \]
 
 ### Terminal commitment policy
@@ -161,11 +178,11 @@ For the strict and fixed policies, transitions are forbidden when they cannot
 complete their minimum-duration windows:
 
 \[
-y_t=0 \quad \forall t>T-N^{\uparrow}+1,
+y_{g,t}=0 \quad \forall g,\ t>T-N_g^{\uparrow}+1,
 \]
 
 \[
-z_t=0 \quad \forall t>T-N^{\downarrow}+1.
+z_{g,t}=0 \quad \forall g,\ t>T-N_g^{\downarrow}+1.
 \]
 
 For example, in a three-period hourly horizon with \(H^{\uparrow}=3\), a startup

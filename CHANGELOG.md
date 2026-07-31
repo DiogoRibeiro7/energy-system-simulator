@@ -13,6 +13,8 @@ and this project follows semantic versioning.
   resolved configuration serialization, and portfolio validation fixtures.
 - Multi-asset renewable availability orchestration with tidy asset time-series
   output and asset-level renewable reconciliation.
+- Generator-indexed thermal unit commitment with per-unit output, commitment,
+  startup, shutdown, availability, cost, and emissions reporting.
 
 ## [0.1.1] - 2026-07-31
 

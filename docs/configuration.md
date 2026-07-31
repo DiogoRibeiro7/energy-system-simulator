@@ -19,9 +19,9 @@ resolved into the same typed portfolio model used by newer configurations.
 - `demand`
 
 The current optimisation engine evaluates multiple renewable assets by ID and
-reports their availability, used output, and curtailment. Thermal, storage, and
-import resources are still projected to the first compatible aggregate resource
-until the multi-unit formulation is introduced.
+optimizes all configured thermal generators as a generator-indexed unit
+commitment fleet. Storage and import resources are still projected to the first
+compatible aggregate resource until their indexed formulations are introduced.
 
 ## Validation Approach
 
@@ -64,6 +64,13 @@ different solar assets at different irradiance and ambient-temperature columns.
 Wind generators default to `time_series_key: wind_speed_m_s`. Demand entries
 default to `time_series_key: demand_mw`. Referenced columns are validated after
 the input CSV is loaded.
+
+Thermal generators may set:
+
+- `must_run`: optional boolean. When true, the unit is committed in every period.
+- `availability_factor`: optional static capacity multiplier in `[0, 1]`.
+- `availability_factor_key`: optional input CSV column containing period-specific
+  multipliers in `[0, 1]`. It is multiplied by `availability_factor`.
 
 ## Migration
 

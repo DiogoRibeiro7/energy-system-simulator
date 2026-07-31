@@ -76,6 +76,9 @@ def _write_manifest(
         },
         "formulation": asdict(result.formulation_statistics),
         "terminal_commitment": asdict(result.terminal_commitment_state),
+        "terminal_commitment_by_unit": {
+            unit_id: asdict(state) for unit_id, state in result.terminal_commitment_by_unit.items()
+        },
         "numerical_diagnostics": result.numerical_diagnostics,
         "resolved_configuration": resolved_config_to_dict(config),
     }

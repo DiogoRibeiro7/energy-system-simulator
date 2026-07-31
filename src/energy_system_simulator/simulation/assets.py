@@ -118,6 +118,8 @@ class DispatchableAsset:
     bus_id: str
     fuel_id: str
     config: ThermalConfig
+    must_run: bool = False
+    availability_factor_key: str | None = None
     role: AssetRole = "dispatchable"
 
     @classmethod
@@ -127,7 +129,20 @@ class DispatchableAsset:
             bus_id=config.bus_id,
             fuel_id=config.fuel_id,
             config=config.config,
+            must_run=config.must_run,
+            availability_factor_key=config.availability_factor_key,
         )
+
+    def availability_factor(self, data: pd.DataFrame) -> FloatArray | None:
+        if self.availability_factor_key is None:
+            return None
+        values = _column(data, self.availability_factor_key, self.asset_id, nonnegative=True)
+        if np.any(values > 1.0):
+            raise DataValidationError(
+                f"Input column {self.availability_factor_key!r} for asset "
+                f"{self.asset_id!r} must be in [0, 1]"
+            )
+        return values
 
 
 @dataclass(frozen=True)
@@ -293,6 +308,14 @@ class AssetRegistry:
     def demand_mw(self, data: pd.DataFrame) -> FloatArray:
         values_by_asset = {asset.asset_id: asset.demand_mw(data) for asset in self.demand_assets}
         return _sum_arrays(values_by_asset)
+
+    def thermal_availability_factors(self, data: pd.DataFrame) -> dict[str, FloatArray]:
+        factors: dict[str, FloatArray] = {}
+        for asset in self.dispatchable_assets:
+            factor = asset.availability_factor(data)
+            if factor is not None:
+                factors[asset.asset_id] = factor
+        return factors
 
 
 MappingByAsset = dict[str, FloatArray]

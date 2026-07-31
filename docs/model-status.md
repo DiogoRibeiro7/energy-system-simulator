@@ -7,9 +7,8 @@ keeps the current aggregate optimisation formulation while fixing packaging
 metadata, finite-horizon commitment semantics, solver-status reporting,
 transition-ramp validation, configuration strictness, numerical policy, and DC
 power-flow diagnostics. The `Unreleased` line adds typed portfolio
-configuration and asset-level renewable availability reporting that resolves to
-this aggregate formulation until later multi-asset commitment work is
-implemented.
+configuration, asset-level renewable availability reporting, and generator-
+indexed thermal unit commitment.
 
 ## Release Decision
 
@@ -41,12 +40,13 @@ The stress suite writes `outputs/stress/summary.csv` and checks:
 
 ## Current Limitations
 
-- One thermal unit, one battery, one aggregate solar plant, and one aggregate wind
-  farm are supported in the dispatch model.
+- Thermal dispatch supports multiple committed generators. Storage and imports
+  are still represented as single aggregate resources.
+- Solar and wind availability can be evaluated for multiple configured assets,
+  with aggregate renewable dispatch allocated back to assets for reporting.
 - The dispatch network is an aggregate transfer-and-loss representation, not a
   nodal OPF.
 - The standalone DC power-flow utility solves fixed injections and reports
   overloads; it does not redispatch or enforce line limits.
-- Multi-period startup/shutdown trajectories, reserves, hydro, stochastic
-  scenarios, and multi-asset portfolio schemas are reserved for later roadmap
-  work.
+- Multi-period startup/shutdown trajectories, reserves, indexed storage and
+  imports, hydro, and stochastic scenarios are reserved for later roadmap work.

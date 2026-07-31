@@ -118,7 +118,8 @@ Require this response format after every major prompt:
 | FIX-10 | Stress example and baseline release gate | `release/0.1.1` | Required | Complete |
 | CORE-01 | Typed configuration and domain schema | `refactor/config-domain-schema` | Sequential by dependency | Complete |
 | CORE-02 | Multi-asset portfolio architecture | `refactor/portfolio-architecture` | Sequential by dependency | Complete |
-| CORE-03–CORE-24 | Research-grade electricity-system roadmap | See each prompt | Sequential by dependency | Not started |
+| CORE-03 | Multi-unit commitment | `feat/multi-unit-commitment` | Sequential by dependency | Complete |
+| CORE-04–CORE-24 | Research-grade electricity-system roadmap | See each prompt | Sequential by dependency | Not started |
 | ADV-01–ADV-15 | Optional post-core model families | See each prompt | Select by research question | Not started |
 
 ---

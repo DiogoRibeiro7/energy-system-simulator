@@ -169,3 +169,23 @@ def test_missing_asset_input_column_is_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(DataValidationError, match="missing_irradiance"):
         SimulationEngine(load_config(config_path)).run()
+
+
+def test_portfolio_run_exports_thermal_asset_metrics() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "configs" / "portfolio_two_thermal.yaml")
+
+    result = SimulationEngine(config).run()
+    thermal_rows = result.asset_timeseries[
+        result.asset_timeseries["asset_id"].isin({"north-ccgt", "south-peaker"})
+    ]
+
+    assert {"output_mw", "commitment", "capacity_available_mw", "emissions_tonnes"}.issubset(
+        set(thermal_rows["variable"])
+    )
+    assert set(result.summary["thermal_generation_by_unit_mwh"]) == {
+        "north-ccgt",
+        "south-peaker",
+    }
+    assert "thermal_fleet_capacity_factor" in result.summary
+    assert "terminal_commitment_by_unit" in result.summary

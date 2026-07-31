@@ -46,6 +46,7 @@ class SimulationResult:
     solver_node_count: int | None
     formulation_statistics: FormulationStatistics
     terminal_commitment_state: TerminalCommitmentState
+    terminal_commitment_by_unit: dict[str, TerminalCommitmentState]
     numerical_diagnostics: dict[str, float]
 
 
@@ -63,7 +64,7 @@ class SimulationEngine:
         demand = self._calculate_demand(registry, data)
         network = DistributionNetwork(self.config.network)
         distribution = network.prepare_demand(demand)
-        dispatch = self._solve_dispatch(renewable, distribution.gross_demand_mw)
+        dispatch = self._solve_dispatch(registry, data, renewable, distribution.gross_demand_mw)
         frame = self._assemble_timeseries(data, renewable, distribution, dispatch)
         asset_timeseries = self._asset_timeseries(data, renewable, frame)
 
@@ -75,8 +76,13 @@ class SimulationEngine:
         frame["served_demand_mw"] = frame["end_user_demand_mw"] - frame["total_load_shed_mw"]
         source_power_to_load = frame["gross_demand_mw"] - frame["source_load_shed_mw"]
         frame["network_losses_mw"] = source_power_to_load * self.config.network.loss_fraction
+        thermal_emission_columns = [
+            column for column in frame.columns if column.startswith("thermal_emissions_tonnes__")
+        ]
         frame["thermal_emissions_tonnes"] = (
-            frame["thermal_output_mw"]
+            frame[thermal_emission_columns].sum(axis=1)
+            if thermal_emission_columns
+            else frame["thermal_output_mw"]
             * self.config.thermal.emission_factor_tonnes_per_mwh
             * self.config.simulation.time_step_hours
         )
@@ -109,6 +115,7 @@ class SimulationEngine:
             total_objective_eur,
             cost_components,
             dispatch.terminal_commitment_state,
+            dispatch.terminal_commitment_by_unit,
             dispatch.numerical_diagnostics,
         )
         return SimulationResult(
@@ -132,6 +139,7 @@ class SimulationEngine:
             solver_node_count=dispatch.solver_node_count,
             formulation_statistics=dispatch.formulation_statistics,
             terminal_commitment_state=dispatch.terminal_commitment_state,
+            terminal_commitment_by_unit=dispatch.terminal_commitment_by_unit,
             numerical_diagnostics=dispatch.numerical_diagnostics,
         )
 
@@ -156,12 +164,15 @@ class SimulationEngine:
 
     def _solve_dispatch(
         self,
+        registry: AssetRegistry,
+        data: pd.DataFrame,
         renewable: RenewableAvailability,
         gross_demand_mw: FloatArray,
     ) -> DispatchResult:
         return UnitCommitment(self.config).solve(
             renewable.aggregate_mw,
             gross_demand_mw,
+            thermal_availability_factors=registry.thermal_availability_factors(data),
         )
 
     def _assemble_timeseries(
@@ -194,7 +205,49 @@ class SimulationEngine:
             renewable.aggregate_mw,
             frame["renewable_used_mw"].to_numpy(dtype="float64"),
         )
-        return renewable.asset_table.append(dispatch)
+        return renewable.asset_table.append(dispatch).append(
+            self._thermal_asset_timeseries(data["timestamp"], frame)
+        )
+
+    def _thermal_asset_timeseries(
+        self,
+        timestamps: pd.Series,
+        frame: pd.DataFrame,
+    ) -> AssetTimeSeries:
+        pieces: list[pd.DataFrame] = []
+        variable_map = {
+            "thermal_output_mw": ("output_mw", "MW"),
+            "thermal_on": ("commitment", "binary"),
+            "thermal_startup": ("startup", "binary"),
+            "thermal_shutdown": ("shutdown", "binary"),
+            "thermal_capacity_available_mw": ("capacity_available_mw", "MW"),
+            "thermal_capacity_factor": ("capacity_factor", "fraction"),
+            "thermal_variable_cost_eur": ("variable_cost_eur", "EUR"),
+            "thermal_no_load_cost_eur": ("no_load_cost_eur", "EUR"),
+            "thermal_startup_cost_eur": ("startup_cost_eur", "EUR"),
+            "thermal_shutdown_cost_eur": ("shutdown_cost_eur", "EUR"),
+            "thermal_carbon_cost_eur": ("carbon_cost_eur", "EUR"),
+            "thermal_emissions_tonnes": ("emissions_tonnes", "tonnes"),
+        }
+        for generator in self.config.portfolio.thermal_generators:
+            for prefix, (variable, unit) in variable_map.items():
+                column = f"{prefix}__{generator.id}"
+                if column not in frame:
+                    continue
+                pieces.append(
+                    pd.DataFrame(
+                        {
+                            "timestamp": timestamps.to_numpy(),
+                            "asset_id": generator.id,
+                            "variable": variable,
+                            "value": frame[column].to_numpy(),
+                            "unit": unit,
+                        }
+                    )
+                )
+        if not pieces:
+            return AssetTimeSeries.empty()
+        return AssetTimeSeries(pd.concat(pieces, ignore_index=True))
 
     def _renewable_kind_available(
         self,
@@ -217,6 +270,7 @@ class SimulationEngine:
         objective_eur: float,
         cost_components: dict[str, float],
         terminal_commitment_state: TerminalCommitmentState,
+        terminal_commitment_by_unit: dict[str, TerminalCommitmentState],
         numerical_diagnostics: dict[str, float],
     ) -> dict[str, Any]:
         dt = self.config.simulation.time_step_hours
@@ -260,6 +314,18 @@ class SimulationEngine:
             "thermal_starts": int(frame["thermal_startup"].sum()),
             "thermal_shutdowns": int(frame["thermal_shutdown"].sum()),
             "terminal_commitment": asdict(terminal_commitment_state),
+            "terminal_commitment_by_unit": {
+                unit_id: asdict(state) for unit_id, state in terminal_commitment_by_unit.items()
+            },
+            "thermal_generation_by_unit_mwh": self._thermal_generation_by_unit(frame),
+            "average_online_thermal_capacity_mw": float(frame["online_thermal_capacity_mw"].mean()),
+            "unused_committed_capacity_mwh": energy("unused_committed_capacity_mw"),
+            "thermal_fleet_capacity_factor": (
+                energy("thermal_output_mw") / energy("available_thermal_capacity_mw")
+                if energy("available_thermal_capacity_mw") > 0.0
+                else 0.0
+            ),
+            "thermal_operating_cost_summary": self._thermal_operating_cost_summary(frame),
             "imports_mwh": energy("imports_mw"),
             "battery_charge_mwh": energy("battery_charge_mw"),
             "battery_discharge_mwh": energy("battery_discharge_mw"),
@@ -326,12 +392,13 @@ class SimulationEngine:
 
     def _renewable_asset_summary(self, asset_timeseries: AssetTimeSeries) -> dict[str, Any]:
         dt = self.config.simulation.time_step_hours
-        if asset_timeseries.table.empty:
+        table = asset_timeseries.table[
+            asset_timeseries.table["variable"].isin({"available_mw", "used_mw", "curtailed_mw"})
+        ]
+        if table.empty:
             return {}
         pivot = (
-            asset_timeseries.table.groupby(["asset_id", "variable"], sort=True)["value"]
-            .sum()
-            .unstack(fill_value=0)
+            table.groupby(["asset_id", "variable"], sort=True)["value"].sum().unstack(fill_value=0)
         )
         result: dict[str, Any] = {}
         for asset_id, row in pivot.iterrows():
@@ -341,6 +408,46 @@ class SimulationEngine:
                 "curtailed_mwh": float(row.get("curtailed_mw", 0.0) * dt),
             }
         return result
+
+    def _thermal_generation_by_unit(self, frame: pd.DataFrame) -> dict[str, float]:
+        dt = self.config.simulation.time_step_hours
+        return {
+            generator.id: float(frame[f"thermal_output_mw__{generator.id}"].sum() * dt)
+            for generator in self.config.portfolio.thermal_generators
+            if f"thermal_output_mw__{generator.id}" in frame
+        }
+
+    def _thermal_operating_cost_summary(self, frame: pd.DataFrame) -> dict[str, float]:
+        generators = [
+            generator
+            for generator in self.config.portfolio.thermal_generators
+            if f"thermal_output_mw__{generator.id}" in frame
+        ]
+        generation_mwh = {
+            generator.id: float(
+                frame[f"thermal_output_mw__{generator.id}"].sum()
+                * self.config.simulation.time_step_hours
+            )
+            for generator in generators
+        }
+        total_generation = sum(generation_mwh.values())
+        if total_generation <= 0.0:
+            return {
+                "minimum_variable_cost_eur_per_mwh": 0.0,
+                "maximum_variable_cost_eur_per_mwh": 0.0,
+                "generation_weighted_variable_cost_eur_per_mwh": 0.0,
+            }
+        costs = {
+            generator.id: generator.config.variable_cost_eur_per_mwh for generator in generators
+        }
+        return {
+            "minimum_variable_cost_eur_per_mwh": min(costs.values()),
+            "maximum_variable_cost_eur_per_mwh": max(costs.values()),
+            "generation_weighted_variable_cost_eur_per_mwh": sum(
+                generation_mwh[unit_id] * costs[unit_id] for unit_id in costs
+            )
+            / total_generation,
+        }
 
     def _add_energy_reconciliation(self, frame: pd.DataFrame) -> None:
         dt = self.config.simulation.time_step_hours

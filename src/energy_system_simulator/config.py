@@ -162,7 +162,8 @@ LIST_SECTION_KEYS = {
         "time_series_key",
         "ambient_temperature_key",
     },
-    "thermal_generators": LEGACY_SECTION_KEYS["thermal"] | {"id", "bus_id", "fuel_id"},
+    "thermal_generators": LEGACY_SECTION_KEYS["thermal"]
+    | {"id", "bus_id", "fuel_id", "must_run", "availability_factor", "availability_factor_key"},
     "storage_units": LEGACY_SECTION_KEYS["battery"] | {"id", "bus_id"},
     "hydro_units": {"id", "bus_id"},
     "imports": LEGACY_SECTION_KEYS["imports"] | {"id", "bus_id"},
@@ -179,7 +180,8 @@ LIST_OPTIONAL_KEYS = {
         "cut_out_speed_m_s",
         "ambient_temperature_key",
     },
-    "thermal_generators": OPTIONAL_SECTION_KEYS["thermal"],
+    "thermal_generators": OPTIONAL_SECTION_KEYS["thermal"]
+    | {"must_run", "availability_factor", "availability_factor_key"},
     "storage_units": OPTIONAL_SECTION_KEYS["battery"],
     "hydro_units": set(),
     "imports": set(),
@@ -358,6 +360,17 @@ def _boolean_at(section: Mapping[str, Any], key: str, path: str) -> bool:
     if not isinstance(value, bool):
         raise ConfigurationError(f"{field!r} must be boolean")
     return value
+
+
+def _optional_boolean_at(
+    section: Mapping[str, Any],
+    key: str,
+    default: bool,
+    path: str,
+) -> bool:
+    if key not in section:
+        return default
+    return _boolean_at(section, key, path)
 
 
 def _optional_number_at(
@@ -559,6 +572,9 @@ class ThermalGeneratorConfig:
     bus_id: str
     fuel_id: str
     config: ThermalConfig
+    must_run: bool = False
+    availability_factor: float = 1.0
+    availability_factor_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1118,6 +1134,13 @@ def _parse_thermal_generator(item: Mapping[str, Any], path: str) -> ThermalGener
             ),
             terminal_on=_optional_nullable_boolean_at(item, "terminal_on", path),
         ),
+        must_run=_optional_boolean_at(item, "must_run", False, path),
+        availability_factor=_optional_number_at(item, "availability_factor", float, 1.0, path),
+        availability_factor_key=(
+            _string_at(item, "availability_factor_key", path)
+            if "availability_factor_key" in item
+            else None
+        ),
     )
 
 
@@ -1279,6 +1302,10 @@ def _validate_schema_v2_assets(portfolio: PortfolioConfig) -> None:
     if not wind_found:
         raise ConfigurationError("renewable_generators must include at least one wind generator")
     for index, thermal_generator in enumerate(portfolio.thermal_generators):
+        _check_fraction_at(
+            f"thermal_generators[{index}].availability_factor",
+            thermal_generator.availability_factor,
+        )
         _validate_thermal_config_at(thermal_generator.config, f"thermal_generators[{index}]")
     for index, unit in enumerate(portfolio.storage_units):
         _validate_storage_config_at(unit.config, f"storage_units[{index}]")
@@ -1612,6 +1639,12 @@ def _thermal_generator_mapping(generator: ThermalGeneratorConfig) -> dict[str, A
     }
     if thermal.terminal_on is not None:
         item["terminal_on"] = thermal.terminal_on
+    if generator.must_run:
+        item["must_run"] = generator.must_run
+    if generator.availability_factor != 1.0:
+        item["availability_factor"] = generator.availability_factor
+    if generator.availability_factor_key is not None:
+        item["availability_factor_key"] = generator.availability_factor_key
     return item
 
 

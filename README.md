@@ -132,12 +132,12 @@ make stress
 
 | Area | Current support |
 |---|---|
-| Dispatch | Single thermal unit commitment with startup, shutdown, ramp, minimum-duration, and terminal policy constraints |
+| Dispatch | Multi-unit thermal commitment with startup, shutdown, ramp, minimum-duration, terminal policy, must-run, and availability-factor constraints |
 | Renewables | Multiple configured solar and wind assets with asset-level availability, used output, and curtailment reporting |
 | Storage | One battery with exact charge/discharge exclusivity and configurable terminal SOC |
 | Network | Aggregate delivery losses and transfer-capacity shedding in dispatch |
 | DC flow | Standalone fixed-injection DC power flow with overload diagnostics |
-| Outputs | Aggregate CSV time series, tidy asset time series, JSON summary, manifest, plots, benchmark, baseline, and stress comparison table |
+| Outputs | Aggregate CSV time series, tidy renewable and thermal asset time series, JSON summary, manifest, plots, benchmark, baseline, and stress comparison table |
 
 ## Modelling scope
 
