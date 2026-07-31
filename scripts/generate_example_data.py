@@ -48,7 +48,7 @@ def main() -> None:
     """Write the example dataset to the repository data directory."""
     output = Path(__file__).resolve().parents[1] / "data" / "example_hourly.csv"
     output.parent.mkdir(parents=True, exist_ok=True)
-    generate_example_data().to_csv(output, index=False)
+    generate_example_data().to_csv(output, index=False, lineterminator="\n")
     print(f"Wrote {output}")
 
 

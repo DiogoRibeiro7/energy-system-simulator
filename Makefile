@@ -1,10 +1,13 @@
-.PHONY: install test lint typecheck validate simulate clean
+.PHONY: install format lint typecheck test validate simulate check-example-data benchmark verify clean
 
 install:
 	poetry install
 
 test:
 	poetry run pytest --cov=energy_system_simulator --cov-report=term-missing
+
+format:
+	poetry run ruff format --check .
 
 lint:
 	poetry run ruff check .
@@ -17,6 +20,15 @@ validate:
 
 simulate:
 	poetry run energy-sim simulate --config configs/example.yaml
+
+check-example-data:
+	poetry run python scripts/check_example_data.py
+
+benchmark:
+	poetry run python scripts/benchmark_example.py
+
+verify: format lint typecheck check-example-data test validate simulate benchmark
+	poetry run python scripts/validate_licensing.py
 
 clean:
 	rm -rf outputs .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage

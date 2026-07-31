@@ -29,9 +29,10 @@ class SolarPlant:
         if np.any(irradiance < 0.0):
             raise ValueError("Irradiance must be non-negative")
 
-        cell_temperature = ambient + (
-            (self.config.nominal_operating_cell_temperature_c - 20.0) / 800.0
-        ) * irradiance
+        cell_temperature = (
+            ambient
+            + ((self.config.nominal_operating_cell_temperature_c - 20.0) / 800.0) * irradiance
+        )
         temperature_factor = 1.0 + self.config.temperature_coefficient_per_c * (
             cell_temperature - 25.0
         )

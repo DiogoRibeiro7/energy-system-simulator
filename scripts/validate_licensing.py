@@ -79,8 +79,7 @@ def validate_package_metadata() -> None:
 
     include_entries = poetry.get("include", [])
     include_paths = {
-        entry if isinstance(entry, str) else entry.get("path")
-        for entry in include_entries
+        entry if isinstance(entry, str) else entry.get("path") for entry in include_entries
     }
     required_include_paths = {
         "LICENSE",

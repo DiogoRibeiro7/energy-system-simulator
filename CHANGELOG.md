@@ -11,6 +11,8 @@ and this project follows semantic versioning.
 
 - Repository governance and maintenance files.
 - Business Source License 1.1 licensing documentation and validation.
+- Baseline audit, reproducibility checks, formulation benchmark, run manifest,
+  and coverage enforcement.
 
 ## [0.1.0] - 2026-07-31
 

@@ -28,3 +28,7 @@ def test_unit_commitment_respects_balance_and_bounds() -> None:
     assert (frame["thermal_output_mw"] <= config.thermal.maximum_output_mw + 1e-7).all()
     assert (frame["renewable_used_mw"] <= renewable + 1e-7).all()
     assert frame["battery_soc_mwh"].iloc[-1] >= config.battery.minimum_final_soc_mwh - 1e-7
+    assert result.formulation_statistics.continuous_variables == 35
+    assert result.formulation_statistics.integer_variables == 15
+    assert result.formulation_statistics.linear_constraints > 0
+    assert result.formulation_statistics.matrix_nonzeros > 0

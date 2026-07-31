@@ -29,6 +29,30 @@ BLOCKS: Final[tuple[str, ...]] = (
 
 
 @dataclass(frozen=True)
+class FormulationStatistics:
+    """Size metrics for the mixed-integer dispatch formulation."""
+
+    continuous_variables: int
+    integer_variables: int
+    binary_variables: int
+    linear_constraints: int
+    matrix_nonzeros: int
+
+
+@dataclass(frozen=True)
+class FormulationProblem:
+    """Complete linear mixed-integer problem and source input arrays."""
+
+    objective: FloatArray
+    integrality: npt.NDArray[np.int_]
+    bounds: Bounds
+    constraints: LinearConstraint
+    renewable_available_mw: FloatArray
+    gross_demand_mw: FloatArray
+    statistics: FormulationStatistics
+
+
+@dataclass(frozen=True)
 class DispatchResult:
     """Optimised dispatch table and solver diagnostics."""
 
@@ -36,6 +60,7 @@ class DispatchResult:
     objective_eur: float
     solver_message: str
     mip_gap: float | None
+    formulation_statistics: FormulationStatistics
 
 
 class _VariableIndex:
@@ -90,12 +115,12 @@ class UnitCommitment:
     def __init__(self, config: ModelConfig) -> None:
         self.config = config
 
-    def solve(
+    def build_formulation(
         self,
         renewable_available_mw: npt.ArrayLike,
         gross_demand_mw: npt.ArrayLike,
-    ) -> DispatchResult:
-        """Solve unit commitment over the full input horizon."""
+    ) -> FormulationProblem:
+        """Build the MILP formulation without solving it."""
         renewable = np.asarray(renewable_available_mw, dtype=np.float64)
         demand = np.asarray(gross_demand_mw, dtype=np.float64)
         if renewable.ndim != 1 or demand.ndim != 1 or renewable.shape != demand.shape:
@@ -115,11 +140,40 @@ class UnitCommitment:
         bounds, integrality = self._bounds(index, renewable, demand)
         constraints = self._constraints(index, demand)
 
-        result = milp(
-            c=objective,
+        integer_variables = int(np.count_nonzero(integrality))
+        statistics = FormulationStatistics(
+            continuous_variables=index.size - integer_variables,
+            integer_variables=integer_variables,
+            binary_variables=integer_variables,
+            linear_constraints=constraints.A.shape[0],
+            matrix_nonzeros=constraints.A.nnz,
+        )
+        return FormulationProblem(
+            objective=objective,
             integrality=integrality,
             bounds=bounds,
             constraints=constraints,
+            renewable_available_mw=renewable,
+            gross_demand_mw=demand,
+            statistics=statistics,
+        )
+
+    def solve(
+        self,
+        renewable_available_mw: npt.ArrayLike,
+        gross_demand_mw: npt.ArrayLike,
+    ) -> DispatchResult:
+        """Solve unit commitment over the full input horizon."""
+        problem = self.build_formulation(renewable_available_mw, gross_demand_mw)
+        return self.solve_formulation(problem)
+
+    def solve_formulation(self, problem: FormulationProblem) -> DispatchResult:
+        """Solve a previously built formulation."""
+        result = milp(
+            c=problem.objective,
+            integrality=problem.integrality,
+            bounds=problem.bounds,
+            constraints=problem.constraints,
             options={
                 "time_limit": self.config.simulation.solver_time_limit_seconds,
                 "mip_rel_gap": self.config.simulation.mip_relative_gap,
@@ -132,18 +186,19 @@ class UnitCommitment:
             )
 
         solution = np.asarray(result.x, dtype=np.float64)
-        frame = pd.DataFrame(
-            {name: index.values(solution, name) for name in BLOCKS}
-        )
+        index = _VariableIndex(problem.renewable_available_mw.size)
+        frame = pd.DataFrame({name: index.values(solution, name) for name in BLOCKS})
         for column in ("thermal_on", "thermal_startup", "thermal_shutdown"):
             frame[column] = np.rint(frame[column]).astype(int)
-        frame["renewable_available_mw"] = renewable
-        frame["renewable_curtailed_mw"] = renewable - frame["renewable_used_mw"]
-        frame["gross_demand_mw"] = demand
+        frame["renewable_available_mw"] = problem.renewable_available_mw
+        frame["renewable_curtailed_mw"] = (
+            problem.renewable_available_mw - frame["renewable_used_mw"]
+        )
+        frame["gross_demand_mw"] = problem.gross_demand_mw
 
         constant_curtailment_cost = (
             self.config.penalties.renewable_curtailment_eur_per_mwh
-            * renewable.sum()
+            * problem.renewable_available_mw.sum()
             * self.config.simulation.time_step_hours
         )
         objective_eur = float(result.fun + constant_curtailment_cost)
@@ -154,6 +209,7 @@ class UnitCommitment:
             objective_eur=objective_eur,
             solver_message=str(result.message),
             mip_gap=mip_gap,
+            formulation_statistics=problem.statistics,
         )
 
     def _objective(self, index: _VariableIndex, renewable: FloatArray) -> FloatArray:
@@ -171,8 +227,7 @@ class UnitCommitment:
             )
             coefficients[index.at("thermal_output_mw", t)] = dt * (
                 thermal.variable_cost_eur_per_mwh
-                + penalties.carbon_price_eur_per_tonne
-                * thermal.emission_factor_tonnes_per_mwh
+                + penalties.carbon_price_eur_per_tonne * thermal.emission_factor_tonnes_per_mwh
             )
             coefficients[index.at("thermal_on", t)] = thermal.no_load_cost_eur_per_hour * dt
             coefficients[index.at("thermal_startup", t)] = thermal.startup_cost_eur
@@ -185,13 +240,10 @@ class UnitCommitment:
             )
             coefficients[index.at("imports_mw", t)] = dt * (
                 imports.price_eur_per_mwh
-                + penalties.carbon_price_eur_per_tonne
-                * imports.emission_factor_tonnes_per_mwh
+                + penalties.carbon_price_eur_per_tonne * imports.emission_factor_tonnes_per_mwh
             )
             coefficients[index.at("source_load_shed_mw", t)] = (
-                penalties.lost_load_eur_per_mwh
-                * (1.0 - self.config.network.loss_fraction)
-                * dt
+                penalties.lost_load_eur_per_mwh * (1.0 - self.config.network.loss_fraction) * dt
             )
         return coefficients
 
@@ -315,15 +367,13 @@ class UnitCommitment:
         down = thermal.minimum_down_hours
         for t in range(periods):
             recent_startups = {
-                index.at("thermal_startup", k): 1.0
-                for k in range(max(0, t - up + 1), t + 1)
+                index.at("thermal_startup", k): 1.0 for k in range(max(0, t - up + 1), t + 1)
             }
             recent_startups[index.at("thermal_on", t)] = -1.0
             builder.add(recent_startups, -np.inf, 0.0)
 
             recent_shutdowns = {
-                index.at("thermal_shutdown", k): 1.0
-                for k in range(max(0, t - down + 1), t + 1)
+                index.at("thermal_shutdown", k): 1.0 for k in range(max(0, t - down + 1), t + 1)
             }
             recent_shutdowns[index.at("thermal_on", t)] = 1.0
             builder.add(recent_shutdowns, -np.inf, 1.0)

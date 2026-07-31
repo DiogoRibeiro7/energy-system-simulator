@@ -46,6 +46,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         write_outputs(
             result,
             config.paths.output_directory,
+            config=config,
+            config_path=args.config,
             create_plots=not args.no_plots,
         )
         print(f"Simulation complete: {config.paths.output_directory}")

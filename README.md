@@ -78,6 +78,7 @@ Results are written to `outputs/example/`:
 
 - `timeseries.csv`
 - `summary.json`
+- `manifest.json`
 - `dispatch.png`
 - `battery_soc.png`
 
@@ -98,10 +99,18 @@ See [`docs/data-contract.md`](docs/data-contract.md) for validation rules.
 ## Quality checks
 
 ```bash
+make verify
+```
+
+Individual checks:
+
+```bash
 poetry run pytest
 poetry run ruff check .
 poetry run mypy src
 poetry run python scripts/validate_licensing.py
+poetry run python scripts/check_example_data.py
+poetry run python scripts/benchmark_example.py
 ```
 
 ## Modelling scope

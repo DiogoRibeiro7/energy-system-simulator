@@ -8,7 +8,7 @@ import pandas as pd
 
 from energy_system_simulator.config import ModelConfig
 from energy_system_simulator.data import load_input_data
-from energy_system_simulator.dispatch import UnitCommitment
+from energy_system_simulator.dispatch import FormulationStatistics, UnitCommitment
 from energy_system_simulator.generation import SolarPlant, WindFarm
 from energy_system_simulator.network import DistributionNetwork
 
@@ -22,6 +22,7 @@ class SimulationResult:
     objective_eur: float
     solver_message: str
     mip_gap: float | None
+    formulation_statistics: FormulationStatistics
 
 
 class SimulationEngine:
@@ -40,9 +41,7 @@ class SimulationEngine:
             data["irradiance_w_m2"].to_numpy(),
             data["ambient_temperature_c"].to_numpy(),
         )
-        wind = WindFarm(self.config.wind).output_mw(
-            data["wind_speed_m_s"].to_numpy()
-        )
+        wind = WindFarm(self.config.wind).output_mw(data["wind_speed_m_s"].to_numpy())
         renewable = solar + wind
 
         network = DistributionNetwork(self.config.network)
@@ -65,9 +64,7 @@ class SimulationEngine:
         frame["total_load_shed_mw"] = (
             frame["network_capacity_shed_mw"] + frame["dispatch_load_shed_mw"]
         )
-        frame["served_demand_mw"] = (
-            frame["end_user_demand_mw"] - frame["total_load_shed_mw"]
-        )
+        frame["served_demand_mw"] = frame["end_user_demand_mw"] - frame["total_load_shed_mw"]
         source_power_to_load = frame["gross_demand_mw"] - frame["source_load_shed_mw"]
         frame["network_losses_mw"] = source_power_to_load * self.config.network.loss_fraction
         frame["thermal_emissions_tonnes"] = (
@@ -94,6 +91,7 @@ class SimulationEngine:
             objective_eur=total_objective_eur,
             solver_message=dispatch.solver_message,
             mip_gap=dispatch.mip_gap,
+            formulation_statistics=dispatch.formulation_statistics,
         )
 
     def _summary(self, frame: pd.DataFrame, objective_eur: float) -> dict[str, Any]:
@@ -106,9 +104,7 @@ class SimulationEngine:
         served_mwh = energy("served_demand_mw")
         renewable_used_mwh = energy("renewable_used_mw")
         primary_source_generation_mwh = (
-            renewable_used_mwh
-            + energy("thermal_output_mw")
-            + energy("imports_mw")
+            renewable_used_mwh + energy("thermal_output_mw") + energy("imports_mw")
         )
         return {
             "periods": len(frame),
@@ -136,8 +132,7 @@ class SimulationEngine:
             "thermal_emissions_tonnes": float(frame["thermal_emissions_tonnes"].sum()),
             "import_emissions_tonnes": float(frame["import_emissions_tonnes"].sum()),
             "total_emissions_tonnes": float(
-                frame["thermal_emissions_tonnes"].sum()
-                + frame["import_emissions_tonnes"].sum()
+                frame["thermal_emissions_tonnes"].sum() + frame["import_emissions_tonnes"].sum()
             ),
             "peak_demand_mw": float(frame["end_user_demand_mw"].max()),
             "peak_thermal_output_mw": float(frame["thermal_output_mw"].max()),

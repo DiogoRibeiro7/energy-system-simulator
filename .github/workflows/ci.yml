@@ -20,11 +20,21 @@ jobs:
         run: pip install "poetry>=1.8,<3"
       - name: Install dependencies
         run: poetry install
+      - name: Formatting
+        run: poetry run ruff format --check .
       - name: Lint
         run: poetry run ruff check .
       - name: Type check
         run: poetry run mypy src
       - name: License metadata
         run: poetry run python scripts/validate_licensing.py
+      - name: Example data reproducibility
+        run: poetry run python scripts/check_example_data.py
       - name: Test
         run: poetry run pytest --cov=energy_system_simulator --cov-report=term-missing
+      - name: Example validation
+        run: poetry run energy-sim validate --config configs/example.yaml
+      - name: Example simulation
+        run: poetry run energy-sim simulate --config configs/example.yaml --no-plots
+      - name: Benchmark
+        run: poetry run python scripts/benchmark_example.py

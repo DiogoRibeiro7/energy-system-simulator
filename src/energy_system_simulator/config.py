@@ -175,20 +175,14 @@ def load_config(path: str | Path) -> ModelConfig:
 
     simulation = SimulationConfig(
         time_step_hours=_number(simulation_raw, "time_step_hours", float),
-        solver_time_limit_seconds=_number(
-            simulation_raw, "solver_time_limit_seconds", float
-        ),
+        solver_time_limit_seconds=_number(simulation_raw, "solver_time_limit_seconds", float),
         mip_relative_gap=_number(simulation_raw, "mip_relative_gap", float),
     )
     solar = SolarConfig(
         capacity_mw=_number(solar_raw, "capacity_mw", float),
         performance_ratio=_number(solar_raw, "performance_ratio", float),
-        reference_irradiance_w_m2=_number(
-            solar_raw, "reference_irradiance_w_m2", float
-        ),
-        temperature_coefficient_per_c=_number(
-            solar_raw, "temperature_coefficient_per_c", float
-        ),
+        reference_irradiance_w_m2=_number(solar_raw, "reference_irradiance_w_m2", float),
+        temperature_coefficient_per_c=_number(solar_raw, "temperature_coefficient_per_c", float),
         nominal_operating_cell_temperature_c=_number(
             solar_raw, "nominal_operating_cell_temperature_c", float
         ),
@@ -204,15 +198,9 @@ def load_config(path: str | Path) -> ModelConfig:
         minimum_output_mw=_number(thermal_raw, "minimum_output_mw", float),
         maximum_output_mw=_number(thermal_raw, "maximum_output_mw", float),
         ramp_up_mw_per_hour=_number(thermal_raw, "ramp_up_mw_per_hour", float),
-        ramp_down_mw_per_hour=_number(
-            thermal_raw, "ramp_down_mw_per_hour", float
-        ),
-        variable_cost_eur_per_mwh=_number(
-            thermal_raw, "variable_cost_eur_per_mwh", float
-        ),
-        no_load_cost_eur_per_hour=_number(
-            thermal_raw, "no_load_cost_eur_per_hour", float
-        ),
+        ramp_down_mw_per_hour=_number(thermal_raw, "ramp_down_mw_per_hour", float),
+        variable_cost_eur_per_mwh=_number(thermal_raw, "variable_cost_eur_per_mwh", float),
+        no_load_cost_eur_per_hour=_number(thermal_raw, "no_load_cost_eur_per_hour", float),
         startup_cost_eur=_number(thermal_raw, "startup_cost_eur", float),
         shutdown_cost_eur=_number(thermal_raw, "shutdown_cost_eur", float),
         emission_factor_tonnes_per_mwh=_number(
@@ -231,12 +219,8 @@ def load_config(path: str | Path) -> ModelConfig:
         initial_soc_mwh=_number(battery_raw, "initial_soc_mwh", float),
         charge_efficiency=_number(battery_raw, "charge_efficiency", float),
         discharge_efficiency=_number(battery_raw, "discharge_efficiency", float),
-        throughput_cost_eur_per_mwh=_number(
-            battery_raw, "throughput_cost_eur_per_mwh", float
-        ),
-        minimum_final_soc_mwh=_number(
-            battery_raw, "minimum_final_soc_mwh", float
-        ),
+        throughput_cost_eur_per_mwh=_number(battery_raw, "throughput_cost_eur_per_mwh", float),
+        minimum_final_soc_mwh=_number(battery_raw, "minimum_final_soc_mwh", float),
     )
     network = NetworkConfig(
         loss_fraction=_number(network_raw, "loss_fraction", float),
@@ -245,20 +229,14 @@ def load_config(path: str | Path) -> ModelConfig:
     imports = ImportConfig(
         maximum_power_mw=_number(import_raw, "maximum_power_mw", float),
         price_eur_per_mwh=_number(import_raw, "price_eur_per_mwh", float),
-        emission_factor_tonnes_per_mwh=_number(
-            import_raw, "emission_factor_tonnes_per_mwh", float
-        ),
+        emission_factor_tonnes_per_mwh=_number(import_raw, "emission_factor_tonnes_per_mwh", float),
     )
     penalties = PenaltyConfig(
         renewable_curtailment_eur_per_mwh=_number(
             penalties_raw, "renewable_curtailment_eur_per_mwh", float
         ),
-        lost_load_eur_per_mwh=_number(
-            penalties_raw, "lost_load_eur_per_mwh", float
-        ),
-        carbon_price_eur_per_tonne=_number(
-            penalties_raw, "carbon_price_eur_per_tonne", float
-        ),
+        lost_load_eur_per_mwh=_number(penalties_raw, "lost_load_eur_per_mwh", float),
+        carbon_price_eur_per_tonne=_number(penalties_raw, "carbon_price_eur_per_tonne", float),
     )
 
     base = config_path.parent
@@ -296,7 +274,8 @@ def validate_config(config: ModelConfig) -> None:
 
     _check_nonnegative("wind.capacity_mw", config.wind.capacity_mw)
     if not (
-        0.0 <= config.wind.cut_in_speed_m_s
+        0.0
+        <= config.wind.cut_in_speed_m_s
         < config.wind.rated_speed_m_s
         < config.wind.cut_out_speed_m_s
     ):
