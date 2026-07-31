@@ -28,6 +28,8 @@ class SimulationResult:
     objective_eur: float
     solver_message: str
     solver_status: str
+    backend_solver_status: str
+    backend_solver_status_code: int | None
     mip_gap: float | None
     objective_bound_eur: float | None
     absolute_gap_eur: float | None
@@ -117,6 +119,8 @@ class SimulationEngine:
             objective_eur=total_objective_eur,
             solver_message=dispatch.solver_message,
             solver_status=dispatch.solver_status,
+            backend_solver_status=dispatch.backend_solver_status,
+            backend_solver_status_code=dispatch.backend_solver_status_code,
             mip_gap=dispatch.mip_gap,
             objective_bound_eur=(
                 dispatch.objective_bound_eur + fixed_network_shedding_cost

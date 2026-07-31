@@ -8,11 +8,18 @@ from typing import Final
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from scipy.optimize import Bounds, LinearConstraint, milp
+from scipy.optimize import Bounds, LinearConstraint
 from scipy.sparse import coo_matrix
 
 from energy_system_simulator.config import ModelConfig
 from energy_system_simulator.constants import OBJECTIVE_TOLERANCE_EUR
+from energy_system_simulator.dispatch.solver import (
+    absolute_gap,
+    interpret_solver_result,
+    objective_bound_with_constant,
+    relative_gap,
+    solve_milp,
+)
 from energy_system_simulator.exceptions import OptimisationError
 
 FloatArray = npt.NDArray[np.float64]
@@ -30,14 +37,6 @@ BLOCKS: Final[tuple[str, ...]] = (
     "imports_mw",
     "source_load_shed_mw",
 )
-
-SOLVER_STATUS_NAMES: Final[dict[int, str]] = {
-    0: "optimal",
-    1: "limit_reached",
-    2: "infeasible",
-    3: "unbounded",
-    4: "solver_error",
-}
 
 
 @dataclass(frozen=True)
@@ -85,6 +84,8 @@ class DispatchResult:
     objective_eur: float
     solver_message: str
     solver_status: str
+    backend_solver_status: str
+    backend_solver_status_code: int | None
     mip_gap: float | None
     primal_objective_eur: float | None
     objective_bound_eur: float | None
@@ -204,31 +205,25 @@ class UnitCommitment:
     def solve_formulation(self, problem: FormulationProblem) -> DispatchResult:
         """Solve a previously built formulation."""
         solve_started = perf_counter()
-        result = milp(
-            c=problem.objective,
+        backend_result = solve_milp(
+            objective=problem.objective,
             integrality=problem.integrality,
             bounds=problem.bounds,
             constraints=problem.constraints,
-            options={
-                "time_limit": self.config.simulation.solver_time_limit_seconds,
-                "mip_rel_gap": self.config.simulation.mip_relative_gap,
-                "presolve": True,
-            },
+            time_limit_seconds=self.config.simulation.solver_time_limit_seconds,
+            mip_relative_gap=self.config.simulation.mip_relative_gap,
+        )
+        solver = interpret_solver_result(
+            backend_result,
+            allow_non_optimal_solution=self.config.simulation.allow_non_optimal_solution,
         )
         solver_runtime_seconds = perf_counter() - solve_started
-        solver_status = SOLVER_STATUS_NAMES.get(int(result.status), "unknown")
-        has_feasible_solution = result.x is not None
-        allowed_non_optimal = (
-            solver_status == "limit_reached"
-            and has_feasible_solution
-            and self.config.simulation.allow_non_optimal_solution
-        )
-        if not has_feasible_solution or (solver_status != "optimal" and not allowed_non_optimal):
+        if not solver.accepted or solver.solution is None:
             raise OptimisationError(
-                f"Unit commitment failed with status {result.status}: {result.message}"
+                f"Unit commitment failed with status {solver.status}: {solver.message}"
             )
 
-        solution = np.asarray(result.x, dtype=np.float64)
+        solution = solver.solution
         index = _VariableIndex(problem.renewable_available_mw.size)
         frame = pd.DataFrame({name: index.values(solution, name) for name in BLOCKS})
         for column in ("thermal_on", "thermal_startup", "thermal_shutdown"):
@@ -245,7 +240,9 @@ class UnitCommitment:
             * self.config.simulation.time_step_hours
         )
         primal_objective_eur = (
-            float(result.fun + constant_curtailment_cost) if result.fun is not None else None
+            float(solver.objective_value + constant_curtailment_cost)
+            if solver.objective_value is not None
+            else None
         )
         cost_components = self._cost_components(frame)
         objective_eur = float(sum(cost_components.values()))
@@ -256,31 +253,25 @@ class UnitCommitment:
             raise OptimisationError(
                 "Reported dispatch cost components do not reconcile with solver objective"
             )
-        objective_bound_raw = getattr(result, "mip_dual_bound", None)
-        objective_bound_eur = (
-            float(objective_bound_raw + constant_curtailment_cost)
-            if objective_bound_raw is not None
-            else None
+        objective_bound_eur = objective_bound_with_constant(
+            solver.objective_bound,
+            constant_curtailment_cost,
         )
-        absolute_gap_eur = (
-            abs(objective_eur - objective_bound_eur) if objective_bound_eur is not None else None
-        )
-        mip_gap_raw = getattr(result, "mip_gap", None)
-        mip_gap = float(mip_gap_raw) if mip_gap_raw is not None else None
-        node_count_raw = getattr(result, "mip_node_count", None)
-        node_count = int(node_count_raw) if node_count_raw is not None else None
+        absolute_gap_eur = absolute_gap(objective_eur, objective_bound_eur)
         return DispatchResult(
             frame=frame,
             objective_eur=objective_eur,
-            solver_message=str(result.message),
-            solver_status=solver_status,
-            mip_gap=mip_gap,
+            solver_message=solver.message,
+            solver_status=solver.status,
+            backend_solver_status=solver.backend_status,
+            backend_solver_status_code=solver.status_code,
+            mip_gap=solver.backend_relative_gap,
             primal_objective_eur=primal_objective_eur,
             objective_bound_eur=objective_bound_eur,
             absolute_gap_eur=absolute_gap_eur,
-            relative_gap=mip_gap,
+            relative_gap=relative_gap(objective_eur, objective_bound_eur),
             solver_runtime_seconds=solver_runtime_seconds,
-            solver_node_count=node_count,
+            solver_node_count=solver.node_count,
             formulation_statistics=problem.statistics,
             cost_components_eur=cost_components,
             terminal_commitment_state=self._terminal_commitment_state(frame),

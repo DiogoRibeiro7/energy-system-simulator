@@ -110,7 +110,7 @@ Require this response format after every major prompt:
 | FIX-02 | Clean-checkout packaging and version authority | `fix/package-versioning` | Required | Complete |
 | FIX-03 | Terminal commitment obligations | `fix/terminal-commitment` | Required | Complete |
 | FIX-04 | Missing duration and initial-state tests | `test/time-state-regressions` | Required | Complete |
-| FIX-05 | Solver termination regression suite | `test/solver-statuses` | Required | Not started |
+| FIX-05 | Solver termination regression suite | `test/solver-statuses` | Required | Complete |
 | FIX-06 | Startup and shutdown ramp semantics | `fix/transition-ramps` | Required | Not started |
 | FIX-07 | Strict configuration and unknown fields | `fix/config-strictness` | Required | Not started |
 | FIX-08 | Numerical tolerance policy | `refactor/numerical-policy` | Required | Not started |

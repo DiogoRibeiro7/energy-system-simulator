@@ -25,6 +25,8 @@ and this project follows semantic versioning.
 - Regression coverage for 15-minute, 30-minute, and hourly time-step scaling,
   residual initial-state obligations, ramp rates, costs, emissions, and battery
   terminal modes.
+- Typed solver-result interpretation with explicit domain statuses, raw backend
+  diagnostics, and safe objective-gap reporting.
 
 ## [0.1.0] - 2026-07-31
 

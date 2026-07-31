@@ -64,6 +64,8 @@ def _write_manifest(
             "mip_relative_gap": config.simulation.mip_relative_gap,
             "allow_non_optimal_solution": config.simulation.allow_non_optimal_solution,
             "status": result.solver_status,
+            "backend_status": result.backend_solver_status,
+            "backend_status_code": result.backend_solver_status_code,
             "termination_message": result.solver_message,
             "reported_mip_gap": result.mip_gap,
             "objective_bound_eur": result.objective_bound_eur,

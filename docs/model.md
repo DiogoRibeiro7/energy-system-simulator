@@ -193,10 +193,17 @@ tolerance.
 
 ## Solver status and reconciliation
 
-The simulator reports solver status, primal objective, objective bound, absolute
-gap, relative gap, runtime, and node count when the SciPy HiGHS result exposes
-them. A feasible non-optimal incumbent is accepted only when explicitly enabled
-in configuration.
+The simulator separates domain solver status from raw backend status. Domain
+statuses are `optimal`, `feasible_limit`, `infeasible`, `unbounded`,
+`infeasible_or_unbounded`, `solver_error`, `interrupted`, and `no_incumbent`.
+The manifest also records the SciPy/HiGHS backend status code, backend status
+name, and termination message.
+
+A feasible non-optimal incumbent from a time or node limit is accepted only when
+explicitly enabled in configuration. A limit-reached solve without an incumbent
+is reported as `no_incumbent` and rejected. Objective bounds, absolute gaps, and
+relative gaps are reported only when the backend provides finite values and the
+relative-gap denominator is meaningful.
 
 Per-period reconciliation columns report source balance residual, delivered
 demand balance residual, battery energy residual, curtailment residual, network

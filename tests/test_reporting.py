@@ -21,6 +21,9 @@ def test_write_outputs_includes_machine_readable_manifest(tmp_path: Path) -> Non
     assert len(manifest["input_file_sha256"]) == 64
     assert len(manifest["configuration_sha256"]) == 64
     assert manifest["solver"]["name"] == "scipy.optimize.milp"
+    assert manifest["solver"]["status"] == "optimal"
+    assert manifest["solver"]["backend_status"] == "optimal"
+    assert manifest["solver"]["backend_status_code"] == 0
     assert manifest["formulation"]["integer_variables"] == 1344
     assert (
         manifest["terminal_commitment"]["terminal_commitment_mode"]
