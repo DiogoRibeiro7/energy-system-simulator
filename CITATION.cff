@@ -6,6 +6,7 @@ authors:
   - given-names: "Diogo"
     family-names: "Ribeiro"
     email: "diogo_dj@hotmail.com"
+    orcid: "https://orcid.org/0009-0001-2022-7072"
 version: 0.1.1
 date-released: 2026-07-31
 license: BUSL-1.1
