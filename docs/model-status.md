@@ -7,8 +7,9 @@ keeps the current aggregate optimisation formulation while fixing packaging
 metadata, finite-horizon commitment semantics, solver-status reporting,
 transition-ramp validation, configuration strictness, numerical policy, and DC
 power-flow diagnostics. The `Unreleased` line adds typed portfolio
-configuration, asset-level renewable availability reporting, and generator-
-indexed thermal unit commitment.
+configuration, asset-level renewable availability reporting,
+generator-indexed thermal unit commitment, typed fuels, piecewise heat-rate
+segments, startup categories, and richer thermal emissions accounting.
 
 ## Release Decision
 
@@ -48,5 +49,6 @@ The stress suite writes `outputs/stress/summary.csv` and checks:
   nodal OPF.
 - The standalone DC power-flow utility solves fixed injections and reports
   overloads; it does not redispatch or enforce line limits.
-- Multi-period startup/shutdown trajectories, reserves, indexed storage and
-  imports, hydro, and stochastic scenarios are reserved for later roadmap work.
+- Multi-period startup/shutdown trajectories beyond category-specific startup
+  accounting, reserves, indexed storage and imports, hydro, and stochastic
+  scenarios are reserved for later roadmap work.

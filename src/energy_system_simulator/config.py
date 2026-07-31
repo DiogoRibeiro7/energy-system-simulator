@@ -117,6 +117,7 @@ ROOT_KEYS = {
     "scenario",
     "simulation",
     "solver",
+    "fuels",
     "zones",
     "buses",
     "lines",
@@ -130,7 +131,7 @@ ROOT_KEYS = {
     "penalties",
     "paths",
 }
-REQUIRED_ROOT_KEYS = ROOT_KEYS - {"hydro_units"}
+REQUIRED_ROOT_KEYS = ROOT_KEYS - {"fuels", "hydro_units"}
 SECTION_KEYS = {
     "scenario": {"id"},
     "simulation": {"time_step_hours"},
@@ -163,7 +164,27 @@ LIST_SECTION_KEYS = {
         "ambient_temperature_key",
     },
     "thermal_generators": LEGACY_SECTION_KEYS["thermal"]
-    | {"id", "bus_id", "fuel_id", "must_run", "availability_factor", "availability_factor_key"},
+    | {
+        "id",
+        "bus_id",
+        "fuel_id",
+        "must_run",
+        "availability_factor",
+        "availability_factor_key",
+        "minimum_fuel_input_mwh_per_hour",
+        "heat_rate_segments",
+        "startup_categories",
+    },
+    "fuels": {
+        "id",
+        "price_eur_per_mwh_thermal",
+        "price_time_series_key",
+        "lower_heating_value_mj_per_unit",
+        "co2_factor_tonnes_per_mwh_thermal",
+        "methane_factor_tonnes_per_mwh_thermal",
+        "nox_factor_kg_per_mwh_thermal",
+        "sox_factor_kg_per_mwh_thermal",
+    },
     "storage_units": LEGACY_SECTION_KEYS["battery"] | {"id", "bus_id"},
     "hydro_units": {"id", "bus_id"},
     "imports": LEGACY_SECTION_KEYS["imports"] | {"id", "bus_id"},
@@ -181,7 +202,21 @@ LIST_OPTIONAL_KEYS = {
         "ambient_temperature_key",
     },
     "thermal_generators": OPTIONAL_SECTION_KEYS["thermal"]
-    | {"must_run", "availability_factor", "availability_factor_key"},
+    | {
+        "must_run",
+        "availability_factor",
+        "availability_factor_key",
+        "minimum_fuel_input_mwh_per_hour",
+        "heat_rate_segments",
+        "startup_categories",
+    },
+    "fuels": {
+        "price_time_series_key",
+        "lower_heating_value_mj_per_unit",
+        "methane_factor_tonnes_per_mwh_thermal",
+        "nox_factor_kg_per_mwh_thermal",
+        "sox_factor_kg_per_mwh_thermal",
+    },
     "storage_units": OPTIONAL_SECTION_KEYS["battery"],
     "hydro_units": set(),
     "imports": set(),
@@ -535,6 +570,33 @@ class RenewableGeneratorConfig:
     cut_out_speed_m_s: float | None = None
 
 
+@dataclass(frozen=True)
+class FuelConfig:
+    id: str
+    price_eur_per_mwh_thermal: float
+    co2_factor_tonnes_per_mwh_thermal: float
+    price_time_series_key: str | None = None
+    lower_heating_value_mj_per_unit: float | None = None
+    methane_factor_tonnes_per_mwh_thermal: float = 0.0
+    nox_factor_kg_per_mwh_thermal: float = 0.0
+    sox_factor_kg_per_mwh_thermal: float = 0.0
+
+
+@dataclass(frozen=True)
+class HeatRateSegmentConfig:
+    id: str
+    capacity_mw: float
+    heat_rate_mwh_thermal_per_mwh: float
+
+
+@dataclass(frozen=True)
+class StartupCategoryConfig:
+    id: str
+    minimum_down_time_hours: float
+    startup_cost_eur: float
+    startup_fuel_input_mwh_thermal: float = 0.0
+
+
 TerminalCommitmentMode = Literal[
     "forbid_incomplete_transitions",
     "carry_residual_obligations",
@@ -564,6 +626,9 @@ class ThermalConfig:
     initial_down_time_hours: float
     terminal_commitment_mode: TerminalCommitmentMode = "forbid_incomplete_transitions"
     terminal_on: bool | None = None
+    minimum_fuel_input_mwh_per_hour: float = 0.0
+    heat_rate_segments: tuple[HeatRateSegmentConfig, ...] = ()
+    startup_categories: tuple[StartupCategoryConfig, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -647,6 +712,7 @@ class PathConfig:
 @dataclass(frozen=True)
 class PortfolioConfig:
     scenario: ScenarioConfig
+    fuels: tuple[FuelConfig, ...]
     zones: tuple[ZoneConfig, ...]
     buses: tuple[BusConfig, ...]
     lines: tuple[TransmissionLineConfig, ...]
@@ -870,7 +936,11 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
         _validate_allowed_keys(section, section_name, allowed_keys)
         _validate_required_keys(section, section_name, allowed_keys)
     for section_name, allowed_keys in LIST_SECTION_KEYS.items():
-        items = _list_section(raw, section_name, required=section_name != "hydro_units")
+        items = _list_section(
+            raw,
+            section_name,
+            required=section_name not in {"fuels", "hydro_units"},
+        )
         for index, item in enumerate(items):
             path = f"{section_name}[{index}]"
             _validate_allowed_keys(item, path, allowed_keys)
@@ -917,6 +987,10 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
         )
         for index, item in enumerate(_list_section(raw, "lines"))
     )
+    fuels = tuple(
+        _parse_fuel(item, f"fuels[{index}]")
+        for index, item in enumerate(_list_section(raw, "fuels", required=False))
+    )
     renewable_generators = tuple(
         _parse_renewable_generator(item, f"renewable_generators[{index}]")
         for index, item in enumerate(_list_section(raw, "renewable_generators"))
@@ -960,6 +1034,7 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
     )
     portfolio = PortfolioConfig(
         scenario=ScenarioConfig(id=_id_at(scenario_raw, "id", "scenario")),
+        fuels=fuels,
         zones=zones,
         buses=buses,
         lines=lines,
@@ -970,6 +1045,7 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
         imports=imports,
         demand=demand,
     )
+    portfolio = _portfolio_with_default_fuels(portfolio)
     _validate_portfolio(portfolio)
 
     solar = _primary_solar(renewable_generators)
@@ -1016,6 +1092,55 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
     _validate_schema_v2_assets(portfolio)
     validate_config(config)
     return config
+
+
+def _parse_fuel(item: Mapping[str, Any], path: str) -> FuelConfig:
+    return FuelConfig(
+        id=_id_at(item, "id", path),
+        price_eur_per_mwh_thermal=_number_at(
+            item,
+            "price_eur_per_mwh_thermal",
+            float,
+            path,
+        ),
+        co2_factor_tonnes_per_mwh_thermal=_number_at(
+            item,
+            "co2_factor_tonnes_per_mwh_thermal",
+            float,
+            path,
+        ),
+        price_time_series_key=(
+            _string_at(item, "price_time_series_key", path)
+            if "price_time_series_key" in item
+            else None
+        ),
+        lower_heating_value_mj_per_unit=(
+            _number_at(item, "lower_heating_value_mj_per_unit", float, path)
+            if "lower_heating_value_mj_per_unit" in item
+            else None
+        ),
+        methane_factor_tonnes_per_mwh_thermal=_optional_number_at(
+            item,
+            "methane_factor_tonnes_per_mwh_thermal",
+            float,
+            0.0,
+            path,
+        ),
+        nox_factor_kg_per_mwh_thermal=_optional_number_at(
+            item,
+            "nox_factor_kg_per_mwh_thermal",
+            float,
+            0.0,
+            path,
+        ),
+        sox_factor_kg_per_mwh_thermal=_optional_number_at(
+            item,
+            "sox_factor_kg_per_mwh_thermal",
+            float,
+            0.0,
+            path,
+        ),
+    )
 
 
 def _parse_renewable_generator(
@@ -1133,6 +1258,15 @@ def _parse_thermal_generator(item: Mapping[str, Any], path: str) -> ThermalGener
                 ),
             ),
             terminal_on=_optional_nullable_boolean_at(item, "terminal_on", path),
+            minimum_fuel_input_mwh_per_hour=_optional_number_at(
+                item,
+                "minimum_fuel_input_mwh_per_hour",
+                float,
+                0.0,
+                path,
+            ),
+            heat_rate_segments=_parse_heat_rate_segments(item, path),
+            startup_categories=_parse_startup_categories(item, path),
         ),
         must_run=_optional_boolean_at(item, "must_run", False, path),
         availability_factor=_optional_number_at(item, "availability_factor", float, 1.0, path),
@@ -1142,6 +1276,78 @@ def _parse_thermal_generator(item: Mapping[str, Any], path: str) -> ThermalGener
             else None
         ),
     )
+
+
+def _parse_heat_rate_segments(
+    item: Mapping[str, Any],
+    path: str,
+) -> tuple[HeatRateSegmentConfig, ...]:
+    if "heat_rate_segments" not in item:
+        return ()
+    raw = item["heat_rate_segments"]
+    if not isinstance(raw, list):
+        raise ConfigurationError(f"{path}.heat_rate_segments must be a list")
+    allowed = {"id", "capacity_mw", "heat_rate_mwh_thermal_per_mwh"}
+    segments: list[HeatRateSegmentConfig] = []
+    for index, segment in enumerate(raw):
+        segment_path = f"{path}.heat_rate_segments[{index}]"
+        if not isinstance(segment, Mapping):
+            raise ConfigurationError(f"{segment_path} must be a mapping")
+        _validate_allowed_keys(segment, segment_path, allowed)
+        _validate_required_keys(segment, segment_path, allowed)
+        segments.append(
+            HeatRateSegmentConfig(
+                id=_id_at(segment, "id", segment_path),
+                capacity_mw=_number_at(segment, "capacity_mw", float, segment_path),
+                heat_rate_mwh_thermal_per_mwh=_number_at(
+                    segment,
+                    "heat_rate_mwh_thermal_per_mwh",
+                    float,
+                    segment_path,
+                ),
+            )
+        )
+    return tuple(segments)
+
+
+def _parse_startup_categories(
+    item: Mapping[str, Any],
+    path: str,
+) -> tuple[StartupCategoryConfig, ...]:
+    if "startup_categories" not in item:
+        return ()
+    raw = item["startup_categories"]
+    if not isinstance(raw, list):
+        raise ConfigurationError(f"{path}.startup_categories must be a list")
+    required = {"id", "minimum_down_time_hours", "startup_cost_eur"}
+    allowed = required | {"startup_fuel_input_mwh_thermal"}
+    categories: list[StartupCategoryConfig] = []
+    for index, category in enumerate(raw):
+        category_path = f"{path}.startup_categories[{index}]"
+        if not isinstance(category, Mapping):
+            raise ConfigurationError(f"{category_path} must be a mapping")
+        _validate_allowed_keys(category, category_path, allowed)
+        _validate_required_keys(category, category_path, required)
+        categories.append(
+            StartupCategoryConfig(
+                id=_id_at(category, "id", category_path),
+                minimum_down_time_hours=_number_at(
+                    category,
+                    "minimum_down_time_hours",
+                    float,
+                    category_path,
+                ),
+                startup_cost_eur=_number_at(category, "startup_cost_eur", float, category_path),
+                startup_fuel_input_mwh_thermal=_optional_number_at(
+                    category,
+                    "startup_fuel_input_mwh_thermal",
+                    float,
+                    0.0,
+                    category_path,
+                ),
+            )
+        )
+    return tuple(categories)
 
 
 def _parse_storage_unit(item: Mapping[str, Any], path: str) -> StorageUnitConfig:
@@ -1180,6 +1386,13 @@ def _legacy_portfolio(
 ) -> PortfolioConfig:
     return PortfolioConfig(
         scenario=ScenarioConfig(id="legacy_single_system"),
+        fuels=(
+            FuelConfig(
+                id="legacy_thermal_fuel",
+                price_eur_per_mwh_thermal=0.0,
+                co2_factor_tonnes_per_mwh_thermal=0.0,
+            ),
+        ),
         zones=(ZoneConfig(id="system"),),
         buses=(BusConfig(id="system", zone_id="system"),),
         lines=(),
@@ -1222,7 +1435,34 @@ def _legacy_portfolio(
     )
 
 
+def _portfolio_with_default_fuels(portfolio: PortfolioConfig) -> PortfolioConfig:
+    if portfolio.fuels:
+        return portfolio
+    fuels_by_id = {
+        generator.fuel_id: FuelConfig(
+            id=generator.fuel_id,
+            price_eur_per_mwh_thermal=0.0,
+            co2_factor_tonnes_per_mwh_thermal=0.0,
+        )
+        for generator in portfolio.thermal_generators
+    }
+    return PortfolioConfig(
+        scenario=portfolio.scenario,
+        fuels=tuple(fuels_by_id[key] for key in sorted(fuels_by_id)),
+        zones=portfolio.zones,
+        buses=portfolio.buses,
+        lines=portfolio.lines,
+        renewable_generators=portfolio.renewable_generators,
+        thermal_generators=portfolio.thermal_generators,
+        storage_units=portfolio.storage_units,
+        hydro_units=portfolio.hydro_units,
+        imports=portfolio.imports,
+        demand=portfolio.demand,
+    )
+
+
 def _validate_portfolio(portfolio: PortfolioConfig) -> None:
+    _validate_unique_ids(portfolio.fuels, "fuels")
     _validate_unique_ids(portfolio.zones, "zones")
     _validate_unique_ids(portfolio.buses, "buses")
     _validate_unique_ids(portfolio.lines, "lines")
@@ -1236,6 +1476,8 @@ def _validate_portfolio(portfolio: PortfolioConfig) -> None:
         raise ConfigurationError("renewable_generators must include at least one item")
     if not portfolio.thermal_generators:
         raise ConfigurationError("thermal_generators must include at least one item")
+    if not portfolio.fuels:
+        raise ConfigurationError("fuels must include at least one item")
     if not portfolio.storage_units:
         raise ConfigurationError("storage_units must include at least one item")
     if not portfolio.imports:
@@ -1244,6 +1486,7 @@ def _validate_portfolio(portfolio: PortfolioConfig) -> None:
         raise ConfigurationError("demand must include at least one item")
     zone_ids = {zone.id for zone in portfolio.zones}
     bus_ids = {bus.id for bus in portfolio.buses}
+    fuel_ids = {fuel.id for fuel in portfolio.fuels}
     for index, bus in enumerate(portfolio.buses):
         if bus.zone_id not in zone_ids:
             raise ConfigurationError(
@@ -1274,6 +1517,11 @@ def _validate_portfolio(portfolio: PortfolioConfig) -> None:
                 raise ConfigurationError(
                     f"{section}[{index}].bus_id references unknown bus: {bus_id}"
                 )
+    for index, generator in enumerate(portfolio.thermal_generators):
+        if generator.fuel_id not in fuel_ids:
+            raise ConfigurationError(
+                f"thermal_generators[{index}].fuel_id references unknown fuel: {generator.fuel_id}"
+            )
 
 
 def _validate_unique_ids(items: tuple[Any, ...], path: str) -> None:
@@ -1286,6 +1534,8 @@ def _validate_unique_ids(items: tuple[Any, ...], path: str) -> None:
 
 
 def _validate_schema_v2_assets(portfolio: PortfolioConfig) -> None:
+    for index, fuel in enumerate(portfolio.fuels):
+        _validate_fuel_at(fuel, f"fuels[{index}]")
     solar_found = False
     wind_found = False
     for index, generator in enumerate(portfolio.renewable_generators):
@@ -1323,6 +1573,22 @@ def _validate_schema_v2_assets(portfolio: PortfolioConfig) -> None:
             _check_nonnegative_at(f"imports[{index}].{name}", value)
 
 
+def _validate_fuel_at(fuel: FuelConfig, path: str) -> None:
+    for name, value in (
+        ("price_eur_per_mwh_thermal", fuel.price_eur_per_mwh_thermal),
+        ("co2_factor_tonnes_per_mwh_thermal", fuel.co2_factor_tonnes_per_mwh_thermal),
+        ("methane_factor_tonnes_per_mwh_thermal", fuel.methane_factor_tonnes_per_mwh_thermal),
+        ("nox_factor_kg_per_mwh_thermal", fuel.nox_factor_kg_per_mwh_thermal),
+        ("sox_factor_kg_per_mwh_thermal", fuel.sox_factor_kg_per_mwh_thermal),
+    ):
+        _check_nonnegative_at(f"{path}.{name}", value)
+    if (
+        fuel.lower_heating_value_mj_per_unit is not None
+        and fuel.lower_heating_value_mj_per_unit <= 0.0
+    ):
+        raise ConfigurationError(f"{path}.lower_heating_value_mj_per_unit must be positive")
+
+
 def _validate_solar_generator_at(generator: RenewableGeneratorConfig, path: str) -> None:
     _check_fraction_at(
         f"{path}.performance_ratio",
@@ -1356,10 +1622,15 @@ def _validate_thermal_config_at(th: ThermalConfig, path: str) -> None:
         ("startup_cost_eur", th.startup_cost_eur),
         ("shutdown_cost_eur", th.shutdown_cost_eur),
         ("emission_factor_tonnes_per_mwh", th.emission_factor_tonnes_per_mwh),
+        ("minimum_fuel_input_mwh_per_hour", th.minimum_fuel_input_mwh_per_hour),
         ("initial_up_time_hours", th.initial_up_time_hours),
         ("initial_down_time_hours", th.initial_down_time_hours),
     ):
         _check_nonnegative_at(f"{path}.{name}", value)
+    if th.heat_rate_segments:
+        _validate_heat_rate_segments_at(th, path)
+    if th.startup_categories:
+        _validate_startup_categories_at(th, path)
     if th.minimum_up_hours <= 0.0:
         raise ConfigurationError(f"{path}.minimum_up_hours must be positive")
     if th.minimum_down_hours <= 0.0:
@@ -1392,6 +1663,58 @@ def _validate_thermal_config_at(th: ThermalConfig, path: str) -> None:
         raise ConfigurationError(f"{path}.initial_output_mw must be zero when initially off")
     elif th.initial_up_time_hours != 0.0:
         raise ConfigurationError(f"{path}.initial_up_time_hours must be zero when initially off")
+
+
+def _validate_heat_rate_segments_at(th: ThermalConfig, path: str) -> None:
+    seen: set[str] = set()
+    total_capacity = 0.0
+    previous_heat_rate = -1.0
+    for index, segment in enumerate(th.heat_rate_segments):
+        segment_path = f"{path}.heat_rate_segments[{index}]"
+        if segment.id in seen:
+            raise ConfigurationError(f"Duplicate identifier at {segment_path}.id: {segment.id}")
+        seen.add(segment.id)
+        if segment.capacity_mw <= 0.0:
+            raise ConfigurationError(f"{segment_path}.capacity_mw must be positive")
+        if segment.heat_rate_mwh_thermal_per_mwh <= 0.0:
+            raise ConfigurationError(
+                f"{segment_path}.heat_rate_mwh_thermal_per_mwh must be positive"
+            )
+        if segment.heat_rate_mwh_thermal_per_mwh < previous_heat_rate:
+            raise ConfigurationError(
+                f"{segment_path}.heat_rate_mwh_thermal_per_mwh must be nondecreasing"
+            )
+        previous_heat_rate = segment.heat_rate_mwh_thermal_per_mwh
+        total_capacity += segment.capacity_mw
+    dispatchable_range = th.maximum_output_mw - th.minimum_output_mw
+    if abs(total_capacity - dispatchable_range) > 1e-9:
+        raise ConfigurationError(
+            f"{path}.heat_rate_segments capacity must equal maximum_output_mw minus "
+            "minimum_output_mw"
+        )
+
+
+def _validate_startup_categories_at(th: ThermalConfig, path: str) -> None:
+    seen: set[str] = set()
+    previous_threshold = -1.0
+    for index, category in enumerate(th.startup_categories):
+        category_path = f"{path}.startup_categories[{index}]"
+        if category.id in seen:
+            raise ConfigurationError(f"Duplicate identifier at {category_path}.id: {category.id}")
+        seen.add(category.id)
+        for name, value in (
+            ("minimum_down_time_hours", category.minimum_down_time_hours),
+            ("startup_cost_eur", category.startup_cost_eur),
+            ("startup_fuel_input_mwh_thermal", category.startup_fuel_input_mwh_thermal),
+        ):
+            _check_nonnegative_at(f"{category_path}.{name}", value)
+        if category.minimum_down_time_hours <= previous_threshold:
+            raise ConfigurationError(
+                f"{category_path}.minimum_down_time_hours must be strictly increasing"
+            )
+        previous_threshold = category.minimum_down_time_hours
+    if th.startup_categories[0].minimum_down_time_hours != 0.0:
+        raise ConfigurationError(f"{path}.startup_categories must start at 0 down hours")
 
 
 def _validate_storage_config_at(bat: BatteryConfig, path: str) -> None:
@@ -1528,6 +1851,7 @@ def _schema_v2_mapping_from_config(
             "allow_non_optimal_solution": config.solver.allow_non_optimal_solution,
         },
         "zones": [{"id": zone.id} for zone in portfolio.zones],
+        "fuels": [_fuel_mapping(fuel) for fuel in portfolio.fuels],
         "buses": [{"id": bus.id, "zone_id": bus.zone_id} for bus in portfolio.buses],
         "lines": [
             {
@@ -1578,6 +1902,25 @@ def _schema_v2_mapping_from_config(
         },
         "paths": {"input_csv": input_csv, "output_directory": output_directory},
     }
+
+
+def _fuel_mapping(fuel: FuelConfig) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "id": fuel.id,
+        "price_eur_per_mwh_thermal": fuel.price_eur_per_mwh_thermal,
+        "co2_factor_tonnes_per_mwh_thermal": fuel.co2_factor_tonnes_per_mwh_thermal,
+    }
+    if fuel.price_time_series_key is not None:
+        item["price_time_series_key"] = fuel.price_time_series_key
+    if fuel.lower_heating_value_mj_per_unit is not None:
+        item["lower_heating_value_mj_per_unit"] = fuel.lower_heating_value_mj_per_unit
+    if fuel.methane_factor_tonnes_per_mwh_thermal != 0.0:
+        item["methane_factor_tonnes_per_mwh_thermal"] = fuel.methane_factor_tonnes_per_mwh_thermal
+    if fuel.nox_factor_kg_per_mwh_thermal != 0.0:
+        item["nox_factor_kg_per_mwh_thermal"] = fuel.nox_factor_kg_per_mwh_thermal
+    if fuel.sox_factor_kg_per_mwh_thermal != 0.0:
+        item["sox_factor_kg_per_mwh_thermal"] = fuel.sox_factor_kg_per_mwh_thermal
+    return item
 
 
 def _renewable_generator_mapping(generator: RenewableGeneratorConfig) -> dict[str, Any]:
@@ -1637,6 +1980,27 @@ def _thermal_generator_mapping(generator: ThermalGeneratorConfig) -> dict[str, A
         "initial_down_time_hours": thermal.initial_down_time_hours,
         "terminal_commitment_mode": thermal.terminal_commitment_mode,
     }
+    if thermal.minimum_fuel_input_mwh_per_hour != 0.0:
+        item["minimum_fuel_input_mwh_per_hour"] = thermal.minimum_fuel_input_mwh_per_hour
+    if thermal.heat_rate_segments:
+        item["heat_rate_segments"] = [
+            {
+                "id": segment.id,
+                "capacity_mw": segment.capacity_mw,
+                "heat_rate_mwh_thermal_per_mwh": segment.heat_rate_mwh_thermal_per_mwh,
+            }
+            for segment in thermal.heat_rate_segments
+        ]
+    if thermal.startup_categories:
+        item["startup_categories"] = [
+            {
+                "id": category.id,
+                "minimum_down_time_hours": category.minimum_down_time_hours,
+                "startup_cost_eur": category.startup_cost_eur,
+                "startup_fuel_input_mwh_thermal": category.startup_fuel_input_mwh_thermal,
+            }
+            for category in thermal.startup_categories
+        ]
     if thermal.terminal_on is not None:
         item["terminal_on"] = thermal.terminal_on
     if generator.must_run:

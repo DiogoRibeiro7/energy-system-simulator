@@ -213,6 +213,9 @@ def test_portfolio_configuration_loads_with_typed_assets() -> None:
         "solar",
         "wind",
     ]
+    assert [fuel.id for fuel in config.portfolio.fuels] == ["gas"]
+    assert config.portfolio.thermal_generators[0].config.heat_rate_segments[0].id == "efficient"
+    assert config.portfolio.thermal_generators[1].config.startup_categories[-1].id == "cold"
     assert config.thermal.name == "North combined-cycle gas plant"
 
 

@@ -173,7 +173,32 @@ class SimulationEngine:
             renewable.aggregate_mw,
             gross_demand_mw,
             thermal_availability_factors=registry.thermal_availability_factors(data),
+            fuel_price_series=self._fuel_price_series(data),
         )
+
+    def _fuel_price_series(self, data: pd.DataFrame) -> dict[str, FloatArray]:
+        prices: dict[str, FloatArray] = {}
+        for fuel in self.config.portfolio.fuels:
+            if fuel.price_time_series_key is None:
+                continue
+            if fuel.price_time_series_key not in data.columns:
+                raise OptimisationError(
+                    f"Fuel {fuel.id!r} references missing input column "
+                    f"{fuel.price_time_series_key!r}"
+                )
+            values = pd.to_numeric(data[fuel.price_time_series_key], errors="coerce").to_numpy(
+                dtype="float64"
+            )
+            if not pd.notna(values).all():
+                raise OptimisationError(
+                    f"Fuel price column {fuel.price_time_series_key!r} contains non-finite values"
+                )
+            if (values < 0.0).any():
+                raise OptimisationError(
+                    f"Fuel price column {fuel.price_time_series_key!r} must be non-negative"
+                )
+            prices[fuel.id] = values
+        return prices
 
     def _assemble_timeseries(
         self,
@@ -228,6 +253,21 @@ class SimulationEngine:
             "thermal_shutdown_cost_eur": ("shutdown_cost_eur", "EUR"),
             "thermal_carbon_cost_eur": ("carbon_cost_eur", "EUR"),
             "thermal_emissions_tonnes": ("emissions_tonnes", "tonnes"),
+            "thermal_direct_co2_emissions_tonnes": ("direct_co2_emissions_tonnes", "tonnes"),
+            "thermal_methane_emissions_tonnes": ("methane_emissions_tonnes", "tonnes"),
+            "thermal_nox_emissions_kg": ("nox_emissions_kg", "kg"),
+            "thermal_sox_emissions_kg": ("sox_emissions_kg", "kg"),
+            "thermal_fuel_input_mwh_thermal": ("fuel_input_mwh_thermal", "MWh-thermal"),
+            "thermal_running_fuel_input_mwh_thermal": (
+                "running_fuel_input_mwh_thermal",
+                "MWh-thermal",
+            ),
+            "thermal_startup_fuel_input_mwh_thermal": (
+                "startup_fuel_input_mwh_thermal",
+                "MWh-thermal",
+            ),
+            "thermal_fuel_cost_eur": ("fuel_cost_eur", "EUR"),
+            "thermal_efficiency": ("efficiency", "fraction"),
         }
         for generator in self.config.portfolio.thermal_generators:
             for prefix, (variable, unit) in variable_map.items():
@@ -326,6 +366,27 @@ class SimulationEngine:
                 else 0.0
             ),
             "thermal_operating_cost_summary": self._thermal_operating_cost_summary(frame),
+            "thermal_fuel_input_mwh_thermal": self._sum_prefixed_columns(
+                frame,
+                "thermal_fuel_input_mwh_thermal__",
+            ),
+            "thermal_fuel_cost_eur": self._sum_prefixed_columns(frame, "thermal_fuel_cost_eur__"),
+            "thermal_direct_co2_emissions_tonnes": self._sum_prefixed_columns(
+                frame,
+                "thermal_direct_co2_emissions_tonnes__",
+            ),
+            "thermal_methane_emissions_tonnes": self._sum_prefixed_columns(
+                frame,
+                "thermal_methane_emissions_tonnes__",
+            ),
+            "thermal_nox_emissions_kg": self._sum_prefixed_columns(
+                frame,
+                "thermal_nox_emissions_kg__",
+            ),
+            "thermal_sox_emissions_kg": self._sum_prefixed_columns(
+                frame,
+                "thermal_sox_emissions_kg__",
+            ),
             "imports_mwh": energy("imports_mw"),
             "battery_charge_mwh": energy("battery_charge_mw"),
             "battery_discharge_mwh": energy("battery_discharge_mw"),
@@ -390,6 +451,13 @@ class SimulationEngine:
             },
         }
 
+    @staticmethod
+    def _sum_prefixed_columns(frame: pd.DataFrame, prefix: str) -> float:
+        columns = [column for column in frame.columns if column.startswith(prefix)]
+        if not columns:
+            return 0.0
+        return float(frame[columns].sum().sum())
+
     def _renewable_asset_summary(self, asset_timeseries: AssetTimeSeries) -> dict[str, Any]:
         dt = self.config.simulation.time_step_hours
         table = asset_timeseries.table[
@@ -437,9 +505,14 @@ class SimulationEngine:
                 "maximum_variable_cost_eur_per_mwh": 0.0,
                 "generation_weighted_variable_cost_eur_per_mwh": 0.0,
             }
-        costs = {
-            generator.id: generator.config.variable_cost_eur_per_mwh for generator in generators
-        }
+        costs = {}
+        for generator in generators:
+            cost_column = f"thermal_variable_cost_eur__{generator.id}"
+            costs[generator.id] = (
+                float(frame[cost_column].sum()) / generation_mwh[generator.id]
+                if cost_column in frame and generation_mwh[generator.id] > 0.0
+                else generator.config.variable_cost_eur_per_mwh
+            )
         return {
             "minimum_variable_cost_eur_per_mwh": min(costs.values()),
             "maximum_variable_cost_eur_per_mwh": max(costs.values()),

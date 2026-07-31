@@ -12,7 +12,7 @@ Input validation
 AssetRegistry resolves portfolio assets
         │
         ├── renewable availability by asset
-        ├── thermal generator fleet
+        ├── thermal generator fleet and fuel prices
         ├── demand by configured column
         └── aggregate distribution preprocessing
                   │
@@ -35,7 +35,8 @@ AssetRegistry resolves portfolio assets
 
 - Additional renewable assets are resolved through the asset registry without
   changing the dispatch formulation.
-- Thermal fuel and heat-rate detail can extend the generator-indexed MILP.
+- Thermal generators use typed fuels, heat-rate segments, and startup
+  categories inside the generator-indexed MILP.
 - Hydro reservoirs can use intertemporal water-balance constraints.
 - Zonal or nodal networks can replace the aggregated distribution representation.
 - Reserve requirements can be added as capacity constraints.

@@ -8,7 +8,10 @@ The model is designed for research, teaching, and policy experiments. It uses ex
 
 - Solar generation from irradiance and ambient temperature.
 - Wind generation from a configurable turbine power curve.
-- Thermal unit commitment with minimum and maximum output, ramp limits, start-up and shutdown decisions, minimum up/down times, terminal commitment policy, fuel cost, and emissions.
+- Thermal unit commitment with minimum and maximum output, ramp limits,
+  start-up and shutdown decisions, minimum up/down times, terminal commitment
+  policy, fuel definitions, piecewise heat-rate segments, startup categories,
+  fuel cost, and emissions.
 - Battery charging, discharging, state-of-charge limits, efficiency losses, and throughput cost.
 - Aggregated distribution losses and transfer-capacity constraints.
 - Optional electricity imports.
@@ -132,12 +135,12 @@ make stress
 
 | Area | Current support |
 |---|---|
-| Dispatch | Multi-unit thermal commitment with startup, shutdown, ramp, minimum-duration, terminal policy, must-run, and availability-factor constraints |
+| Dispatch | Multi-unit thermal commitment with startup, shutdown, ramp, minimum-duration, terminal policy, must-run, availability-factor, fuel, heat-rate segment, and startup-category constraints |
 | Renewables | Multiple configured solar and wind assets with asset-level availability, used output, and curtailment reporting |
 | Storage | One battery with exact charge/discharge exclusivity and configurable terminal SOC |
 | Network | Aggregate delivery losses and transfer-capacity shedding in dispatch |
 | DC flow | Standalone fixed-injection DC power flow with overload diagnostics |
-| Outputs | Aggregate CSV time series, tidy renewable and thermal asset time series, JSON summary, manifest, plots, benchmark, baseline, and stress comparison table |
+| Outputs | Aggregate CSV time series, tidy renewable and thermal asset time series, fuel and emissions accounting, JSON summary, manifest, plots, benchmark, baseline, and stress comparison table |
 
 ## Modelling scope
 

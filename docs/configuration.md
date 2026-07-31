@@ -11,6 +11,7 @@ resolved into the same typed portfolio model used by newer configurations.
 `schema_version: 2` is the portfolio schema. It replaces single `solar`, `wind`,
 `thermal`, and `battery` sections with lists:
 
+- `fuels`
 - `renewable_generators`
 - `thermal_generators`
 - `storage_units`
@@ -71,6 +72,27 @@ Thermal generators may set:
 - `availability_factor`: optional static capacity multiplier in `[0, 1]`.
 - `availability_factor_key`: optional input CSV column containing period-specific
   multipliers in `[0, 1]`. It is multiplied by `availability_factor`.
+
+Fuel and heat-rate fields are available in schema v2:
+
+- `fuels[].price_eur_per_mwh_thermal` is the scalar fuel price. A fuel may
+  instead set `price_time_series_key` to read period-specific prices from the
+  input CSV, with the scalar price retained as metadata and fallback for direct
+  solver calls.
+- `fuels[].co2_factor_tonnes_per_mwh_thermal` defines direct CO2 per thermal
+  MWh. Optional methane, NOx, and SOx factors are reported quantities.
+- `thermal_generators[].minimum_fuel_input_mwh_per_hour` defines fuel input for
+  the online minimum-output block.
+- `thermal_generators[].heat_rate_segments` defines incremental output blocks
+  above minimum output. Segment capacities must sum to
+  `maximum_output_mw - minimum_output_mw`, and heat rates must be nondecreasing.
+- `thermal_generators[].startup_categories` defines hot, warm, and cold startup
+  behaviour using strictly increasing `minimum_down_time_hours` thresholds.
+  Startup fuel is included in reported fuel input, emissions, and startup cost.
+
+When `heat_rate_segments` is omitted, the generator remains in compatibility
+mode and uses `variable_cost_eur_per_mwh` plus
+`emission_factor_tonnes_per_mwh`.
 
 ## Migration
 

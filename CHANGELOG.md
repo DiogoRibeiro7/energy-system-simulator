@@ -15,6 +15,9 @@ and this project follows semantic versioning.
   output and asset-level renewable reconciliation.
 - Generator-indexed thermal unit commitment with per-unit output, commitment,
   startup, shutdown, availability, cost, and emissions reporting.
+- Typed fuel definitions, piecewise heat-rate segment variables, fuel-price
+  time series, startup categories, fuel-input accounting, and non-CO2 thermal
+  emissions diagnostics.
 
 ## [0.1.1] - 2026-07-31
 

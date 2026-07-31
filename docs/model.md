@@ -191,6 +191,59 @@ startup in period 2 or 3 is forbidden in strict standalone mode. In carry-forwar
 mode, a period-3 startup is feasible and the result reports two residual
 minimum-up hours.
 
+### Fuel and heat-rate segments
+
+Schema v2 thermal generators can reference a typed fuel and define an
+incremental heat-rate curve. The compatibility mode remains available: when no
+heat-rate segments are configured, the model uses the generator's scalar
+`variable_cost_eur_per_mwh` and `emission_factor_tonnes_per_mwh`.
+
+For a segmented generator \(g\), segment output \(q_{g,s,t}\ge0\) covers output
+above the minimum stable block:
+
+\[
+p_{g,t}-P_g^{\min}u_{g,t}=\sum_s q_{g,s,t},
+\]
+
+\[
+0\le q_{g,s,t}\le Q_{g,s}u_{g,t}.
+\]
+
+Segment capacities must satisfy
+\(\sum_s Q_{g,s}=P_g^{\max}-P_g^{\min}\). Fuel input in MWh-thermal is:
+
+\[
+F_{g,t}=\Delta t\left(F_g^{\min}u_{g,t}+\sum_s h_{g,s}q_{g,s,t}\right)
++F_{g,t}^{\mathrm{start}},
+\]
+
+where \(F_g^{\min}\) is the online minimum-block fuel input in thermal MWh per
+hour and \(h_{g,s}\) is the incremental heat rate in thermal MWh per electrical
+MWh. Period efficiency is reported as electrical output MWh divided by total
+fuel input MWh-thermal when fuel input is positive.
+
+Configured heat rates must be nondecreasing by segment. With non-negative fuel
+prices and carbon prices, this makes the incremental cost curve convex, so the
+linear objective fills lower-cost segments first without extra ordering binaries.
+The model therefore avoids opaque polynomial heat-rate functions and avoids
+additional fill-order binaries unless a future non-convex curve type is added.
+
+Fuel cost, direct CO2, methane, NOx, and SOx are computed from thermal fuel
+input. CO2 receives the configured carbon price. Methane, NOx, and SOx are
+reported diagnostics and are not priced by the current objective.
+
+Startup categories split \(y_{g,t}\) into category binaries
+\(y_{g,c,t}\):
+
+\[
+\sum_c y_{g,c,t}=y_{g,t}.
+\]
+
+Category eligibility is based on prior downtime thresholds. The implementation
+uses explicit lookback constraints over previous commitment states and the
+configured initial down time. Category-specific startup fuel contributes to
+fuel input, direct emissions, fuel cost, and carbon cost.
+
 ## Battery
 
 The state of charge evolves as
@@ -220,14 +273,17 @@ The objective minimizes:
 
 \[
 \sum_t \Delta t\left[
-C^{\mathrm{var}}p_t+C^{\mathrm{imp}}i_t
+C^{\mathrm{imp}}i_t
 +C^{\mathrm{lost}}\ell_t
 +C^{\mathrm{bat}}(c_t^{\mathrm{bat}}+d_t^{\mathrm{bat}})
-+C^{\mathrm{CO2}}(\gamma_p p_t+\gamma_i i_t)
++C^{\mathrm{CO2}}\gamma_i i_t
 \right]
 \]
 
-plus no-load, start-up, shutdown, and renewable-curtailment costs.
+plus generator running costs, no-load costs, start-up costs, shutdown costs,
+thermal carbon costs, and renewable-curtailment costs. For compatibility-mode
+thermal units, running cost is scalar variable cost times output. For segmented
+thermal units, running cost is fuel input times fuel price.
 
 Reported cost components reconcile the solver objective into thermal variable,
 thermal no-load, startup, shutdown, import energy, battery throughput, thermal

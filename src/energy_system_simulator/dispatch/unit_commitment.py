@@ -11,7 +11,7 @@ import pandas as pd
 from scipy.optimize import Bounds, LinearConstraint
 from scipy.sparse import coo_matrix
 
-from energy_system_simulator.config import ModelConfig, ThermalConfig
+from energy_system_simulator.config import FuelConfig, ModelConfig, ThermalConfig
 from energy_system_simulator.constants import DEFAULT_NUMERICAL_POLICY
 from energy_system_simulator.dispatch.solver import (
     absolute_gap,
@@ -40,6 +40,16 @@ THERMAL_BLOCKS = (
     "thermal_startup",
     "thermal_shutdown",
 )
+THERMAL_SEGMENT_OUTPUT_BLOCK = "thermal_segment_output_mw"
+THERMAL_STARTUP_CATEGORY_BLOCK = "thermal_startup_category"
+
+
+def _segment_asset_id(unit_id: str, segment_id: str) -> str:
+    return f"{unit_id}::{segment_id}"
+
+
+def _startup_category_asset_id(unit_id: str, category_id: str) -> str:
+    return f"{unit_id}::{category_id}"
 
 
 @dataclass(frozen=True)
@@ -60,6 +70,7 @@ class ThermalUnit:
     """Resolved thermal generator used by the indexed formulation."""
 
     id: str
+    fuel_id: str
     config: ThermalConfig
     must_run: bool = False
     availability_factor: float = 1.0
@@ -78,6 +89,7 @@ class FormulationProblem:
     gross_demand_mw: FloatArray
     thermal_units: tuple[ThermalUnit, ...]
     thermal_capacity_available_mw: dict[str, FloatArray]
+    fuel_prices_eur_per_mwh_thermal: dict[str, FloatArray]
     registry: VariableRegistry
     statistics: FormulationStatistics
 
@@ -171,6 +183,7 @@ class UnitCommitment:
         renewable_available_mw: npt.ArrayLike,
         gross_demand_mw: npt.ArrayLike,
         thermal_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
+        fuel_price_series: Mapping[str, npt.ArrayLike] | None = None,
     ) -> FormulationProblem:
         """Build the MILP formulation without solving it."""
         renewable = np.asarray(renewable_available_mw, dtype=np.float64)
@@ -193,8 +206,9 @@ class UnitCommitment:
             periods,
             thermal_availability_factors or {},
         )
+        fuel_prices = self._fuel_prices(periods, fuel_price_series or {})
         registry = self._variable_registry(periods, thermal_units)
-        objective = self._objective(registry, renewable, thermal_units)
+        objective = self._objective(registry, renewable, thermal_units, fuel_prices)
         bounds, integrality = self._bounds(registry, renewable, demand, thermal_units)
         constraints, component_counts = self._constraints(
             registry,
@@ -222,6 +236,7 @@ class UnitCommitment:
             gross_demand_mw=demand,
             thermal_units=thermal_units,
             thermal_capacity_available_mw=thermal_capacity,
+            fuel_prices_eur_per_mwh_thermal=fuel_prices,
             registry=registry,
             statistics=statistics,
         )
@@ -231,12 +246,14 @@ class UnitCommitment:
         renewable_available_mw: npt.ArrayLike,
         gross_demand_mw: npt.ArrayLike,
         thermal_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
+        fuel_price_series: Mapping[str, npt.ArrayLike] | None = None,
     ) -> DispatchResult:
         """Solve unit commitment over the full input horizon."""
         problem = self.build_formulation(
             renewable_available_mw,
             gross_demand_mw,
             thermal_availability_factors,
+            fuel_price_series,
         )
         return self.solve_formulation(problem)
 
@@ -334,6 +351,7 @@ class UnitCommitment:
             return (
                 ThermalUnit(
                     id=unit.id,
+                    fuel_id=unit.fuel_id,
                     config=self.config.thermal,
                     must_run=unit.must_run,
                     availability_factor=unit.availability_factor,
@@ -343,6 +361,7 @@ class UnitCommitment:
         return tuple(
             ThermalUnit(
                 id=unit.id,
+                fuel_id=unit.fuel_id,
                 config=unit.config,
                 must_run=unit.must_run,
                 availability_factor=unit.availability_factor,
@@ -350,6 +369,36 @@ class UnitCommitment:
             )
             for unit in configured
         )
+
+    def _fuels_by_id(self) -> dict[str, FuelConfig]:
+        fuels = {fuel.id: fuel for fuel in self.config.portfolio.fuels}
+        for generator in self.config.portfolio.thermal_generators:
+            fuels.setdefault(
+                generator.fuel_id,
+                FuelConfig(
+                    id=generator.fuel_id,
+                    price_eur_per_mwh_thermal=0.0,
+                    co2_factor_tonnes_per_mwh_thermal=0.0,
+                ),
+            )
+        return fuels
+
+    def _fuel_prices(
+        self,
+        periods: int,
+        fuel_price_series: Mapping[str, npt.ArrayLike],
+    ) -> dict[str, FloatArray]:
+        prices: dict[str, FloatArray] = {}
+        for fuel in self._fuels_by_id().values():
+            values = np.full(periods, fuel.price_eur_per_mwh_thermal, dtype=np.float64)
+            if fuel.id in fuel_price_series:
+                values = np.asarray(fuel_price_series[fuel.id], dtype=np.float64)
+                if values.shape != (periods,):
+                    raise ValueError(f"Fuel price series for {fuel.id} has wrong shape")
+            if np.any(~np.isfinite(values)) or np.any(values < 0.0):
+                raise ValueError(f"Fuel prices for {fuel.id} must be finite and non-negative")
+            prices[fuel.id] = values
+        return prices
 
     def _thermal_capacity_available(
         self,
@@ -386,6 +435,19 @@ class UnitCommitment:
                     asset_id=unit.id,
                     binary=block in {"thermal_on", "thermal_startup", "thermal_shutdown"},
                 )
+            for segment in unit.config.heat_rate_segments:
+                registry.add(
+                    THERMAL_SEGMENT_OUTPUT_BLOCK,
+                    periods,
+                    asset_id=_segment_asset_id(unit.id, segment.id),
+                )
+            for category in unit.config.startup_categories:
+                registry.add(
+                    THERMAL_STARTUP_CATEGORY_BLOCK,
+                    periods,
+                    asset_id=_startup_category_asset_id(unit.id, category.id),
+                    binary=True,
+                )
         return registry
 
     def _objective(
@@ -393,12 +455,14 @@ class UnitCommitment:
         registry: VariableRegistry,
         renewable: FloatArray,
         thermal_units: tuple[ThermalUnit, ...],
+        fuel_prices: dict[str, FloatArray],
     ) -> FloatArray:
         periods = renewable.size
         dt = self.config.simulation.time_step_hours
         imports = self.config.imports
         battery = self.config.battery
         penalties = self.config.penalties
+        fuels = self._fuels_by_id()
         coefficients = np.zeros(registry.size, dtype=np.float64)
 
         for t in range(periods):
@@ -420,16 +484,52 @@ class UnitCommitment:
             )
             for unit in thermal_units:
                 thermal = unit.config
-                coefficients[registry.at("thermal_output_mw", t, asset_id=unit.id)] = dt * (
-                    thermal.variable_cost_eur_per_mwh
-                    + penalties.carbon_price_eur_per_tonne * thermal.emission_factor_tonnes_per_mwh
-                )
-                coefficients[registry.at("thermal_on", t, asset_id=unit.id)] = (
-                    thermal.no_load_cost_eur_per_hour * dt
-                )
-                coefficients[registry.at("thermal_startup", t, asset_id=unit.id)] = (
-                    thermal.startup_cost_eur
-                )
+                fuel = fuels[unit.fuel_id]
+                fuel_price = fuel_prices[unit.fuel_id][t]
+                carbon_price = penalties.carbon_price_eur_per_tonne
+                if thermal.heat_rate_segments:
+                    coefficients[registry.at("thermal_output_mw", t, asset_id=unit.id)] = 0.0
+                    coefficients[registry.at("thermal_on", t, asset_id=unit.id)] = dt * (
+                        thermal.no_load_cost_eur_per_hour
+                        + thermal.minimum_fuel_input_mwh_per_hour
+                        * (fuel_price + carbon_price * fuel.co2_factor_tonnes_per_mwh_thermal)
+                    )
+                    for segment in thermal.heat_rate_segments:
+                        segment_input_cost = segment.heat_rate_mwh_thermal_per_mwh * (
+                            fuel_price + carbon_price * fuel.co2_factor_tonnes_per_mwh_thermal
+                        )
+                        coefficients[
+                            registry.at(
+                                THERMAL_SEGMENT_OUTPUT_BLOCK,
+                                t,
+                                asset_id=_segment_asset_id(unit.id, segment.id),
+                            )
+                        ] = dt * segment_input_cost
+                else:
+                    coefficients[registry.at("thermal_output_mw", t, asset_id=unit.id)] = dt * (
+                        thermal.variable_cost_eur_per_mwh
+                        + carbon_price * thermal.emission_factor_tonnes_per_mwh
+                    )
+                    coefficients[registry.at("thermal_on", t, asset_id=unit.id)] = (
+                        thermal.no_load_cost_eur_per_hour * dt
+                    )
+                if thermal.startup_categories:
+                    coefficients[registry.at("thermal_startup", t, asset_id=unit.id)] = 0.0
+                    for category in thermal.startup_categories:
+                        startup_fuel_cost = category.startup_fuel_input_mwh_thermal * (
+                            fuel_price + carbon_price * fuel.co2_factor_tonnes_per_mwh_thermal
+                        )
+                        coefficients[
+                            registry.at(
+                                THERMAL_STARTUP_CATEGORY_BLOCK,
+                                t,
+                                asset_id=_startup_category_asset_id(unit.id, category.id),
+                            )
+                        ] = category.startup_cost_eur + startup_fuel_cost
+                else:
+                    coefficients[registry.at("thermal_startup", t, asset_id=unit.id)] = (
+                        thermal.startup_cost_eur
+                    )
                 coefficients[registry.at("thermal_shutdown", t, asset_id=unit.id)] = (
                     thermal.shutdown_cost_eur
                 )
@@ -462,6 +562,22 @@ class UnitCommitment:
                 )
                 for block in ("thermal_on", "thermal_startup", "thermal_shutdown"):
                     upper[registry.at(block, t, asset_id=unit.id)] = 1.0
+                for segment in unit.config.heat_rate_segments:
+                    upper[
+                        registry.at(
+                            THERMAL_SEGMENT_OUTPUT_BLOCK,
+                            t,
+                            asset_id=_segment_asset_id(unit.id, segment.id),
+                        )
+                    ] = segment.capacity_mw
+                for category in unit.config.startup_categories:
+                    upper[
+                        registry.at(
+                            THERMAL_STARTUP_CATEGORY_BLOCK,
+                            t,
+                            asset_id=_startup_category_asset_id(unit.id, category.id),
+                        )
+                    ] = 1.0
         return Bounds(lower, upper), integrality
 
     def _constraints(
@@ -516,7 +632,9 @@ class UnitCommitment:
             thermal = unit.config
             for t in range(periods):
                 self._add_thermal_bounds(builder, registry, unit, t, capacity_available[unit.id][t])
+                self._add_heat_rate_segment_constraints(builder, registry, unit, t)
                 self._add_thermal_state(builder, registry, unit, t)
+                self._add_startup_category_constraints(builder, registry, unit, t)
                 self._add_thermal_ramps(builder, registry, unit, t, dt)
                 if unit.must_run:
                     builder.add(
@@ -560,6 +678,168 @@ class UnitCommitment:
             np.inf,
             component="thermal_minimum_output",
         )
+
+    def _add_heat_rate_segment_constraints(
+        self,
+        builder: _ConstraintBuilder,
+        registry: VariableRegistry,
+        unit: ThermalUnit,
+        period: int,
+    ) -> None:
+        thermal = unit.config
+        if not thermal.heat_rate_segments:
+            return
+        output = registry.at("thermal_output_mw", period, asset_id=unit.id)
+        online = registry.at("thermal_on", period, asset_id=unit.id)
+        coefficients = {output: 1.0, online: -thermal.minimum_output_mw}
+        for segment in thermal.heat_rate_segments:
+            segment_output = registry.at(
+                THERMAL_SEGMENT_OUTPUT_BLOCK,
+                period,
+                asset_id=_segment_asset_id(unit.id, segment.id),
+            )
+            coefficients[segment_output] = -1.0
+            builder.add(
+                {segment_output: 1.0, online: -segment.capacity_mw},
+                -np.inf,
+                0.0,
+                component="thermal_segment_capacity",
+            )
+        builder.add(
+            coefficients,
+            0.0,
+            0.0,
+            component="thermal_segment_output_sum",
+        )
+
+    def _add_startup_category_constraints(
+        self,
+        builder: _ConstraintBuilder,
+        registry: VariableRegistry,
+        unit: ThermalUnit,
+        period: int,
+    ) -> None:
+        categories = unit.config.startup_categories
+        if not categories:
+            return
+        startup = registry.at("thermal_startup", period, asset_id=unit.id)
+        category_columns = {
+            registry.at(
+                THERMAL_STARTUP_CATEGORY_BLOCK,
+                period,
+                asset_id=_startup_category_asset_id(unit.id, category.id),
+            ): 1.0
+            for category in categories
+        }
+        builder.add(
+            {**category_columns, startup: -1.0},
+            0.0,
+            0.0,
+            component="thermal_startup_category_sum",
+        )
+        dt = self.config.simulation.time_step_hours
+        for index, category in enumerate(categories):
+            category_column = registry.at(
+                THERMAL_STARTUP_CATEGORY_BLOCK,
+                period,
+                asset_id=_startup_category_asset_id(unit.id, category.id),
+            )
+            self._add_startup_category_minimum_downtime(
+                builder,
+                registry,
+                unit,
+                period,
+                category_column,
+                category.minimum_down_time_hours,
+                dt,
+            )
+            if index + 1 < len(categories):
+                self._add_startup_category_maximum_downtime(
+                    builder,
+                    registry,
+                    unit,
+                    period,
+                    category_column,
+                    categories[index + 1].minimum_down_time_hours,
+                    dt,
+                )
+
+    def _add_startup_category_minimum_downtime(
+        self,
+        builder: _ConstraintBuilder,
+        registry: VariableRegistry,
+        unit: ThermalUnit,
+        period: int,
+        category_column: int,
+        minimum_down_time_hours: float,
+        dt: float,
+    ) -> None:
+        if minimum_down_time_hours == 0.0:
+            return
+        if not unit.config.initial_on:
+            elapsed_initial_down = unit.config.initial_down_time_hours + period * dt
+            if elapsed_initial_down < minimum_down_time_hours:
+                builder.add(
+                    {category_column: 1.0},
+                    0.0,
+                    0.0,
+                    component="thermal_startup_category_min_down",
+                )
+        periods = self._duration_periods(minimum_down_time_hours)
+        for offset in range(1, periods + 1):
+            prior = period - offset
+            if prior >= 0:
+                builder.add(
+                    {
+                        category_column: 1.0,
+                        registry.at("thermal_on", prior, asset_id=unit.id): 1.0,
+                    },
+                    -np.inf,
+                    1.0,
+                    component="thermal_startup_category_min_down",
+                )
+
+    def _add_startup_category_maximum_downtime(
+        self,
+        builder: _ConstraintBuilder,
+        registry: VariableRegistry,
+        unit: ThermalUnit,
+        period: int,
+        category_column: int,
+        next_minimum_down_time_hours: float,
+        dt: float,
+    ) -> None:
+        periods = self._duration_periods(next_minimum_down_time_hours)
+        coefficients = {category_column: 1.0}
+        recent_initial_online = self._initial_online_within_lookback(
+            unit,
+            period,
+            next_minimum_down_time_hours,
+            dt,
+        )
+        for offset in range(1, periods + 1):
+            prior = period - offset
+            if prior >= 0:
+                coefficients[registry.at("thermal_on", prior, asset_id=unit.id)] = -1.0
+        upper = recent_initial_online
+        builder.add(
+            coefficients,
+            -np.inf,
+            upper,
+            component="thermal_startup_category_max_down",
+        )
+
+    @staticmethod
+    def _initial_online_within_lookback(
+        unit: ThermalUnit,
+        period: int,
+        lookback_hours: float,
+        dt: float,
+    ) -> float:
+        if unit.config.initial_on:
+            return 1.0
+        elapsed_down_at_period_start = unit.config.initial_down_time_hours + period * dt
+        return 1.0 if elapsed_down_at_period_start < lookback_hours else 0.0
 
     def _add_thermal_state(
         self,
@@ -800,6 +1080,18 @@ class UnitCommitment:
                     block,
                     asset_id=unit.id,
                 )
+            for segment in unit.config.heat_rate_segments:
+                data[f"thermal_segment_output_mw__{unit.id}__{segment.id}"] = registry.values(
+                    solution,
+                    THERMAL_SEGMENT_OUTPUT_BLOCK,
+                    asset_id=_segment_asset_id(unit.id, segment.id),
+                )
+            for category in unit.config.startup_categories:
+                data[f"thermal_startup_category__{unit.id}__{category.id}"] = registry.values(
+                    solution,
+                    THERMAL_STARTUP_CATEGORY_BLOCK,
+                    asset_id=_startup_category_asset_id(unit.id, category.id),
+                )
         frame = pd.DataFrame(data)
         for block in THERMAL_BLOCKS:
             columns = [f"{block}__{unit.id}" for unit in problem.thermal_units]
@@ -814,8 +1106,11 @@ class UnitCommitment:
     ) -> None:
         dt = self.config.simulation.time_step_hours
         carbon_price = self.config.penalties.carbon_price_eur_per_tonne
+        fuels = self._fuels_by_id()
         for unit in units:
             thermal = unit.config
+            fuel = fuels[unit.fuel_id]
+            fuel_price = problem.fuel_prices_eur_per_mwh_thermal[unit.fuel_id]
             output = frame[f"thermal_output_mw__{unit.id}"]
             online = frame[f"thermal_on__{unit.id}"]
             startup = frame[f"thermal_startup__{unit.id}"]
@@ -828,17 +1123,98 @@ class UnitCommitment:
                 out=np.zeros_like(capacity, dtype=np.float64),
                 where=capacity > 0.0,
             )
-            frame[f"thermal_variable_cost_eur__{unit.id}"] = (
-                output * dt * thermal.variable_cost_eur_per_mwh
-            )
+            running_fuel_input = np.zeros(len(frame), dtype=np.float64)
+            startup_fuel_input = np.zeros(len(frame), dtype=np.float64)
+            startup_fixed_cost = np.zeros(len(frame), dtype=np.float64)
+            if thermal.heat_rate_segments:
+                running_fuel_input += (
+                    online.to_numpy(dtype=np.float64) * thermal.minimum_fuel_input_mwh_per_hour * dt
+                )
+                for segment in thermal.heat_rate_segments:
+                    segment_output = frame[
+                        f"thermal_segment_output_mw__{unit.id}__{segment.id}"
+                    ].to_numpy(dtype=np.float64)
+                    running_fuel_input += (
+                        segment_output * segment.heat_rate_mwh_thermal_per_mwh * dt
+                    )
+                    frame[f"thermal_segment_marginal_cost_eur_per_mwh__{unit.id}__{segment.id}"] = (
+                        fuel_price * segment.heat_rate_mwh_thermal_per_mwh
+                    )
+            if thermal.startup_categories:
+                for category in thermal.startup_categories:
+                    category_startups = frame[
+                        f"thermal_startup_category__{unit.id}__{category.id}"
+                    ].to_numpy(dtype=np.float64)
+                    startup_fuel_input += (
+                        category_startups * category.startup_fuel_input_mwh_thermal
+                    )
+                    startup_fixed_cost += category_startups * category.startup_cost_eur
+            else:
+                startup_fixed_cost += startup.to_numpy(dtype=np.float64) * thermal.startup_cost_eur
+
+            if thermal.heat_rate_segments:
+                running_fuel_cost = running_fuel_input * fuel_price
+                frame[f"thermal_fuel_input_mwh_thermal__{unit.id}"] = (
+                    running_fuel_input + startup_fuel_input
+                )
+                frame[f"thermal_running_fuel_input_mwh_thermal__{unit.id}"] = running_fuel_input
+                frame[f"thermal_startup_fuel_input_mwh_thermal__{unit.id}"] = startup_fuel_input
+                frame[f"thermal_fuel_cost_eur__{unit.id}"] = (
+                    running_fuel_cost + startup_fuel_input * fuel_price
+                )
+                frame[f"thermal_variable_cost_eur__{unit.id}"] = running_fuel_cost
+                running_co2 = running_fuel_input * fuel.co2_factor_tonnes_per_mwh_thermal
+                startup_co2 = startup_fuel_input * fuel.co2_factor_tonnes_per_mwh_thermal
+                frame[f"thermal_direct_co2_emissions_tonnes__{unit.id}"] = running_co2 + startup_co2
+                frame[f"thermal_emissions_tonnes__{unit.id}"] = running_co2 + startup_co2
+                frame[f"thermal_methane_emissions_tonnes__{unit.id}"] = (
+                    running_fuel_input + startup_fuel_input
+                ) * fuel.methane_factor_tonnes_per_mwh_thermal
+                frame[f"thermal_nox_emissions_kg__{unit.id}"] = (
+                    running_fuel_input + startup_fuel_input
+                ) * fuel.nox_factor_kg_per_mwh_thermal
+                frame[f"thermal_sox_emissions_kg__{unit.id}"] = (
+                    running_fuel_input + startup_fuel_input
+                ) * fuel.sox_factor_kg_per_mwh_thermal
+                output_mwh = output.to_numpy(dtype=np.float64) * dt
+                total_fuel_input = running_fuel_input + startup_fuel_input
+                frame[f"thermal_efficiency__{unit.id}"] = np.divide(
+                    output_mwh,
+                    total_fuel_input,
+                    out=np.zeros_like(total_fuel_input, dtype=np.float64),
+                    where=total_fuel_input > 0.0,
+                )
+            else:
+                legacy_running_co2 = output * dt * thermal.emission_factor_tonnes_per_mwh
+                startup_co2 = startup_fuel_input * fuel.co2_factor_tonnes_per_mwh_thermal
+                frame[f"thermal_fuel_input_mwh_thermal__{unit.id}"] = startup_fuel_input
+                frame[f"thermal_running_fuel_input_mwh_thermal__{unit.id}"] = 0.0
+                frame[f"thermal_startup_fuel_input_mwh_thermal__{unit.id}"] = startup_fuel_input
+                frame[f"thermal_fuel_cost_eur__{unit.id}"] = startup_fuel_input * fuel_price
+                frame[f"thermal_variable_cost_eur__{unit.id}"] = (
+                    output * dt * thermal.variable_cost_eur_per_mwh
+                )
+                frame[f"thermal_direct_co2_emissions_tonnes__{unit.id}"] = (
+                    legacy_running_co2 + startup_co2
+                )
+                frame[f"thermal_emissions_tonnes__{unit.id}"] = legacy_running_co2 + startup_co2
+                frame[f"thermal_methane_emissions_tonnes__{unit.id}"] = (
+                    startup_fuel_input * fuel.methane_factor_tonnes_per_mwh_thermal
+                )
+                frame[f"thermal_nox_emissions_kg__{unit.id}"] = (
+                    startup_fuel_input * fuel.nox_factor_kg_per_mwh_thermal
+                )
+                frame[f"thermal_sox_emissions_kg__{unit.id}"] = (
+                    startup_fuel_input * fuel.sox_factor_kg_per_mwh_thermal
+                )
+                frame[f"thermal_efficiency__{unit.id}"] = 0.0
             frame[f"thermal_no_load_cost_eur__{unit.id}"] = (
                 online * dt * thermal.no_load_cost_eur_per_hour
             )
-            frame[f"thermal_startup_cost_eur__{unit.id}"] = startup * thermal.startup_cost_eur
-            frame[f"thermal_shutdown_cost_eur__{unit.id}"] = shutdown * thermal.shutdown_cost_eur
-            frame[f"thermal_emissions_tonnes__{unit.id}"] = (
-                output * dt * thermal.emission_factor_tonnes_per_mwh
+            frame[f"thermal_startup_cost_eur__{unit.id}"] = (
+                startup_fixed_cost + startup_fuel_input * fuel_price
             )
+            frame[f"thermal_shutdown_cost_eur__{unit.id}"] = shutdown * thermal.shutdown_cost_eur
             frame[f"thermal_carbon_cost_eur__{unit.id}"] = (
                 frame[f"thermal_emissions_tonnes__{unit.id}"] * carbon_price
             )
@@ -870,6 +1246,10 @@ class UnitCommitment:
                         f"thermal_startup__{unit.id}",
                         f"thermal_shutdown__{unit.id}",
                     ]
+                )
+                columns.extend(
+                    f"thermal_startup_category__{unit.id}__{category.id}"
+                    for category in unit.config.startup_categories
                 )
         max_deviation = 0.0
         for column in columns:
@@ -910,6 +1290,10 @@ class UnitCommitment:
         else:
             for unit in thermal_units:
                 columns.append(f"thermal_output_mw__{unit.id}")
+                columns.extend(
+                    f"thermal_segment_output_mw__{unit.id}__{segment.id}"
+                    for segment in unit.config.heat_rate_segments
+                )
         max_clipped = 0.0
         for column in columns:
             raw = frame[column].to_numpy(dtype=np.float64)
