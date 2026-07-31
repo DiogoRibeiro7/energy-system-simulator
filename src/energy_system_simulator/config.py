@@ -210,7 +210,25 @@ LIST_SECTION_KEYS = {
         "availability_factor_key",
         "degradation_bands",
     },
-    "hydro_units": {"id", "bus_id"},
+    "hydro_units": {
+        "id",
+        "bus_id",
+        "kind",
+        "inflow_time_series_key",
+        "minimum_reservoir_mwh",
+        "maximum_reservoir_mwh",
+        "initial_reservoir_mwh",
+        "minimum_final_reservoir_mwh",
+        "terminal_reservoir_mode",
+        "turbine_capacity_mw",
+        "turbine_efficiency",
+        "spill_capacity_mw",
+        "minimum_release_mw",
+        "evaporation_rate_per_hour",
+        "water_value_eur_per_mwh",
+        "upstream_hydro_id",
+        "cascade_delay_hours",
+    },
     "imports": LEGACY_SECTION_KEYS["imports"] | {"id", "bus_id"},
     "demand": {"id", "bus_id", "time_series_key"},
 }
@@ -255,7 +273,20 @@ LIST_OPTIONAL_KEYS = {
         "availability_factor_key",
         "degradation_bands",
     },
-    "hydro_units": set(),
+    "hydro_units": {
+        "kind",
+        "minimum_reservoir_mwh",
+        "maximum_reservoir_mwh",
+        "initial_reservoir_mwh",
+        "minimum_final_reservoir_mwh",
+        "terminal_reservoir_mode",
+        "spill_capacity_mw",
+        "minimum_release_mw",
+        "evaporation_rate_per_hour",
+        "water_value_eur_per_mwh",
+        "upstream_hydro_id",
+        "cascade_delay_hours",
+    },
     "imports": set(),
     "demand": set(),
 }
@@ -722,6 +753,21 @@ class StorageUnitConfig:
 class HydroUnitConfig:
     id: str
     bus_id: str
+    kind: Literal["reservoir", "run_of_river"]
+    inflow_time_series_key: str
+    turbine_capacity_mw: float
+    turbine_efficiency: float
+    minimum_reservoir_mwh: float = 0.0
+    maximum_reservoir_mwh: float = 0.0
+    initial_reservoir_mwh: float = 0.0
+    minimum_final_reservoir_mwh: float = 0.0
+    terminal_reservoir_mode: Literal["minimum", "exact", "cyclic", "free"] = "minimum"
+    spill_capacity_mw: float | None = None
+    minimum_release_mw: float = 0.0
+    evaporation_rate_per_hour: float = 0.0
+    water_value_eur_per_mwh: float = 0.0
+    upstream_hydro_id: str | None = None
+    cascade_delay_hours: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -1092,10 +1138,7 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
         for index, item in enumerate(_list_section(raw, "storage_units"))
     )
     hydro_units = tuple(
-        HydroUnitConfig(
-            id=_id_at(item, "id", f"hydro_units[{index}]"),
-            bus_id=_id_at(item, "bus_id", f"hydro_units[{index}]"),
-        )
+        _parse_hydro_unit(item, f"hydro_units[{index}]")
         for index, item in enumerate(_list_section(raw, "hydro_units", required=False))
     )
     imports = tuple(
@@ -1544,6 +1587,75 @@ def _parse_degradation_bands(
     return tuple(bands)
 
 
+def _parse_hydro_unit(item: Mapping[str, Any], path: str) -> HydroUnitConfig:
+    kind = _optional_string_at(item, "kind", "reservoir", path)
+    if kind not in {"reservoir", "run_of_river"}:
+        raise ConfigurationError(f"{path}.kind must be one of: reservoir, run_of_river")
+    spill_capacity = (
+        _number_at(item, "spill_capacity_mw", float, path) if "spill_capacity_mw" in item else None
+    )
+    return HydroUnitConfig(
+        id=_id_at(item, "id", path),
+        bus_id=_id_at(item, "bus_id", path),
+        kind=cast(Literal["reservoir", "run_of_river"], kind),
+        inflow_time_series_key=_input_key_at(item, "inflow_time_series_key", path),
+        turbine_capacity_mw=_number_at(item, "turbine_capacity_mw", float, path),
+        turbine_efficiency=_number_at(item, "turbine_efficiency", float, path),
+        minimum_reservoir_mwh=_optional_number_at(
+            item,
+            "minimum_reservoir_mwh",
+            float,
+            0.0,
+            path,
+        ),
+        maximum_reservoir_mwh=_optional_number_at(
+            item,
+            "maximum_reservoir_mwh",
+            float,
+            0.0,
+            path,
+        ),
+        initial_reservoir_mwh=_optional_number_at(
+            item,
+            "initial_reservoir_mwh",
+            float,
+            0.0,
+            path,
+        ),
+        minimum_final_reservoir_mwh=_optional_number_at(
+            item,
+            "minimum_final_reservoir_mwh",
+            float,
+            0.0,
+            path,
+        ),
+        terminal_reservoir_mode=cast(
+            Literal["minimum", "exact", "cyclic", "free"],
+            _optional_string_at(item, "terminal_reservoir_mode", "minimum", path),
+        ),
+        spill_capacity_mw=spill_capacity,
+        minimum_release_mw=_optional_number_at(item, "minimum_release_mw", float, 0.0, path),
+        evaporation_rate_per_hour=_optional_number_at(
+            item,
+            "evaporation_rate_per_hour",
+            float,
+            0.0,
+            path,
+        ),
+        water_value_eur_per_mwh=_optional_number_at(
+            item,
+            "water_value_eur_per_mwh",
+            float,
+            0.0,
+            path,
+        ),
+        upstream_hydro_id=(
+            _id_at(item, "upstream_hydro_id", path) if "upstream_hydro_id" in item else None
+        ),
+        cascade_delay_hours=_optional_number_at(item, "cascade_delay_hours", float, 0.0, path),
+    )
+
+
 def _legacy_portfolio(
     solar: SolarConfig,
     wind: WindConfig,
@@ -1654,6 +1766,7 @@ def _validate_portfolio(portfolio: PortfolioConfig) -> None:
     zone_ids = {zone.id for zone in portfolio.zones}
     bus_ids = {bus.id for bus in portfolio.buses}
     fuel_ids = {fuel.id for fuel in portfolio.fuels}
+    hydro_ids = {hydro.id for hydro in portfolio.hydro_units}
     for index, bus in enumerate(portfolio.buses):
         if bus.zone_id not in zone_ids:
             raise ConfigurationError(
@@ -1688,6 +1801,12 @@ def _validate_portfolio(portfolio: PortfolioConfig) -> None:
         if generator.fuel_id not in fuel_ids:
             raise ConfigurationError(
                 f"thermal_generators[{index}].fuel_id references unknown fuel: {generator.fuel_id}"
+            )
+    for index, hydro in enumerate(portfolio.hydro_units):
+        if hydro.upstream_hydro_id is not None and hydro.upstream_hydro_id not in hydro_ids:
+            raise ConfigurationError(
+                f"hydro_units[{index}].upstream_hydro_id references unknown hydro unit: "
+                f"{hydro.upstream_hydro_id}"
             )
 
 
@@ -1726,6 +1845,8 @@ def _validate_schema_v2_assets(portfolio: PortfolioConfig) -> None:
         _validate_thermal_config_at(thermal_generator.config, f"thermal_generators[{index}]")
     for index, unit in enumerate(portfolio.storage_units):
         _validate_storage_config_at(unit.config, f"storage_units[{index}]")
+    for index, hydro in enumerate(portfolio.hydro_units):
+        _validate_hydro_unit_at(hydro, f"hydro_units[{index}]")
     for index, line in enumerate(portfolio.lines):
         _check_nonnegative_at(f"lines[{index}].capacity_mw", line.capacity_mw)
     for index, resource in enumerate(portfolio.imports):
@@ -1964,6 +2085,50 @@ def _validate_degradation_bands_at(bat: BatteryConfig, path: str) -> None:
         previous_cost = band.cost_eur_per_mwh
 
 
+def _validate_hydro_unit_at(hydro: HydroUnitConfig, path: str) -> None:
+    for name, value in (
+        ("turbine_capacity_mw", hydro.turbine_capacity_mw),
+        ("minimum_reservoir_mwh", hydro.minimum_reservoir_mwh),
+        ("maximum_reservoir_mwh", hydro.maximum_reservoir_mwh),
+        ("initial_reservoir_mwh", hydro.initial_reservoir_mwh),
+        ("minimum_final_reservoir_mwh", hydro.minimum_final_reservoir_mwh),
+        ("minimum_release_mw", hydro.minimum_release_mw),
+        ("evaporation_rate_per_hour", hydro.evaporation_rate_per_hour),
+        ("water_value_eur_per_mwh", hydro.water_value_eur_per_mwh),
+        ("cascade_delay_hours", hydro.cascade_delay_hours),
+    ):
+        _check_nonnegative_at(f"{path}.{name}", value)
+    if hydro.spill_capacity_mw is not None:
+        _check_nonnegative_at(f"{path}.spill_capacity_mw", hydro.spill_capacity_mw)
+    _check_fraction_at(f"{path}.turbine_efficiency", hydro.turbine_efficiency)
+    if hydro.turbine_efficiency == 0.0:
+        raise ConfigurationError(f"{path}.turbine_efficiency must be positive")
+    _check_fraction_at(f"{path}.evaporation_rate_per_hour", hydro.evaporation_rate_per_hour)
+    if hydro.maximum_reservoir_mwh < hydro.minimum_reservoir_mwh:
+        raise ConfigurationError(f"{path}.maximum_reservoir_mwh must be at least minimum")
+    if not (
+        hydro.minimum_reservoir_mwh <= hydro.initial_reservoir_mwh <= hydro.maximum_reservoir_mwh
+    ):
+        raise ConfigurationError(f"{path}.initial_reservoir_mwh is outside bounds")
+    if not (
+        hydro.minimum_reservoir_mwh
+        <= hydro.minimum_final_reservoir_mwh
+        <= hydro.maximum_reservoir_mwh
+    ):
+        raise ConfigurationError(f"{path}.minimum_final_reservoir_mwh is outside bounds")
+    if hydro.terminal_reservoir_mode not in {"minimum", "exact", "cyclic", "free"}:
+        raise ConfigurationError(f"{path}.terminal_reservoir_mode has an unsupported value")
+    if hydro.kind == "run_of_river":
+        for name, value in (
+            ("minimum_reservoir_mwh", hydro.minimum_reservoir_mwh),
+            ("maximum_reservoir_mwh", hydro.maximum_reservoir_mwh),
+            ("initial_reservoir_mwh", hydro.initial_reservoir_mwh),
+            ("minimum_final_reservoir_mwh", hydro.minimum_final_reservoir_mwh),
+        ):
+            if value != 0.0:
+                raise ConfigurationError(f"{path}.{name} must be zero for run_of_river")
+
+
 def _check_nonnegative_at(name: str, value: float) -> None:
     if value < 0.0:
         raise ConfigurationError(f"{name} must be non-negative")
@@ -2096,7 +2261,7 @@ def _schema_v2_mapping_from_config(
             _thermal_generator_mapping(generator) for generator in portfolio.thermal_generators
         ],
         "storage_units": [_storage_unit_mapping(unit) for unit in portfolio.storage_units],
-        "hydro_units": [{"id": unit.id, "bus_id": unit.bus_id} for unit in portfolio.hydro_units],
+        "hydro_units": [_hydro_unit_mapping(unit) for unit in portfolio.hydro_units],
         "imports": [
             {
                 "id": resource.id,
@@ -2275,6 +2440,31 @@ def _storage_unit_mapping(unit: StorageUnitConfig) -> dict[str, Any]:
             }
             for band in battery.degradation_bands
         ]
+    return item
+
+
+def _hydro_unit_mapping(unit: HydroUnitConfig) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "id": unit.id,
+        "bus_id": unit.bus_id,
+        "kind": unit.kind,
+        "inflow_time_series_key": unit.inflow_time_series_key,
+        "turbine_capacity_mw": unit.turbine_capacity_mw,
+        "turbine_efficiency": unit.turbine_efficiency,
+        "minimum_reservoir_mwh": unit.minimum_reservoir_mwh,
+        "maximum_reservoir_mwh": unit.maximum_reservoir_mwh,
+        "initial_reservoir_mwh": unit.initial_reservoir_mwh,
+        "minimum_final_reservoir_mwh": unit.minimum_final_reservoir_mwh,
+        "terminal_reservoir_mode": unit.terminal_reservoir_mode,
+        "minimum_release_mw": unit.minimum_release_mw,
+        "evaporation_rate_per_hour": unit.evaporation_rate_per_hour,
+        "water_value_eur_per_mwh": unit.water_value_eur_per_mwh,
+    }
+    if unit.spill_capacity_mw is not None:
+        item["spill_capacity_mw"] = unit.spill_capacity_mw
+    if unit.upstream_hydro_id is not None:
+        item["upstream_hydro_id"] = unit.upstream_hydro_id
+        item["cascade_delay_hours"] = unit.cascade_delay_hours
     return item
 
 

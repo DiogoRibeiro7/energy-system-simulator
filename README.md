@@ -1,6 +1,6 @@
 # Energy System Simulator
 
-A transparent, optimisation-based simulator for an electrical energy system with renewable generation, a dispatchable thermal plant, battery storage, imports, distribution constraints, and hourly end-user consumption.
+A transparent, optimisation-based simulator for an electrical energy system with renewable generation, dispatchable thermal plants, storage, reservoir hydro, imports, distribution constraints, and hourly end-user consumption.
 
 The model is designed for research, teaching, and policy experiments. It uses explicit physical and economic constraints rather than machine-learning methods.
 
@@ -15,6 +15,9 @@ The model is designed for research, teaching, and policy experiments. It uses ex
 - Storage portfolio dispatch for batteries and pumped storage with exact
   charge/discharge modes, state-of-charge limits, efficiency losses,
   self-discharge, terminal policies, throughput cost, and degradation metrics.
+- Reservoir and run-of-river hydro dispatch with energy-equivalent water
+  balances, inflows, release, spill, evaporation, terminal storage policies,
+  environmental releases, and optional terminal water value.
 - Aggregated distribution losses and transfer-capacity constraints.
 - Optional electricity imports.
 - Renewable curtailment and involuntary load shedding.
@@ -27,11 +30,11 @@ The model is designed for research, teaching, and policy experiments. It uses ex
 For each period \(t\), the source-side balance is
 
 \[
-R_t + P_t + D_t^{\mathrm{bat}} + I_t + L_t
+R_t + P_t + H_t + D_t^{\mathrm{bat}} + I_t + L_t
 = G_t + C_t^{\mathrm{bat}},
 \]
 
-where \(G_t\) is demand adjusted for distribution losses, \(R_t\) is renewable generation used, \(P_t\) is thermal output, \(I_t\) is imported power, and \(L_t\) is source-equivalent load shedding.
+where \(G_t\) is demand adjusted for distribution losses, \(R_t\) is renewable generation used, \(P_t\) is thermal output, \(H_t\) is hydro generation, \(I_t\) is imported power, and \(L_t\) is source-equivalent load shedding.
 
 The optimiser minimizes operating cost, start-up and shutdown cost, import cost, battery degradation, renewable curtailment, emissions cost, and the value of lost load.
 
@@ -71,6 +74,13 @@ poetry install
 ```bash
 poetry run energy-sim validate --config configs/example.yaml
 poetry run energy-sim simulate --config configs/example.yaml
+```
+
+Run the schema v2 hydro portfolio example:
+
+```bash
+poetry run energy-sim validate --config configs/portfolio_hydro.yaml
+poetry run energy-sim simulate --config configs/portfolio_hydro.yaml
 ```
 
 Equivalent module invocation:
@@ -140,9 +150,10 @@ make stress
 | Dispatch | Multi-unit thermal commitment with startup, shutdown, ramp, minimum-duration, terminal policy, must-run, availability-factor, fuel, heat-rate segment, and startup-category constraints |
 | Renewables | Multiple configured solar and wind assets with asset-level availability, used output, and curtailment reporting |
 | Storage | Multiple batteries and pumped-storage assets with exact charge/discharge modes, independent power limits, self-discharge, terminal SOC policies, and degradation accounting |
+| Hydro | Reservoir and run-of-river assets with inflows, release, spill, energy-equivalent reservoir state, evaporation losses, environmental releases, terminal policies, and water-value accounting |
 | Network | Aggregate delivery losses and transfer-capacity shedding in dispatch |
 | DC flow | Standalone fixed-injection DC power flow with overload diagnostics |
-| Outputs | Aggregate CSV time series, tidy renewable and thermal asset time series, fuel and emissions accounting, JSON summary, manifest, plots, benchmark, baseline, and stress comparison table |
+| Outputs | Aggregate CSV time series, tidy renewable, thermal, storage, and hydro asset time series, fuel and emissions accounting, JSON summary, manifest, plots, benchmark, baseline, and stress comparison table |
 
 ## Modelling scope
 

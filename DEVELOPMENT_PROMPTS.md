@@ -121,7 +121,8 @@ Require this response format after every major prompt:
 | CORE-03 | Multi-unit commitment | `feat/multi-unit-commitment` | Sequential by dependency | Complete |
 | CORE-04 | Fuel, heat-rate, and emissions modelling | `feat/fuel-heat-rate-emissions` | Sequential by dependency | Complete |
 | CORE-05 | Generalised storage portfolio | `feat/storage-portfolio` | Sequential by dependency | Complete |
-| CORE-06–CORE-24 | Research-grade electricity-system roadmap | See each prompt | Sequential by dependency | Not started |
+| CORE-06 | Reservoir hydro | `feat/reservoir-hydro` | Sequential by dependency | Complete |
+| CORE-07–CORE-24 | Research-grade electricity-system roadmap | See each prompt | Sequential by dependency | Not started |
 | ADV-01–ADV-15 | Optional post-core model families | See each prompt | Select by research question | Not started |
 
 ---

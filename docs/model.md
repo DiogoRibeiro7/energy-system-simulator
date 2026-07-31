@@ -62,7 +62,7 @@ aggregate dispatch variables.
 All dispatch variables are represented on the source side:
 
 \[
-r_t+\sum_{g\in G}p_{g,t}+d_t^{\mathrm{bat}}+i_t+\ell_t
+r_t+\sum_{g\in G}p_{g,t}+\sum_{h\in H}x_{h,t}+d_t^{\mathrm{bat}}+i_t+\ell_t
 =g_t+c_t^{\mathrm{bat}}.
 \]
 
@@ -76,7 +76,7 @@ and period \(t\), commitment status \(u_{g,t}\), startup \(y_{g,t}\), shutdown
 uses total thermal output:
 
 \[
-r_t+\sum_{g\in G}p_{g,t}+d_t^{\mathrm{bat}}+i_t+\ell_t
+r_t+\sum_{g\in G}p_{g,t}+\sum_{h\in H}x_{h,t}+d_t^{\mathrm{bat}}+i_t+\ell_t
 =g_t+c_t^{\mathrm{bat}}.
 \]
 
@@ -295,6 +295,56 @@ to lower-cost bands first without extra binary variables. The approximation is
 throughput-based; it reports equivalent full cycles and depth-of-discharge
 metrics but does not model electrochemical ageing states.
 
+## Hydro
+
+Hydro reservoirs use direct energy-equivalent water units. Natural inflow,
+turbine release, and spill are MW-water. Reservoir state is MWh-water. Constant
+turbine efficiency \(\eta^h_h\) converts release to electrical generation:
+
+\[
+x_{h,t}=\eta^h_h q_{h,t},
+\]
+
+where \(x_{h,t}\) is hydro generation in MW and \(q_{h,t}\) is turbine release
+in MW-water.
+
+The reservoir water balance is:
+
+\[
+v_{h,t}=\rho_h v_{h,t-1}+a^h_{h,t}\Delta t-q_{h,t}\Delta t-s_{h,t}\Delta t,
+\]
+
+where \(v_{h,t}\) is reservoir state, \(a^h_{h,t}\) is natural inflow,
+\(s_{h,t}\) is spill, and
+\(\rho_h=(1-\lambda_h)^{\Delta t}\) applies evaporation or standing water loss.
+For the first model period, \(v_{h,t-1}\) is the configured initial reservoir.
+
+Bounds enforce configured minimum and maximum reservoir state, turbine capacity,
+and optional finite spill capacity:
+
+\[
+0\le x_{h,t}\le X_h^{\max},\quad
+0\le q_{h,t}\le X_h^{\max}/\eta^h_h,\quad
+0\le s_{h,t}\le S_h^{\max}.
+\]
+
+Optional environmental release is:
+
+\[
+q_{h,t}+s_{h,t}\ge E_h^{\min}.
+\]
+
+Terminal reservoir policy is per unit and supports minimum final storage, exact
+final storage, cyclic storage equal to the initial state, or free terminal
+storage. Optional terminal water value enters the objective as a credit for
+retained final MWh-water.
+
+Run-of-river units use the same release, spill, and generation equations with
+zero reservoir state. They cannot shift inflow across periods; unused inflow is
+spilled. Cascade metadata can be configured for upstream relationships and
+delay hours, but downstream inflow coupling is not yet included in the
+optimisation.
+
 ## Objective
 
 The objective minimizes:
@@ -309,16 +359,17 @@ C^{\mathrm{imp}}i_t
 \]
 
 plus generator running costs, no-load costs, start-up costs, shutdown costs,
-thermal carbon costs, and renewable-curtailment costs. For compatibility-mode
-thermal units, running cost is scalar variable cost times output. For segmented
-thermal units, running cost is fuel input times fuel price.
+thermal carbon costs, renewable-curtailment costs, and hydro terminal water
+value credits. For compatibility-mode thermal units, running cost is scalar
+variable cost times output. For segmented thermal units, running cost is fuel
+input times fuel price.
 
 Reported cost components reconcile the solver objective into thermal variable,
 thermal no-load, startup, shutdown, import energy, battery throughput, storage
-degradation, thermal carbon, import carbon, renewable curtailment, dispatch
-load-shedding, and network-capacity load-shedding costs. The simulator raises an
-error if the reported component sum diverges from the objective beyond the
-configured tolerance.
+degradation, hydro terminal value, thermal carbon, import carbon, renewable
+curtailment, dispatch load-shedding, and network-capacity load-shedding costs.
+The simulator raises an error if the reported component sum diverges from the
+objective beyond the configured tolerance.
 
 ## Solver status and reconciliation
 
@@ -335,8 +386,8 @@ relative gaps are reported only when the backend provides finite values and the
 relative-gap denominator is meaningful.
 
 Per-period reconciliation columns report source balance residual, delivered
-demand balance residual, battery energy residual, curtailment residual, network
-losses, and unserved energy.
+demand balance residual, battery energy residual, hydro water-balance residual,
+curtailment residual, network losses, and unserved energy.
 
 ## Numerical Policy
 

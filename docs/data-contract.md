@@ -10,9 +10,11 @@ The simulator reads a CSV table with one row per interval.
 - `ambient_temperature_c`: finite.
 - `wind_speed_m_s`: finite and non-negative.
 
-Portfolio configurations may reference additional numeric weather or demand
-columns through asset `time_series_key` fields. Extra columns are preserved by
-the loader and validated when a configured asset reads them.
+Portfolio configurations may reference additional numeric weather, demand,
+availability, fuel-price, or hydro-inflow columns through asset
+`time_series_key`, `availability_factor_key`, `price_time_series_key`, and
+`inflow_time_series_key` fields. Extra columns are preserved by the loader and
+validated when a configured asset reads them.
 
 ## Temporal rules
 
@@ -24,6 +26,11 @@ the loader and validated when a configured asset reads them.
 ## Units
 
 The code does not infer or convert units. Supplying kW where MW are expected will produce numerically valid but physically incorrect results.
+
+Hydro inflow columns referenced by `hydro_units[].inflow_time_series_key` are
+MW-water. Reservoir state and water-balance residuals are reported in
+MWh-water. The first hydro model uses a constant turbine efficiency to convert
+MW-water release into electrical MW generation.
 
 ## Configuration rules
 

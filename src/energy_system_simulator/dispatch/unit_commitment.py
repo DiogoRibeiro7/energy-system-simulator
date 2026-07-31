@@ -11,7 +11,13 @@ import pandas as pd
 from scipy.optimize import Bounds, LinearConstraint
 from scipy.sparse import coo_matrix
 
-from energy_system_simulator.config import BatteryConfig, FuelConfig, ModelConfig, ThermalConfig
+from energy_system_simulator.config import (
+    BatteryConfig,
+    FuelConfig,
+    HydroUnitConfig,
+    ModelConfig,
+    ThermalConfig,
+)
 from energy_system_simulator.constants import DEFAULT_NUMERICAL_POLICY
 from energy_system_simulator.dispatch.solver import (
     absolute_gap,
@@ -38,6 +44,12 @@ STORAGE_BLOCKS = (
     "storage_soc_mwh",
 )
 STORAGE_DEGRADATION_BLOCK = "storage_degradation_throughput_mwh"
+HYDRO_BLOCKS = (
+    "hydro_generation_mw",
+    "hydro_release_mw",
+    "hydro_spill_mw",
+    "hydro_reservoir_mwh",
+)
 THERMAL_BLOCKS = (
     "thermal_output_mw",
     "thermal_on",
@@ -110,6 +122,14 @@ class StorageUnit:
 
 
 @dataclass(frozen=True)
+class HydroUnit:
+    """Resolved hydro unit used by the indexed formulation."""
+
+    id: str
+    config: HydroUnitConfig
+
+
+@dataclass(frozen=True)
 class FormulationProblem:
     """Complete linear mixed-integer problem and source input arrays."""
 
@@ -121,8 +141,10 @@ class FormulationProblem:
     gross_demand_mw: FloatArray
     thermal_units: tuple[ThermalUnit, ...]
     storage_units: tuple[StorageUnit, ...]
+    hydro_units: tuple[HydroUnit, ...]
     thermal_capacity_available_mw: dict[str, FloatArray]
     storage_availability_factor: dict[str, FloatArray]
+    hydro_inflow_mw: dict[str, FloatArray]
     fuel_prices_eur_per_mwh_thermal: dict[str, FloatArray]
     registry: VariableRegistry
     statistics: FormulationStatistics
@@ -219,6 +241,7 @@ class UnitCommitment:
         thermal_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
         fuel_price_series: Mapping[str, npt.ArrayLike] | None = None,
         storage_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
+        hydro_inflows_mw: Mapping[str, npt.ArrayLike] | None = None,
     ) -> FormulationProblem:
         """Build the MILP formulation without solving it."""
         renewable = np.asarray(renewable_available_mw, dtype=np.float64)
@@ -237,6 +260,7 @@ class UnitCommitment:
         periods = renewable.size
         thermal_units = self._thermal_units()
         storage_units = self._storage_units()
+        hydro_units = self._hydro_units()
         thermal_capacity = self._thermal_capacity_available(
             thermal_units,
             periods,
@@ -247,15 +271,24 @@ class UnitCommitment:
             periods,
             storage_availability_factors or {},
         )
+        hydro_inflow = self._hydro_inflows(hydro_units, periods, hydro_inflows_mw or {})
         fuel_prices = self._fuel_prices(periods, fuel_price_series or {})
-        registry = self._variable_registry(periods, thermal_units, storage_units)
-        objective = self._objective(registry, renewable, thermal_units, storage_units, fuel_prices)
+        registry = self._variable_registry(periods, thermal_units, storage_units, hydro_units)
+        objective = self._objective(
+            registry,
+            renewable,
+            thermal_units,
+            storage_units,
+            hydro_units,
+            fuel_prices,
+        )
         bounds, integrality = self._bounds(
             registry,
             renewable,
             demand,
             thermal_units,
             storage_units,
+            hydro_units,
             storage_availability,
         )
         constraints, component_counts = self._constraints(
@@ -263,7 +296,9 @@ class UnitCommitment:
             demand,
             thermal_units,
             storage_units,
+            hydro_units,
             thermal_capacity,
+            hydro_inflow,
         )
 
         integer_variables = int(np.count_nonzero(integrality))
@@ -285,8 +320,10 @@ class UnitCommitment:
             gross_demand_mw=demand,
             thermal_units=thermal_units,
             storage_units=storage_units,
+            hydro_units=hydro_units,
             thermal_capacity_available_mw=thermal_capacity,
             storage_availability_factor=storage_availability,
+            hydro_inflow_mw=hydro_inflow,
             fuel_prices_eur_per_mwh_thermal=fuel_prices,
             registry=registry,
             statistics=statistics,
@@ -299,6 +336,7 @@ class UnitCommitment:
         thermal_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
         fuel_price_series: Mapping[str, npt.ArrayLike] | None = None,
         storage_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
+        hydro_inflows_mw: Mapping[str, npt.ArrayLike] | None = None,
     ) -> DispatchResult:
         """Solve unit commitment over the full input horizon."""
         problem = self.build_formulation(
@@ -307,6 +345,7 @@ class UnitCommitment:
             thermal_availability_factors,
             fuel_price_series,
             storage_availability_factors,
+            hydro_inflows_mw,
         )
         return self.solve_formulation(problem)
 
@@ -344,10 +383,12 @@ class UnitCommitment:
         frame["gross_demand_mw"] = problem.gross_demand_mw
         self._add_thermal_accounting_columns(frame, problem.thermal_units, problem)
         self._add_storage_accounting_columns(frame, problem.storage_units)
+        self._add_hydro_accounting_columns(frame, problem.hydro_units, problem)
         nonnegative_cleanup_max_abs = self._clip_nonnegative_solver_noise(
             frame,
             problem.thermal_units,
             problem.storage_units,
+            problem.hydro_units,
         )
 
         constant_curtailment_cost = (
@@ -436,6 +477,11 @@ class UnitCommitment:
             return (StorageUnit(id=unit.id, config=self.config.battery),)
         return tuple(StorageUnit(id=unit.id, config=unit.config) for unit in configured)
 
+    def _hydro_units(self) -> tuple[HydroUnit, ...]:
+        return tuple(
+            HydroUnit(id=unit.id, config=unit) for unit in self.config.portfolio.hydro_units
+        )
+
     def _fuels_by_id(self) -> dict[str, FuelConfig]:
         fuels = {fuel.id: fuel for fuel in self.config.portfolio.fuels}
         for generator in self.config.portfolio.thermal_generators:
@@ -487,6 +533,24 @@ class UnitCommitment:
             result[unit.id] = factor
         return result
 
+    def _hydro_inflows(
+        self,
+        units: tuple[HydroUnit, ...],
+        periods: int,
+        hydro_inflows_mw: Mapping[str, npt.ArrayLike],
+    ) -> dict[str, FloatArray]:
+        result: dict[str, FloatArray] = {}
+        for unit in units:
+            if unit.id not in hydro_inflows_mw:
+                raise ValueError(f"Hydro inflow series is required for {unit.id}")
+            values = np.asarray(hydro_inflows_mw[unit.id], dtype=np.float64)
+            if values.shape != (periods,):
+                raise ValueError(f"Hydro inflow series for {unit.id} has wrong shape")
+            if np.any(~np.isfinite(values)) or np.any(values < 0.0):
+                raise ValueError(f"Hydro inflows for {unit.id} must be finite and non-negative")
+            result[unit.id] = values
+        return result
+
     def _thermal_capacity_available(
         self,
         units: tuple[ThermalUnit, ...],
@@ -511,6 +575,7 @@ class UnitCommitment:
         periods: int,
         thermal_units: tuple[ThermalUnit, ...],
         storage_units: tuple[StorageUnit, ...],
+        hydro_units: tuple[HydroUnit, ...],
     ) -> VariableRegistry:
         registry = VariableRegistry()
         for block in SYSTEM_BLOCKS:
@@ -529,6 +594,9 @@ class UnitCommitment:
                     periods,
                     asset_id=_storage_degradation_asset_id(storage.id, band.id),
                 )
+        for hydro in hydro_units:
+            for block in HYDRO_BLOCKS:
+                registry.add(block, periods, asset_id=hydro.id)
         for thermal_unit in thermal_units:
             for block in THERMAL_BLOCKS:
                 registry.add(
@@ -558,6 +626,7 @@ class UnitCommitment:
         renewable: FloatArray,
         thermal_units: tuple[ThermalUnit, ...],
         storage_units: tuple[StorageUnit, ...],
+        hydro_units: tuple[HydroUnit, ...],
         fuel_prices: dict[str, FloatArray],
     ) -> FloatArray:
         periods = renewable.size
@@ -587,6 +656,11 @@ class UnitCommitment:
                             asset_id=_storage_degradation_asset_id(storage.id, band.id),
                         )
                     ] = band.cost_eur_per_mwh
+            for hydro in hydro_units:
+                if t == periods - 1:
+                    coefficients[
+                        registry.at("hydro_reservoir_mwh", t, asset_id=hydro.id)
+                    ] = -hydro.config.water_value_eur_per_mwh
             coefficients[registry.at("imports_mw", t)] = dt * (
                 imports.price_eur_per_mwh
                 + penalties.carbon_price_eur_per_tonne * imports.emission_factor_tonnes_per_mwh
@@ -654,6 +728,7 @@ class UnitCommitment:
         demand: FloatArray,
         thermal_units: tuple[ThermalUnit, ...],
         storage_units: tuple[StorageUnit, ...],
+        hydro_units: tuple[HydroUnit, ...],
         storage_availability: dict[str, FloatArray],
     ) -> tuple[Bounds, npt.NDArray[np.int_]]:
         periods = renewable.size
@@ -690,6 +765,25 @@ class UnitCommitment:
                             asset_id=_storage_degradation_asset_id(storage.id, band.id),
                         )
                     ] = band.capacity_mwh
+            for hydro in hydro_units:
+                config = hydro.config
+                upper[registry.at("hydro_generation_mw", t, asset_id=hydro.id)] = (
+                    config.turbine_capacity_mw
+                )
+                upper[registry.at("hydro_release_mw", t, asset_id=hydro.id)] = (
+                    config.turbine_capacity_mw / config.turbine_efficiency
+                )
+                upper[registry.at("hydro_spill_mw", t, asset_id=hydro.id)] = (
+                    config.spill_capacity_mw if config.spill_capacity_mw is not None else np.inf
+                )
+                lower[registry.at("hydro_reservoir_mwh", t, asset_id=hydro.id)] = (
+                    config.minimum_reservoir_mwh
+                )
+                upper[registry.at("hydro_reservoir_mwh", t, asset_id=hydro.id)] = (
+                    config.maximum_reservoir_mwh
+                )
+                if config.kind == "run_of_river":
+                    upper[registry.at("hydro_reservoir_mwh", t, asset_id=hydro.id)] = 0.0
             for unit in thermal_units:
                 upper[registry.at("thermal_output_mw", t, asset_id=unit.id)] = (
                     unit.config.maximum_output_mw
@@ -720,10 +814,19 @@ class UnitCommitment:
         demand: FloatArray,
         thermal_units: tuple[ThermalUnit, ...],
         storage_units: tuple[StorageUnit, ...],
+        hydro_units: tuple[HydroUnit, ...],
         thermal_capacity_available: dict[str, FloatArray],
+        hydro_inflow: dict[str, FloatArray],
     ) -> tuple[LinearConstraint, dict[str, int]]:
         builder = _ConstraintBuilder(registry.size)
-        self._add_balance_constraints(builder, registry, demand, thermal_units, storage_units)
+        self._add_balance_constraints(
+            builder,
+            registry,
+            demand,
+            thermal_units,
+            storage_units,
+            hydro_units,
+        )
         self._add_thermal_constraints(
             builder,
             registry,
@@ -731,6 +834,7 @@ class UnitCommitment:
             thermal_units,
             thermal_capacity_available,
         )
+        self._add_hydro_constraints(builder, registry, demand.size, hydro_units, hydro_inflow)
         self._add_storage_constraints(builder, registry, demand.size, storage_units)
         self._add_terminal_soc_constraints(builder, registry, demand.size, storage_units)
         return builder.build(), builder.component_counts
@@ -742,6 +846,7 @@ class UnitCommitment:
         demand: FloatArray,
         thermal_units: tuple[ThermalUnit, ...],
         storage_units: tuple[StorageUnit, ...],
+        hydro_units: tuple[HydroUnit, ...],
     ) -> None:
         for t, value in enumerate(demand):
             coefficients = {
@@ -754,6 +859,8 @@ class UnitCommitment:
             for storage in storage_units:
                 coefficients[registry.at("storage_discharge_mw", t, asset_id=storage.id)] = 1.0
                 coefficients[registry.at("storage_charge_mw", t, asset_id=storage.id)] = -1.0
+            for hydro in hydro_units:
+                coefficients[registry.at("hydro_generation_mw", t, asset_id=hydro.id)] = 1.0
             builder.add(coefficients, value, value, component="balance")
 
     def _add_thermal_constraints(
@@ -1199,6 +1306,84 @@ class UnitCommitment:
                 self._add_storage_ramp_constraints(builder, registry, storage, t, dt)
                 self._add_storage_degradation_constraints(builder, registry, storage, t, dt)
 
+    def _add_hydro_constraints(
+        self,
+        builder: _ConstraintBuilder,
+        registry: VariableRegistry,
+        periods: int,
+        hydro_units: tuple[HydroUnit, ...],
+        hydro_inflow: dict[str, FloatArray],
+    ) -> None:
+        dt = self.config.simulation.time_step_hours
+        for hydro in hydro_units:
+            config = hydro.config
+            retention = (1.0 - config.evaporation_rate_per_hour) ** dt
+            for t in range(periods):
+                release = registry.at("hydro_release_mw", t, asset_id=hydro.id)
+                generation = registry.at("hydro_generation_mw", t, asset_id=hydro.id)
+                spill = registry.at("hydro_spill_mw", t, asset_id=hydro.id)
+                reservoir = registry.at("hydro_reservoir_mwh", t, asset_id=hydro.id)
+                builder.add(
+                    {generation: 1.0, release: -config.turbine_efficiency},
+                    0.0,
+                    0.0,
+                    component="hydro_turbine_conversion",
+                )
+                if config.minimum_release_mw > 0.0:
+                    builder.add(
+                        {release: 1.0, spill: 1.0},
+                        config.minimum_release_mw,
+                        np.inf,
+                        component="hydro_environmental_release",
+                    )
+                coefficients = {
+                    reservoir: 1.0,
+                    release: dt,
+                    spill: dt,
+                }
+                rhs = hydro_inflow[hydro.id][t] * dt
+                if t == 0:
+                    rhs += retention * config.initial_reservoir_mwh
+                else:
+                    coefficients[
+                        registry.at("hydro_reservoir_mwh", t - 1, asset_id=hydro.id)
+                    ] = -retention
+                builder.add(coefficients, rhs, rhs, component="hydro_water_balance")
+            self._add_hydro_terminal_constraint(builder, registry, hydro, periods)
+
+    def _add_hydro_terminal_constraint(
+        self,
+        builder: _ConstraintBuilder,
+        registry: VariableRegistry,
+        hydro: HydroUnit,
+        periods: int,
+    ) -> None:
+        config = hydro.config
+        if config.kind == "run_of_river" or config.terminal_reservoir_mode == "free":
+            return
+        terminal = {registry.at("hydro_reservoir_mwh", periods - 1, asset_id=hydro.id): 1.0}
+        if config.terminal_reservoir_mode == "minimum":
+            builder.add(
+                terminal,
+                config.minimum_final_reservoir_mwh,
+                np.inf,
+                component="hydro_terminal",
+            )
+        elif config.terminal_reservoir_mode == "exact":
+            builder.add(
+                terminal,
+                config.minimum_final_reservoir_mwh,
+                config.minimum_final_reservoir_mwh,
+                component="hydro_terminal",
+            )
+        elif config.terminal_reservoir_mode == "cyclic":
+            builder.add(
+                terminal,
+                config.initial_reservoir_mwh,
+                config.initial_reservoir_mwh,
+                component="hydro_terminal",
+            )
+
     def _add_storage_ramp_constraints(
         self,
         builder: _ConstraintBuilder,
@@ -1314,6 +1499,13 @@ class UnitCommitment:
                         asset_id=_storage_degradation_asset_id(storage.id, band.id),
                     )
                 )
+        for hydro in problem.hydro_units:
+            for block in HYDRO_BLOCKS:
+                data[f"{block}__{hydro.id}"] = registry.values(
+                    solution,
+                    block,
+                    asset_id=hydro.id,
+                )
         for unit in problem.thermal_units:
             for block in THERMAL_BLOCKS:
                 data[f"{block}__{unit.id}"] = registry.values(
@@ -1335,6 +1527,7 @@ class UnitCommitment:
                 )
         frame = pd.DataFrame(data)
         self._add_storage_aggregate_columns(frame, problem.storage_units)
+        self._add_hydro_aggregate_columns(frame, problem.hydro_units)
         for block in THERMAL_BLOCKS:
             columns = [f"{block}__{unit.id}" for unit in problem.thermal_units]
             frame[block] = frame[columns].sum(axis=1)
@@ -1353,6 +1546,24 @@ class UnitCommitment:
         }
         for aggregate, block in mapping.items():
             columns = [f"{block}__{unit.id}" for unit in storage_units]
+            frame[aggregate] = frame[columns].sum(axis=1)
+
+    @staticmethod
+    def _add_hydro_aggregate_columns(
+        frame: pd.DataFrame,
+        hydro_units: tuple[HydroUnit, ...],
+    ) -> None:
+        mapping = {
+            "hydro_generation_mw": "hydro_generation_mw",
+            "hydro_release_mw": "hydro_release_mw",
+            "hydro_spill_mw": "hydro_spill_mw",
+            "hydro_reservoir_mwh": "hydro_reservoir_mwh",
+        }
+        for aggregate, block in mapping.items():
+            if not hydro_units:
+                frame[aggregate] = 0.0
+                continue
+            columns = [f"{block}__{unit.id}" for unit in hydro_units]
             frame[aggregate] = frame[columns].sum(axis=1)
 
     def _add_thermal_accounting_columns(
@@ -1547,6 +1758,48 @@ class UnitCommitment:
         )
         frame["battery_throughput_cost_eur"] = frame["storage_throughput_cost_eur"]
 
+    def _add_hydro_accounting_columns(
+        self,
+        frame: pd.DataFrame,
+        units: tuple[HydroUnit, ...],
+        problem: FormulationProblem,
+    ) -> None:
+        dt = self.config.simulation.time_step_hours
+        for unit in units:
+            config = unit.config
+            inflow = problem.hydro_inflow_mw[unit.id]
+            reservoir = frame[f"hydro_reservoir_mwh__{unit.id}"]
+            release = frame[f"hydro_release_mw__{unit.id}"]
+            spill = frame[f"hydro_spill_mw__{unit.id}"]
+            generation = frame[f"hydro_generation_mw__{unit.id}"]
+            previous = reservoir.shift(1)
+            previous.iloc[0] = config.initial_reservoir_mwh
+            retention = (1.0 - config.evaporation_rate_per_hour) ** dt
+            expected = retention * previous + inflow * dt - release * dt - spill * dt
+            frame[f"hydro_inflow_mw__{unit.id}"] = inflow
+            frame[f"hydro_water_loss_mwh__{unit.id}"] = (1.0 - retention) * previous
+            frame[f"hydro_water_balance_residual_mwh__{unit.id}"] = reservoir - expected
+            frame[f"hydro_capacity_factor__{unit.id}"] = np.divide(
+                generation.to_numpy(dtype=np.float64),
+                config.turbine_capacity_mw,
+                out=np.zeros(len(frame), dtype=np.float64),
+                where=config.turbine_capacity_mw > 0.0,
+            )
+            frame[f"hydro_terminal_value_eur__{unit.id}"] = 0.0
+            frame.loc[
+                frame.index[-1],
+                f"hydro_terminal_value_eur__{unit.id}",
+            ] = float(reservoir.iloc[-1] * config.water_value_eur_per_mwh)
+        frame["hydro_inflow_mw"] = (
+            sum(frame[f"hydro_inflow_mw__{unit.id}"] for unit in units) if units else 0.0
+        )
+        frame["hydro_water_loss_mwh"] = (
+            sum(frame[f"hydro_water_loss_mwh__{unit.id}"] for unit in units) if units else 0.0
+        )
+        frame["hydro_terminal_value_eur"] = (
+            sum(frame[f"hydro_terminal_value_eur__{unit.id}"] for unit in units) if units else 0.0
+        )
+
     def _coerce_binary_columns(
         self,
         frame: pd.DataFrame,
@@ -1606,6 +1859,7 @@ class UnitCommitment:
         frame: pd.DataFrame,
         thermal_units: tuple[ThermalUnit, ...] | None = None,
         storage_units: tuple[StorageUnit, ...] | None = None,
+        hydro_units: tuple[HydroUnit, ...] | None = None,
     ) -> float:
         columns = [
             "renewable_used_mw",
@@ -1627,6 +1881,16 @@ class UnitCommitment:
                 columns.extend(
                     f"storage_degradation_throughput_mwh__{storage.id}__{band.id}"
                     for band in storage.config.degradation_bands
+                )
+        if hydro_units is not None:
+            for hydro in hydro_units:
+                columns.extend(
+                    [
+                        f"hydro_generation_mw__{hydro.id}",
+                        f"hydro_release_mw__{hydro.id}",
+                        f"hydro_spill_mw__{hydro.id}",
+                        f"hydro_reservoir_mwh__{hydro.id}",
+                    ]
                 )
         if thermal_units is None:
             columns.append("thermal_output_mw")
@@ -1658,6 +1922,8 @@ class UnitCommitment:
             )
         if storage_units:
             self._add_storage_aggregate_columns(frame, storage_units)
+        if hydro_units is not None:
+            self._add_hydro_aggregate_columns(frame, hydro_units)
         return max_clipped
 
     def _cost_components(
@@ -1697,6 +1963,7 @@ class UnitCommitment:
                     for unit in storage_units
                 )
             ),
+            "hydro_terminal_value_eur": -float(frame["hydro_terminal_value_eur"].sum()),
             "thermal_carbon_cost_eur": float(
                 sum(frame[f"thermal_carbon_cost_eur__{unit.id}"].sum() for unit in thermal_units)
             ),

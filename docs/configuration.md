@@ -19,10 +19,10 @@ resolved into the same typed portfolio model used by newer configurations.
 - `imports`
 - `demand`
 
-The current optimisation engine evaluates multiple renewable assets by ID and
+The current optimisation engine evaluates multiple renewable assets by ID,
 optimizes all configured thermal generators as a generator-indexed unit
-commitment fleet. Storage and import resources are still projected to the first
-compatible aggregate resource until their indexed formulations are introduced.
+commitment fleet, and dispatches indexed storage and hydro portfolios. Imports
+are still represented as a single aggregate resource.
 
 ## Validation Approach
 
@@ -114,6 +114,29 @@ Storage units may set:
 Each storage asset has its own terminal SOC mode: `minimum`, `exact`, `cyclic`,
 or `free`.
 
+Hydro units may set:
+
+- `kind`: `reservoir` or `run_of_river`. Run-of-river units must have zero
+  reservoir storage fields and cannot shift inflow across periods.
+- `inflow_time_series_key`: required input CSV column for natural inflow in
+  MW-water, the energy-equivalent water power entering the reservoir.
+- `turbine_capacity_mw`: maximum electrical hydro output.
+- `turbine_efficiency`: constant conversion from MW-water release to electrical
+  MW generation.
+- `minimum_reservoir_mwh`, `maximum_reservoir_mwh`, and
+  `initial_reservoir_mwh`: reservoir state bounds and initial state in
+  MWh-water.
+- `minimum_final_reservoir_mwh` and `terminal_reservoir_mode`: terminal storage
+  policy, using `minimum`, `exact`, `cyclic`, or `free`.
+- `spill_capacity_mw`: optional finite spill limit in MW-water. Omit it for
+  unlimited spill.
+- `minimum_release_mw`: optional environmental minimum release, met by turbine
+  release plus spill in MW-water.
+- `evaporation_rate_per_hour`: hourly standing water loss fraction.
+- `water_value_eur_per_mwh`: optional terminal value for retained MWh-water.
+- `upstream_hydro_id` and `cascade_delay_hours`: typed cascade metadata. The
+  current optimisation does not yet add upstream releases to downstream inflows.
+
 ## Migration
 
 Convert a legacy configuration with:
@@ -132,6 +155,8 @@ generator, one storage unit, one import resource, and one demand entry.
 - `configs/example.yaml` is the backward-compatible schema v1 example.
 - `configs/portfolio_two_thermal.yaml` is a schema v2 example with two thermal
   generators and two renewable generators.
+- `configs/portfolio_hydro.yaml` is a schema v2 example with a reservoir unit,
+  a run-of-river unit, and synthetic seasonal hydro inflows.
 - `tests/fixtures/invalid_portfolio_missing_bus.yaml` is intentionally invalid
   and is used by the validation tests.
 

@@ -21,6 +21,9 @@ and this project follows semantic versioning.
 - Indexed storage portfolio dispatch for batteries and pumped storage,
   including exact operating modes, self-discharge, per-asset terminal SOC,
   availability factors, ramp limits, and degradation accounting.
+- Reservoir and run-of-river hydro dispatch with natural inflows, turbine
+  release, spill, environmental releases, evaporation, terminal reservoir
+  policies, water-value accounting, and a synthetic hydro portfolio example.
 
 ## [0.1.1] - 2026-07-31
 

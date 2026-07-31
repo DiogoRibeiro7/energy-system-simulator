@@ -14,6 +14,7 @@ AssetRegistry resolves portfolio assets
         ├── renewable availability by asset
         ├── thermal generator fleet and fuel prices
         ├── storage portfolio availability by asset
+        ├── hydro inflows by reservoir and run-of-river asset
         ├── demand by configured column
         └── aggregate distribution preprocessing
                   │
@@ -39,8 +40,10 @@ AssetRegistry resolves portfolio assets
 - Thermal generators use typed fuels, heat-rate segments, and startup
   categories inside the generator-indexed MILP.
 - Storage assets share indexed energy-balance equations for batteries and
-  pumped storage. Hydro reservoirs can extend the same intertemporal pattern
-  with water-balance constraints.
+  pumped storage.
+- Hydro assets use indexed water-balance equations for reservoirs and
+  run-of-river plants. Cascade metadata is typed, while coupled downstream
+  inflow optimisation is reserved for a later extension.
 - Zonal or nodal networks can replace the aggregated distribution representation.
 - Reserve requirements can be added as capacity constraints.
 - Demand response can be represented through shiftable and curtailable load variables.

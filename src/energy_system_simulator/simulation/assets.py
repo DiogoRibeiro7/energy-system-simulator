@@ -10,6 +10,7 @@ import pandas as pd
 from energy_system_simulator.config import (
     BatteryConfig,
     DemandConfig,
+    HydroUnitConfig,
     ImportResourceConfig,
     ModelConfig,
     NetworkConfig,
@@ -177,6 +178,23 @@ class IntertemporalAsset:
 
 
 @dataclass(frozen=True)
+class HydroAsset:
+    """Hydro resource with exogenous inflow data."""
+
+    asset_id: str
+    bus_id: str
+    config: HydroUnitConfig
+    role: AssetRole = "intertemporal"
+
+    @classmethod
+    def from_config(cls, config: HydroUnitConfig) -> HydroAsset:
+        return cls(asset_id=config.id, bus_id=config.bus_id, config=config)
+
+    def inflow_mw(self, data: pd.DataFrame) -> FloatArray:
+        return _column(data, self.config.inflow_time_series_key, self.asset_id, nonnegative=True)
+
+
+@dataclass(frozen=True)
 class DemandAsset:
     """Demand resource resolved from portfolio configuration."""
 
@@ -274,6 +292,7 @@ class AssetRegistry:
     renewable_assets: tuple[RenewableAsset, ...]
     dispatchable_assets: tuple[DispatchableAsset, ...]
     intertemporal_assets: tuple[IntertemporalAsset, ...]
+    hydro_assets: tuple[HydroAsset, ...]
     import_assets: tuple[ImportAsset, ...]
     demand_assets: tuple[DemandAsset, ...]
     network_components: tuple[NetworkComponent, ...]
@@ -291,6 +310,7 @@ class AssetRegistry:
             intertemporal_assets=tuple(
                 IntertemporalAsset.from_config(asset) for asset in portfolio.storage_units
             ),
+            hydro_assets=tuple(HydroAsset.from_config(asset) for asset in portfolio.hydro_units),
             import_assets=tuple(
                 ImportAsset(asset_id=asset.id, bus_id=asset.bus_id, config=asset)
                 for asset in portfolio.imports
@@ -341,6 +361,9 @@ class AssetRegistry:
             if factor is not None:
                 factors[asset.asset_id] = factor
         return factors
+
+    def hydro_inflows_mw(self, data: pd.DataFrame) -> dict[str, FloatArray]:
+        return {asset.asset_id: asset.inflow_mw(data) for asset in self.hydro_assets}
 
 
 MappingByAsset = dict[str, FloatArray]

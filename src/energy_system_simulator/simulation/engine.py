@@ -175,6 +175,7 @@ class SimulationEngine:
             thermal_availability_factors=registry.thermal_availability_factors(data),
             fuel_price_series=self._fuel_price_series(data),
             storage_availability_factors=registry.storage_availability_factors(data),
+            hydro_inflows_mw=registry.hydro_inflows_mw(data),
         )
 
     def _fuel_price_series(self, data: pd.DataFrame) -> dict[str, FloatArray]:
@@ -235,6 +236,7 @@ class SimulationEngine:
             renewable.asset_table.append(dispatch)
             .append(self._thermal_asset_timeseries(data["timestamp"], frame))
             .append(self._storage_asset_timeseries(data["timestamp"], frame))
+            .append(self._hydro_asset_timeseries(data["timestamp"], frame))
         )
 
     def _thermal_asset_timeseries(
@@ -332,6 +334,46 @@ class SimulationEngine:
             return AssetTimeSeries.empty()
         return AssetTimeSeries(pd.concat(pieces, ignore_index=True))
 
+    def _hydro_asset_timeseries(
+        self,
+        timestamps: pd.Series,
+        frame: pd.DataFrame,
+    ) -> AssetTimeSeries:
+        pieces: list[pd.DataFrame] = []
+        variable_map = {
+            "hydro_generation_mw": ("generation_mw", "MW"),
+            "hydro_release_mw": ("release_mw_water_equivalent", "MW-water"),
+            "hydro_spill_mw": ("spill_mw_water_equivalent", "MW-water"),
+            "hydro_reservoir_mwh": ("reservoir_mwh_water_equivalent", "MWh-water"),
+            "hydro_inflow_mw": ("inflow_mw_water_equivalent", "MW-water"),
+            "hydro_capacity_factor": ("capacity_factor", "fraction"),
+            "hydro_water_loss_mwh": ("water_loss_mwh_water_equivalent", "MWh-water"),
+            "hydro_water_balance_residual_mwh": (
+                "water_balance_residual_mwh_water_equivalent",
+                "MWh-water",
+            ),
+            "hydro_terminal_value_eur": ("terminal_value_eur", "EUR"),
+        }
+        for hydro in self.config.portfolio.hydro_units:
+            for prefix, (variable, unit) in variable_map.items():
+                column = f"{prefix}__{hydro.id}"
+                if column not in frame:
+                    continue
+                pieces.append(
+                    pd.DataFrame(
+                        {
+                            "timestamp": timestamps.to_numpy(),
+                            "asset_id": hydro.id,
+                            "variable": variable,
+                            "value": frame[column].to_numpy(),
+                            "unit": unit,
+                        }
+                    )
+                )
+        if not pieces:
+            return AssetTimeSeries.empty()
+        return AssetTimeSeries(pd.concat(pieces, ignore_index=True))
+
     def _renewable_kind_available(
         self,
         renewable: RenewableAvailability,
@@ -365,7 +407,10 @@ class SimulationEngine:
         served_mwh = energy("served_demand_mw")
         renewable_used_mwh = energy("renewable_used_mw")
         primary_source_generation_mwh = (
-            renewable_used_mwh + energy("thermal_output_mw") + energy("imports_mw")
+            renewable_used_mwh
+            + energy("thermal_output_mw")
+            + energy("hydro_generation_mw")
+            + energy("imports_mw")
         )
         return {
             "periods": len(frame),
@@ -435,6 +480,11 @@ class SimulationEngine:
             "battery_discharge_mwh": energy("battery_discharge_mw"),
             "final_battery_soc_mwh": float(frame["battery_soc_mwh"].iloc[-1]),
             "storage_assets": self._storage_asset_summary(frame),
+            "hydro_generation_mwh": energy("hydro_generation_mw"),
+            "hydro_spill_mwh_water_equivalent": energy("hydro_spill_mw"),
+            "hydro_water_losses_mwh_water_equivalent": float(frame["hydro_water_loss_mwh"].sum()),
+            "hydro_terminal_value_eur": float(frame["hydro_terminal_value_eur"].sum()),
+            "hydro_assets": self._hydro_asset_summary(frame),
             "network_losses_mwh": energy("network_losses_mw"),
             "thermal_emissions_tonnes": float(frame["thermal_emissions_tonnes"].sum()),
             "import_emissions_tonnes": float(frame["import_emissions_tonnes"].sum()),
@@ -459,6 +509,7 @@ class SimulationEngine:
                 "total_network_losses_mwh": energy("network_losses_mw"),
                 "total_unserved_energy_mwh": energy("total_load_shed_mw"),
                 "storage_assets": self._storage_reconciliation_summary(frame),
+                "hydro_assets": self._hydro_reconciliation_summary(frame),
                 "residual_summaries": {
                     "source_balance": self._residual_summary(
                         frame,
@@ -467,6 +518,7 @@ class SimulationEngine:
                         (
                             "renewable_used_mw",
                             "thermal_output_mw",
+                            "hydro_generation_mw",
                             "battery_discharge_mw",
                             "imports_mw",
                             "source_load_shed_mw",
@@ -609,6 +661,41 @@ class SimulationEngine:
             }
         return result
 
+    def _hydro_asset_summary(self, frame: pd.DataFrame) -> dict[str, Any]:
+        dt = self.config.simulation.time_step_hours
+        result: dict[str, Any] = {}
+        for hydro in self.config.portfolio.hydro_units:
+            generation_column = f"hydro_generation_mw__{hydro.id}"
+            result[hydro.id] = {
+                "kind": hydro.kind,
+                "generation_mwh": float(frame[generation_column].sum() * dt),
+                "inflow_mwh_water_equivalent": float(
+                    frame[f"hydro_inflow_mw__{hydro.id}"].sum() * dt
+                ),
+                "release_mwh_water_equivalent": float(
+                    frame[f"hydro_release_mw__{hydro.id}"].sum() * dt
+                ),
+                "spill_mwh_water_equivalent": float(
+                    frame[f"hydro_spill_mw__{hydro.id}"].sum() * dt
+                ),
+                "water_losses_mwh_water_equivalent": float(
+                    frame[f"hydro_water_loss_mwh__{hydro.id}"].sum()
+                ),
+                "final_reservoir_mwh_water_equivalent": float(
+                    frame[f"hydro_reservoir_mwh__{hydro.id}"].iloc[-1]
+                ),
+                "capacity_factor": (
+                    float(frame[generation_column].mean()) / hydro.turbine_capacity_mw
+                    if hydro.turbine_capacity_mw > 0.0
+                    else 0.0
+                ),
+                "terminal_value_eur": float(frame[f"hydro_terminal_value_eur__{hydro.id}"].sum()),
+                "max_abs_water_balance_residual_mwh": float(
+                    frame[f"hydro_water_balance_residual_mwh__{hydro.id}"].abs().max()
+                ),
+            }
+        return result
+
     def _storage_reconciliation_summary(self, frame: pd.DataFrame) -> dict[str, Any]:
         result: dict[str, Any] = {}
         for storage in self._storage_units_for_reporting():
@@ -625,6 +712,23 @@ class SimulationEngine:
             )
         return result
 
+    def _hydro_reconciliation_summary(self, frame: pd.DataFrame) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for hydro in self.config.portfolio.hydro_units:
+            residual_column = f"hydro_water_balance_residual_mwh__{hydro.id}"
+            result[hydro.id] = self._residual_summary(
+                frame,
+                f"hydro_water_balance[{hydro.id}]",
+                residual_column,
+                (
+                    f"hydro_reservoir_mwh__{hydro.id}",
+                    f"hydro_inflow_mw__{hydro.id}",
+                    f"hydro_release_mw__{hydro.id}",
+                    f"hydro_spill_mw__{hydro.id}",
+                ),
+            )
+        return result
+
     def _storage_units_for_reporting(self) -> tuple[StorageUnitConfig, ...]:
         units = self.config.portfolio.storage_units
         if len(units) == 1:
@@ -637,6 +741,7 @@ class SimulationEngine:
         source_left = (
             frame["renewable_used_mw"]
             + frame["thermal_output_mw"]
+            + frame["hydro_generation_mw"]
             + frame["battery_discharge_mw"]
             + frame["imports_mw"]
             + frame["source_load_shed_mw"]
@@ -683,6 +788,7 @@ class SimulationEngine:
             (
                 "renewable_used_mw",
                 "thermal_output_mw",
+                "hydro_generation_mw",
                 "battery_discharge_mw",
                 "imports_mw",
                 "source_load_shed_mw",
