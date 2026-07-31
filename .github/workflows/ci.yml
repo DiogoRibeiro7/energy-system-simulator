@@ -28,6 +28,8 @@ jobs:
         run: poetry run mypy src
       - name: Release metadata
         run: poetry run python scripts/validate_licensing.py
+      - name: Version metadata
+        run: poetry run python scripts/validate_version.py
       - name: Example data reproducibility
         run: poetry run python scripts/check_example_data.py
       - name: Test
@@ -40,3 +42,9 @@ jobs:
         run: poetry run python scripts/benchmark_example.py
       - name: Baseline comparison
         run: poetry run python scripts/compare_baseline.py
+      - name: Editable install smoke
+        run: poetry run python scripts/smoke_editable_install.py
+      - name: Build package
+        run: poetry build
+      - name: Wheel install smoke
+        run: poetry run python scripts/smoke_wheel_install.py

@@ -1,4 +1,4 @@
-.PHONY: install format lint typecheck test validate simulate check-example-data benchmark baseline release-metadata verify clean
+.PHONY: install format lint typecheck test validate simulate check-example-data benchmark baseline release-metadata version-metadata package editable-smoke wheel-smoke verify clean
 
 install:
 	poetry install
@@ -33,7 +33,19 @@ baseline:
 release-metadata:
 	poetry run python scripts/validate_licensing.py
 
-verify: format lint typecheck check-example-data test validate simulate benchmark baseline release-metadata
+version-metadata:
+	poetry run python scripts/validate_version.py
+
+package:
+	poetry build
+
+editable-smoke:
+	poetry run python scripts/smoke_editable_install.py
+
+wheel-smoke: package
+	poetry run python scripts/smoke_wheel_install.py
+
+verify: format lint typecheck check-example-data test validate simulate benchmark baseline release-metadata version-metadata editable-smoke wheel-smoke
 
 clean:
 	rm -rf outputs .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage

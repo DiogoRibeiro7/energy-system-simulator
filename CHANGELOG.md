@@ -18,6 +18,8 @@ and this project follows semantic versioning.
   diagnostics, and energy reconciliation metrics.
 - Audited baseline fixture, comparison command, and remediation roadmap.
 - Release owner, citation, and commercial-contact metadata validation.
+- Authoritative version helper, CLI version output, and package install smoke
+  checks.
 
 ## [0.1.0] - 2026-07-31
 

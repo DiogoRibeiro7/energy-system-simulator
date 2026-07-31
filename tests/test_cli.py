@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 from energy_system_simulator.cli import main
+from energy_system_simulator.metadata import get_package_version
 
 
 def _write_config_with_output(tmp_path: Path) -> Path:
@@ -22,6 +24,14 @@ def test_cli_validate_reports_period_count(tmp_path: Path, capsys) -> None:
     main(["validate", "--config", str(config_path)])
     captured = capsys.readouterr()
     assert "Input contains 336 periods" in captured.out
+
+
+def test_cli_version_reports_package_version(capsys) -> None:
+    with pytest.raises(SystemExit) as raised:
+        main(["--version"])
+    captured = capsys.readouterr()
+    assert raised.value.code == 0
+    assert get_package_version() in captured.out
 
 
 def test_cli_simulate_writes_outputs_without_plots(tmp_path: Path, capsys) -> None:

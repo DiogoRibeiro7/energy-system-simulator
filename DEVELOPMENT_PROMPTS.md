@@ -107,7 +107,7 @@ Require this response format after every major prompt:
 |---|---|---|---|---|
 | FIX-00 | Preserve audited baseline and roadmap | `chore/audit-baseline-gate` | Required | Complete |
 | FIX-01 | Resolve legal and citation metadata | `fix/release-metadata` | Required before publication | Complete |
-| FIX-02 | Clean-checkout packaging and version authority | `fix/package-versioning` | Required | Not started |
+| FIX-02 | Clean-checkout packaging and version authority | `fix/package-versioning` | Required | Complete |
 | FIX-03 | Terminal commitment obligations | `fix/terminal-commitment` | Required | Not started |
 | FIX-04 | Missing duration and initial-state tests | `test/time-state-regressions` | Required | Not started |
 | FIX-05 | Solver termination regression suite | `test/solver-statuses` | Required | Not started |

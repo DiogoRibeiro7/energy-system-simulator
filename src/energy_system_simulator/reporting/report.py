@@ -6,7 +6,6 @@ import platform
 import subprocess
 from dataclasses import asdict
 from datetime import UTC, datetime
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +16,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from energy_system_simulator.config import ModelConfig
+from energy_system_simulator.metadata import get_package_version
 from energy_system_simulator.simulation.engine import SimulationResult
 
 
@@ -50,7 +50,7 @@ def _write_manifest(
     config_path: str | Path | None,
 ) -> None:
     manifest = {
-        "package_version": _package_version(),
+        "package_version": get_package_version(),
         "python_version": platform.python_version(),
         "generated_at_utc": datetime.now(UTC).isoformat(),
         "git_commit": _git_commit_hash(),
@@ -76,13 +76,6 @@ def _write_manifest(
         "resolved_configuration": _json_ready(asdict(config)),
     }
     path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
-
-
-def _package_version() -> str:
-    try:
-        return version("energy-system-simulator")
-    except PackageNotFoundError:
-        return "0.0.0+unknown"
 
 
 def _sha256(path: Path) -> str:

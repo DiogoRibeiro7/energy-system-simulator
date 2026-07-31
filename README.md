@@ -114,6 +114,9 @@ poetry run python scripts/benchmark_example.py
 poetry run python scripts/compare_baseline.py
 ```
 
+See [docs/development.md](docs/development.md) for clean-checkout, editable
+install, and wheel-install smoke workflows.
+
 ## Modelling scope
 
 The default simulation uses a single aggregated distribution network. This is appropriate for system planning and policy analysis. The repository also contains a DC power-flow solver that can be integrated into zonal or nodal studies. Detailed low-voltage AC analysis, frequency dynamics, protection systems, and transient stability are outside the current scope.

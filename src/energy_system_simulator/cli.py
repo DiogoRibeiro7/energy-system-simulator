@@ -6,6 +6,7 @@ from pathlib import Path
 
 from energy_system_simulator.config import load_config
 from energy_system_simulator.data import load_input_data
+from energy_system_simulator.metadata import get_package_version
 from energy_system_simulator.reporting import write_outputs
 from energy_system_simulator.simulation import SimulationEngine
 
@@ -15,6 +16,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="energy-sim",
         description="Simulate a hybrid electricity system.",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {get_package_version()}",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
