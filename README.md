@@ -111,6 +111,7 @@ poetry run mypy src
 poetry run python scripts/validate_licensing.py
 poetry run python scripts/check_example_data.py
 poetry run python scripts/benchmark_example.py
+poetry run python scripts/compare_baseline.py
 ```
 
 ## Modelling scope

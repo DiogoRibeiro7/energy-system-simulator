@@ -16,6 +16,7 @@ and this project follows semantic versioning.
 - Numerical tolerances, duration-aware unit commitment constraints, exact
   battery operating-mode exclusivity, detailed objective accounting, solver
   diagnostics, and energy reconciliation metrics.
+- Audited baseline fixture, comparison command, and remediation roadmap.
 
 ## [0.1.0] - 2026-07-31
 

@@ -1,4 +1,4 @@
-.PHONY: install format lint typecheck test validate simulate check-example-data benchmark verify clean
+.PHONY: install format lint typecheck test validate simulate check-example-data benchmark baseline verify clean
 
 install:
 	poetry install
@@ -27,7 +27,10 @@ check-example-data:
 benchmark:
 	poetry run python scripts/benchmark_example.py
 
-verify: format lint typecheck check-example-data test validate simulate benchmark
+baseline:
+	poetry run python scripts/compare_baseline.py
+
+verify: format lint typecheck check-example-data test validate simulate benchmark baseline
 	poetry run python scripts/validate_licensing.py
 
 clean:
