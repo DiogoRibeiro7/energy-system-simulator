@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "baseline": "0.1.0-current",
+  "baseline": "0.1.1-current",
   "absolute_tolerance": 1e-06,
   "relative_tolerance": 1e-09,
   "manifest_fields_excluded": [

@@ -39,10 +39,10 @@ The committed example uses `configs/example.yaml` and
 
 ## Verification Snapshot
 
-Local verification on Python 3.13 after the terminal commitment update reported:
+Local verification on Python 3.13 for the `0.1.1` correction release reported:
 
-- `54 passed`
-- branch-aware coverage: 86.12%
+- `126 passed`
+- branch-aware coverage: 88.43%
 - solver status: optimal
 - MIP gap: 0.0
 

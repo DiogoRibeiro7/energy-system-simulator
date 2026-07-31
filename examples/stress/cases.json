@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "renewable_surplus",
+      "description": "Renewable availability exceeds demand and storage capability.",
+      "thermal_mode": "off",
+      "battery_mode": "empty",
+      "demand_mw": [10.0],
+      "renewable_mw": [80.0],
+      "expect_min": {"renewable_curtailed_mwh": 70.0}
+    },
+    {
+      "id": "import_constrained_peak_battery",
+      "description": "Import cap forces battery discharge during a peak period.",
+      "thermal_mode": "off",
+      "battery_mode": "initial_40",
+      "imports_max_mw": 40.0,
+      "demand_mw": [80.0],
+      "renewable_mw": [0.0],
+      "expect_min": {"imports_mwh": 40.0, "battery_discharge_mwh": 40.0}
+    },
+    {
+      "id": "network_bottleneck",
+      "description": "Aggregate transfer capacity sheds end-user demand before dispatch.",
+      "thermal_mode": "off",
+      "battery_mode": "empty",
+      "imports_max_mw": 100.0,
+      "network_transfer_capacity_mw": 50.0,
+      "demand_mw": [100.0],
+      "renewable_mw": [0.0],
+      "expect_min": {"network_capacity_shed_mwh": 50.0}
+    },
+    {
+      "id": "generation_shortage",
+      "description": "No generation, storage, or imports are available.",
+      "thermal_mode": "off",
+      "battery_mode": "empty",
+      "demand_mw": [100.0],
+      "renewable_mw": [0.0],
+      "expect_min": {"dispatch_load_shed_mwh": 100.0}
+    },
+    {
+      "id": "thermal_transition_costs",
+      "description": "Thermal unit starts and stops with non-zero transition costs.",
+      "thermal_mode": "flexible",
+      "battery_mode": "empty",
+      "demand_mw": [0.0, 60.0, 60.0, 0.0],
+      "renewable_mw": [0.0, 0.0, 0.0, 0.0],
+      "expect_min": {
+        "thermal_starts": 1.0,
+        "thermal_shutdowns": 1.0,
+        "startup_cost_eur": 500.0,
+        "shutdown_cost_eur": 100.0
+      }
+    },
+    {
+      "id": "battery_cycle",
+      "description": "Battery charges from surplus energy and discharges later.",
+      "thermal_mode": "off",
+      "battery_mode": "cycle_50",
+      "demand_mw": [0.0, 25.0, 25.0],
+      "renewable_mw": [50.0, 0.0, 0.0],
+      "expect_min": {"battery_charge_mwh": 50.0, "battery_discharge_mwh": 50.0}
+    },
+    {
+      "id": "carbon_switch",
+      "description": "High carbon price makes cleaner imports cheaper than thermal output.",
+      "thermal_mode": "dirty",
+      "battery_mode": "empty",
+      "imports_max_mw": 50.0,
+      "carbon_price_eur_per_tonne": 100.0,
+      "demand_mw": [50.0],
+      "renewable_mw": [0.0],
+      "expect_min": {"imports_mwh": 50.0, "import_carbon_cost_eur": 500.0}
+    },
+    {
+      "id": "invalid_transition_ramp",
+      "description": "Configuration validation rejects a startup ramp below minimum output.",
+      "thermal_mode": "invalid_startup",
+      "battery_mode": "empty",
+      "demand_mw": [50.0],
+      "renewable_mw": [0.0],
+      "expect_error": "startup_ramp_mw"
+    },
+    {
+      "id": "terminal_residual",
+      "description": "Carry-forward terminal mode exports residual minimum-up obligation.",
+      "thermal_mode": "terminal_carry",
+      "battery_mode": "empty",
+      "demand_mw": [0.0, 0.0, 60.0],
+      "renewable_mw": [0.0, 0.0, 0.0],
+      "expect_min": {"terminal_residual_up_hours": 2.0}
+    }
+  ]
+}

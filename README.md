@@ -117,9 +117,29 @@ poetry run python scripts/compare_baseline.py
 See [docs/development.md](docs/development.md) for clean-checkout, editable
 install, and wheel-install smoke workflows.
 
+Run the committed stress suite:
+
+```bash
+make stress
+```
+
+## Capability Matrix
+
+| Area | Current support |
+|---|---|
+| Dispatch | Single thermal unit commitment with startup, shutdown, ramp, minimum-duration, and terminal policy constraints |
+| Renewables | One aggregate solar plant and one aggregate wind farm |
+| Storage | One battery with exact charge/discharge exclusivity and configurable terminal SOC |
+| Network | Aggregate delivery losses and transfer-capacity shedding in dispatch |
+| DC flow | Standalone fixed-injection DC power flow with overload diagnostics |
+| Outputs | CSV time series, JSON summary, manifest, plots, benchmark, baseline, and stress comparison table |
+
 ## Modelling scope
 
 The default simulation uses a single aggregated distribution network. This is appropriate for system planning and policy analysis. The repository also contains a DC power-flow solver that can be integrated into zonal or nodal studies. Detailed low-voltage AC analysis, frequency dynamics, protection systems, and transient stability are outside the current scope.
+
+See [docs/model-status.md](docs/model-status.md) for current corrected-baseline
+status and limitations.
 
 ## Citation
 

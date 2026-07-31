@@ -7,6 +7,8 @@ and this project follows semantic versioning.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-31
+
 ### Added
 
 - Repository governance and maintenance files.

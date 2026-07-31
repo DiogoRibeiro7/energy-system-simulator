@@ -55,7 +55,7 @@ def test_mismatched_duplicate_version_fails(tmp_path: Path) -> None:
     _copy_version_metadata(root, tmp_path)
     citation = tmp_path / "CITATION.cff"
     citation.write_text(
-        citation.read_text(encoding="utf-8").replace("version: 0.1.0", "version: 9.9.9"),
+        citation.read_text(encoding="utf-8").replace("version: 0.1.1", "version: 9.9.9"),
         encoding="utf-8",
     )
 

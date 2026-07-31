@@ -1,5 +1,8 @@
 # Baseline Audit
 
+> Historical snapshot: this audit records the pre-remediation 0.1.0 baseline.
+> See `docs/model-status.md` for the current corrected baseline status.
+
 This audit records the 0.1.0 baseline before broadening the model scope. It
 does not change the mathematical formulation.
 

@@ -17,3 +17,10 @@ Before publishing a release:
 
 Tagged releases should preserve the licence parameters and manifest entry that
 apply to that version.
+
+## Released Versions
+
+| Version | Release Date | Change Date | Change License |
+|---|---:|---:|---|
+| 0.1.1 | 2026-07-31 | 2030-07-31 | Apache-2.0 |
+| 0.1.0 | 2026-07-30 | 2030-07-30 | Apache-2.0 |
