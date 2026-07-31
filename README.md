@@ -55,6 +55,8 @@ energy-system-simulator/
 
 ## Installation
 
+> Commercial production use is not granted by the public licence.
+
 ```bash
 poetry install
 ```
@@ -99,6 +101,7 @@ See [`docs/data-contract.md`](docs/data-contract.md) for validation rules.
 poetry run pytest
 poetry run ruff check .
 poetry run mypy src
+poetry run python scripts/validate_licensing.py
 ```
 
 ## Modelling scope
@@ -107,4 +110,14 @@ The default simulation uses a single aggregated distribution network. This is ap
 
 ## License
 
-MIT
+This project is source-available under the Business Source License 1.1.
+
+Personal, educational, academic, research, evaluation, testing, development,
+and other non-production uses are permitted under the terms described in
+[LICENSE](LICENSE) and [LICENSING.md](LICENSING.md).
+
+Private commercial production use requires a separate paid commercial licence.
+See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+
+Each released version converts to the Apache License 2.0 on its applicable
+Change Date.

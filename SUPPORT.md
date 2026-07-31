@@ -11,3 +11,6 @@ Before opening an issue:
 
 For security-sensitive reports, follow `SECURITY.md` instead of opening a public
 issue.
+
+For private commercial production licensing enquiries, see
+`COMMERCIAL-LICENSE.md`.

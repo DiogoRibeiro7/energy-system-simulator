@@ -46,3 +46,7 @@ body:
     attributes:
       label: Logs or output
       render: text
+  - type: markdown
+    attributes:
+      value: |
+        For commercial production licensing questions, use the contact in `COMMERCIAL-LICENSE.md`.

@@ -24,5 +24,7 @@ jobs:
         run: poetry run ruff check .
       - name: Type check
         run: poetry run mypy src
+      - name: License metadata
+        run: poetry run python scripts/validate_licensing.py
       - name: Test
         run: poetry run pytest --cov=energy_system_simulator --cov-report=term-missing

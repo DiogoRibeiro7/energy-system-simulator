@@ -26,3 +26,8 @@ body:
     attributes:
       label: Impact
       description: Who benefits, and what project area changes?
+  - type: textarea
+    id: licensing
+    attributes:
+      label: Licensing impact
+      description: Note whether this depends on third-party code, data, or assets.

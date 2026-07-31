@@ -10,6 +10,7 @@ and this project follows semantic versioning.
 ### Added
 
 - Repository governance and maintenance files.
+- Business Source License 1.1 licensing documentation and validation.
 
 ## [0.1.0] - 2026-07-31
 

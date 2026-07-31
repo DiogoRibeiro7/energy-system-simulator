@@ -6,5 +6,5 @@ authors:
   - family-names: "Diogo"
 version: 0.1.0
 date-released: 2026-07-30
-license: MIT
-repository-code: "https://github.com/OWNER/energy-system-simulator"
+license: BUSL-1.1
+repository-code: "https://github.com/DiogoRibeiro7/energy-system-simulator"

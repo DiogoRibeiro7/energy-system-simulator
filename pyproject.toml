@@ -4,8 +4,16 @@ version = "0.1.0"
 description = "Transparent simulation and unit commitment for hybrid electricity systems"
 authors = ["Diogo"]
 readme = "README.md"
-license = "MIT"
+license = "BUSL-1.1"
 packages = [{ include = "energy_system_simulator", from = "src" }]
+include = [
+  { path = "LICENSE", format = ["sdist", "wheel"] },
+  { path = "COMMERCIAL-LICENSE.md", format = ["sdist", "wheel"] },
+  { path = "LICENSING.md", format = ["sdist", "wheel"] },
+  { path = "NOTICE", format = ["sdist", "wheel"] },
+  { path = "RELEASES.md", format = ["sdist", "wheel"] },
+  { path = "licensing/releases.json", format = ["sdist", "wheel"] },
+]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.14"
