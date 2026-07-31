@@ -50,6 +50,12 @@ def _optional_boolean(section: Mapping[str, Any], key: str, default: bool) -> bo
     return _boolean(section, key)
 
 
+def _optional_nullable_boolean(section: Mapping[str, Any], key: str) -> bool | None:
+    if key not in section:
+        return None
+    return _boolean(section, key)
+
+
 def _optional_string(section: Mapping[str, Any], key: str, default: str) -> str:
     if key not in section:
         return default
@@ -107,6 +113,13 @@ class WindConfig:
     cut_out_speed_m_s: float
 
 
+TerminalCommitmentMode = Literal[
+    "forbid_incomplete_transitions",
+    "carry_residual_obligations",
+    "fixed_terminal_commitment",
+]
+
+
 @dataclass(frozen=True)
 class ThermalConfig:
     name: str
@@ -127,6 +140,8 @@ class ThermalConfig:
     initial_output_mw: float
     initial_up_time_hours: float
     initial_down_time_hours: float
+    terminal_commitment_mode: TerminalCommitmentMode = "forbid_incomplete_transitions"
+    terminal_on: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -268,6 +283,15 @@ def load_config(path: str | Path) -> ModelConfig:
             float,
             0.0,
         ),
+        terminal_commitment_mode=cast(
+            TerminalCommitmentMode,
+            _optional_string(
+                thermal_raw,
+                "terminal_commitment_mode",
+                "forbid_incomplete_transitions",
+            ),
+        ),
+        terminal_on=_optional_nullable_boolean(thermal_raw, "terminal_on"),
     )
     battery = BatteryConfig(
         energy_capacity_mwh=_number(battery_raw, "energy_capacity_mwh", float),
@@ -360,6 +384,27 @@ def validate_config(config: ModelConfig) -> None:
         _check_nonnegative(f"thermal.{name}", value)
     if th.minimum_up_hours <= 0.0 or th.minimum_down_hours <= 0.0:
         raise ConfigurationError("Minimum up/down times must be positive")
+    if th.terminal_commitment_mode not in {
+        "forbid_incomplete_transitions",
+        "carry_residual_obligations",
+        "fixed_terminal_commitment",
+    }:
+        raise ConfigurationError(
+            "thermal.terminal_commitment_mode must be one of "
+            "forbid_incomplete_transitions, carry_residual_obligations, "
+            "fixed_terminal_commitment"
+        )
+    if th.terminal_commitment_mode == "fixed_terminal_commitment":
+        if th.terminal_on is None:
+            raise ConfigurationError(
+                "thermal.terminal_on is required when terminal_commitment_mode is "
+                "fixed_terminal_commitment"
+            )
+    elif th.terminal_on is not None:
+        raise ConfigurationError(
+            "thermal.terminal_on is only valid when terminal_commitment_mode is "
+            "fixed_terminal_commitment"
+        )
     if th.initial_on:
         if not th.minimum_output_mw <= th.initial_output_mw <= th.maximum_output_mw:
             raise ConfigurationError("Initial thermal output is outside operating bounds")

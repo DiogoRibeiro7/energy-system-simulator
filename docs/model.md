@@ -63,6 +63,8 @@ Start-up and shutdown variables \(y_t,z_t\in\{0,1\}\) satisfy
 u_t-u_{t-1}=y_t-z_t.
 \]
 
+For \(t=1\), \(u_{t-1}\) is the configured initial commitment state.
+
 They are mutually exclusive in each period:
 
 \[
@@ -78,7 +80,15 @@ N^{\downarrow}=\left\lceil H^{\downarrow}/\Delta t\right\rceil.
 \]
 
 Residual initial up-time and down-time obligations are enforced at the start of
-the horizon from the configured initial state.
+the horizon from the configured initial state. If the unit is initially on, the
+first
+
+\[
+\left\lceil\max(0,H^{\uparrow}-H^{\uparrow}_0)/\Delta t\right\rceil
+\]
+
+periods are forced on. If the unit is initially off, the corresponding residual
+minimum down periods are forced off.
 
 Ramping constraints use explicit start-up and shutdown ramp limits:
 
@@ -91,7 +101,50 @@ p_{t-1}-p_t\le R^{\downarrow}\Delta t\,u_t+S^{\downarrow}z_t.
 \]
 
 Minimum up and down times are imposed through rolling sums of recent starts and
-shutdowns.
+shutdowns:
+
+\[
+\sum_{k=\max(1,t-N^{\uparrow}+1)}^t y_k \le u_t,
+\]
+
+\[
+\sum_{k=\max(1,t-N^{\downarrow}+1)}^t z_k \le 1-u_t.
+\]
+
+### Terminal commitment policy
+
+Minimum up/down equations only look backward from modeled periods, so a
+transition close to the horizon end needs an explicit terminal policy. The
+thermal configuration supports:
+
+- `forbid_incomplete_transitions`: the default for standalone finite-horizon
+  studies. A startup or shutdown is allowed only if its full minimum-duration
+  window fits inside the modeled horizon.
+- `carry_residual_obligations`: allows terminal transitions and reports the
+  remaining minimum up/down obligations for a later rolling-horizon solve.
+- `fixed_terminal_commitment`: applies the strict transition rule and fixes
+  \(u_T\) to `terminal_on`.
+
+The unsupported `terminal_cost_approximation` policy was considered but not
+implemented because no calibrated terminal value is available in the standalone
+model.
+
+For the strict and fixed policies, transitions are forbidden when they cannot
+complete their minimum-duration windows:
+
+\[
+y_t=0 \quad \forall t>T-N^{\uparrow}+1,
+\]
+
+\[
+z_t=0 \quad \forall t>T-N^{\downarrow}+1.
+\]
+
+For example, in a three-period hourly horizon with \(H^{\uparrow}=3\), a startup
+in period 1 is feasible because periods 1, 2, and 3 complete the obligation. A
+startup in period 2 or 3 is forbidden in strict standalone mode. In carry-forward
+mode, a period-3 startup is feasible and the result reports two residual
+minimum-up hours.
 
 ## Battery
 

@@ -8,7 +8,7 @@ The model is designed for research, teaching, and policy experiments. It uses ex
 
 - Solar generation from irradiance and ambient temperature.
 - Wind generation from a configurable turbine power curve.
-- Thermal unit commitment with minimum and maximum output, ramp limits, start-up and shutdown decisions, minimum up/down times, fuel cost, and emissions.
+- Thermal unit commitment with minimum and maximum output, ramp limits, start-up and shutdown decisions, minimum up/down times, terminal commitment policy, fuel cost, and emissions.
 - Battery charging, discharging, state-of-charge limits, efficiency losses, and throughput cost.
 - Aggregated distribution losses and transfer-capacity constraints.
 - Optional electricity imports.

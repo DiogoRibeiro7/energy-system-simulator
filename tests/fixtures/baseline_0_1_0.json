@@ -12,18 +12,18 @@
   "metrics": {
     "periods": 336,
     "objective_eur": 6326658.917369775,
-    "renewable_share_of_primary_generation": 0.2609934691826571,
+    "renewable_share_of_primary_generation": 0.26099346918265715,
     "total_emissions_tonnes": 21170.872695455033,
-    "imports_mwh": 707.2247487293002,
+    "imports_mwh": 707.2247487293,
     "unserved_energy_mwh": 0.0,
     "continuous_variables": 2352,
     "integer_variables": 1344,
     "binary_variables": 1344,
-    "linear_constraints": 4033,
-    "matrix_nonzeros": 13096,
-    "max_abs_source_balance_residual_mw": 1.4210854715202004e-13,
+    "linear_constraints": 4036,
+    "matrix_nonzeros": 13099,
+    "max_abs_source_balance_residual_mw": 5.684341886080802e-14,
     "max_abs_delivered_demand_residual_mw": 0.0,
-    "max_abs_battery_energy_residual_mwh": 9.947598300641403e-14,
+    "max_abs_battery_energy_residual_mwh": 2.842170943040401e-14,
     "objective_reconciliation_error_eur": 0.0
   }
 }

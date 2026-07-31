@@ -35,6 +35,7 @@ thermal:
   initial_output_mw: 70.0
   initial_up_time_hours: 3.0
   initial_down_time_hours: 0.0
+  terminal_commitment_mode: forbid_incomplete_transitions
 
 battery:
   energy_capacity_mwh: 240.0

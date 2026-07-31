@@ -25,24 +25,24 @@ The committed example uses `configs/example.yaml` and
 | Continuous variables | 2,352 |
 | Integer variables | 1,344 |
 | Binary variables | 1,344 |
-| Linear constraints | 4,033 |
-| Sparse matrix non-zeros | 13,096 |
+| Linear constraints | 4,036 |
+| Sparse matrix non-zeros | 13,099 |
 
 ## Reconciliation Residuals
 
 | Residual | Value |
 |---|---:|
-| Maximum source balance residual | 1.4210854715202004e-13 MW |
+| Maximum source balance residual | 5.684341886080802e-14 MW |
 | Maximum delivered-demand residual | 0.0 MW |
-| Maximum battery-state residual | 9.947598300641403e-14 MWh |
+| Maximum battery-state residual | 2.842170943040401e-14 MWh |
 | Objective reconciliation residual | 0.0 EUR |
 
 ## Verification Snapshot
 
-Local verification on Python 3.13 reported:
+Local verification on Python 3.13 after the terminal commitment update reported:
 
-- `22 passed`
-- branch-aware coverage: 84.74%
+- `54 passed`
+- branch-aware coverage: 86.12%
 - solver status: optimal
 - MIP gap: 0.0
 
@@ -53,16 +53,20 @@ The machine-readable expected values are stored in
 model outputs with numeric tolerances and excludes intentionally non-deterministic
 manifest fields such as generated timestamps, local paths, and Git commit hashes.
 
+The FIX-03 terminal commitment change added three strict horizon-boundary
+constraints to the example formulation. The example objective, emissions,
+imports, unserved energy, and renewable share are unchanged.
+
 ## Known Defects and Required Follow-up
 
 The following remediation items remain tracked:
 
 - FIX-01: legal-owner and licensing-contact metadata has been resolved in the
   remediation history.
-- FIX-02: source-tree and installed-package version authority are not yet unified
-  across every execution mode.
-- FIX-03: terminal commitment obligations after the final period are not yet
-  represented as an explicit terminal policy.
+- FIX-02: source-tree and installed-package version authority have been unified
+  across source, editable-install, and wheel-install execution modes.
+- FIX-03: terminal commitment obligations after the final period are represented
+  as explicit strict, carry-forward, and fixed terminal policies.
 - FIX-04: additional time-step and initial-state regression coverage is required.
 - FIX-05: solver termination mapping still needs an isolated regression suite.
 - FIX-06: transition ramp semantics need a dedicated review and regression

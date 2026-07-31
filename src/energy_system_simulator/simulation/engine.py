@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +9,11 @@ import pandas as pd
 from energy_system_simulator.config import ModelConfig
 from energy_system_simulator.constants import BALANCE_TOLERANCE_MW, OBJECTIVE_TOLERANCE_EUR
 from energy_system_simulator.data import load_input_data
-from energy_system_simulator.dispatch import FormulationStatistics, UnitCommitment
+from energy_system_simulator.dispatch import (
+    FormulationStatistics,
+    TerminalCommitmentState,
+    UnitCommitment,
+)
 from energy_system_simulator.exceptions import OptimisationError
 from energy_system_simulator.generation import SolarPlant, WindFarm
 from energy_system_simulator.network import DistributionNetwork
@@ -31,6 +35,7 @@ class SimulationResult:
     solver_runtime_seconds: float
     solver_node_count: int | None
     formulation_statistics: FormulationStatistics
+    terminal_commitment_state: TerminalCommitmentState
 
 
 class SimulationEngine:
@@ -100,7 +105,12 @@ class SimulationEngine:
         total_objective_eur = dispatch.objective_eur + float(fixed_network_shedding_cost)
         if abs(total_objective_eur - reconciled_objective_eur) > OBJECTIVE_TOLERANCE_EUR:
             raise OptimisationError("Total cost components do not reconcile with objective")
-        summary = self._summary(frame, total_objective_eur, cost_components)
+        summary = self._summary(
+            frame,
+            total_objective_eur,
+            cost_components,
+            dispatch.terminal_commitment_state,
+        )
         return SimulationResult(
             timeseries=frame,
             summary=summary,
@@ -118,6 +128,7 @@ class SimulationEngine:
             solver_runtime_seconds=dispatch.solver_runtime_seconds,
             solver_node_count=dispatch.solver_node_count,
             formulation_statistics=dispatch.formulation_statistics,
+            terminal_commitment_state=dispatch.terminal_commitment_state,
         )
 
     def _summary(
@@ -125,6 +136,7 @@ class SimulationEngine:
         frame: pd.DataFrame,
         objective_eur: float,
         cost_components: dict[str, float],
+        terminal_commitment_state: TerminalCommitmentState,
     ) -> dict[str, Any]:
         dt = self.config.simulation.time_step_hours
 
@@ -159,6 +171,8 @@ class SimulationEngine:
             ),
             "thermal_generation_mwh": energy("thermal_output_mw"),
             "thermal_starts": int(frame["thermal_startup"].sum()),
+            "thermal_shutdowns": int(frame["thermal_shutdown"].sum()),
+            "terminal_commitment": asdict(terminal_commitment_state),
             "imports_mwh": energy("imports_mw"),
             "battery_charge_mwh": energy("battery_charge_mw"),
             "battery_discharge_mwh": energy("battery_discharge_mw"),

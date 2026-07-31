@@ -65,6 +65,19 @@ class FormulationProblem:
 
 
 @dataclass(frozen=True)
+class TerminalCommitmentState:
+    """Commitment state and residual obligations at the final model period."""
+
+    thermal_on: bool
+    thermal_output_mw: float
+    consecutive_on_hours: float
+    consecutive_off_hours: float
+    residual_minimum_up_hours: float
+    residual_minimum_down_hours: float
+    terminal_commitment_mode: str
+
+
+@dataclass(frozen=True)
 class DispatchResult:
     """Optimised dispatch table and solver diagnostics."""
 
@@ -81,6 +94,7 @@ class DispatchResult:
     solver_node_count: int | None
     formulation_statistics: FormulationStatistics
     cost_components_eur: dict[str, float]
+    terminal_commitment_state: TerminalCommitmentState
 
 
 class _VariableIndex:
@@ -269,6 +283,7 @@ class UnitCommitment:
             solver_node_count=node_count,
             formulation_statistics=problem.statistics,
             cost_components_eur=cost_components,
+            terminal_commitment_state=self._terminal_commitment_state(frame),
         )
 
     def _objective(self, index: _VariableIndex, renewable: FloatArray) -> FloatArray:
@@ -473,6 +488,7 @@ class UnitCommitment:
             builder.add(recent_shutdowns, -np.inf, 1.0)
 
         self._add_initial_duration_obligations(builder, index, periods)
+        self._add_terminal_commitment_constraints(builder, index, periods)
         self._add_terminal_soc_constraint(builder, index, periods)
         return builder.build()
 
@@ -499,6 +515,26 @@ class UnitCommitment:
         for t in range(forced_periods):
             builder.add({index.at("thermal_on", t): 1.0}, 0.0, 0.0)
 
+    def _add_terminal_commitment_constraints(
+        self,
+        builder: _ConstraintBuilder,
+        index: _VariableIndex,
+        periods: int,
+    ) -> None:
+        thermal = self.config.thermal
+        mode = thermal.terminal_commitment_mode
+        if mode in {"forbid_incomplete_transitions", "fixed_terminal_commitment"}:
+            up_periods = self._duration_periods(thermal.minimum_up_hours)
+            down_periods = self._duration_periods(thermal.minimum_down_hours)
+            for t in range(max(0, periods - up_periods + 1), periods):
+                builder.add({index.at("thermal_startup", t): 1.0}, 0.0, 0.0)
+            for t in range(max(0, periods - down_periods + 1), periods):
+                builder.add({index.at("thermal_shutdown", t): 1.0}, 0.0, 0.0)
+
+        if mode == "fixed_terminal_commitment":
+            terminal_on = 1.0 if thermal.terminal_on else 0.0
+            builder.add({index.at("thermal_on", periods - 1): 1.0}, terminal_on, terminal_on)
+
     def _add_terminal_soc_constraint(
         self,
         builder: _ConstraintBuilder,
@@ -513,6 +549,43 @@ class UnitCommitment:
             builder.add(terminal, battery.minimum_final_soc_mwh, battery.minimum_final_soc_mwh)
         elif battery.terminal_soc_mode == "cyclic":
             builder.add(terminal, battery.initial_soc_mwh, battery.initial_soc_mwh)
+
+    def _terminal_commitment_state(self, frame: pd.DataFrame) -> TerminalCommitmentState:
+        thermal = self.config.thermal
+        dt = self.config.simulation.time_step_hours
+        terminal_on = bool(int(frame["thermal_on"].iloc[-1]))
+        terminal_output_mw = float(frame["thermal_output_mw"].iloc[-1])
+
+        matching_periods = 0
+        for value in reversed(frame["thermal_on"].tolist()):
+            if bool(int(value)) != terminal_on:
+                break
+            matching_periods += 1
+
+        consecutive_hours = matching_periods * dt
+        if matching_periods == len(frame):
+            if terminal_on and thermal.initial_on:
+                consecutive_hours += thermal.initial_up_time_hours
+            elif not terminal_on and not thermal.initial_on:
+                consecutive_hours += thermal.initial_down_time_hours
+
+        consecutive_on_hours = consecutive_hours if terminal_on else 0.0
+        consecutive_off_hours = 0.0 if terminal_on else consecutive_hours
+        residual_up = (
+            max(0.0, thermal.minimum_up_hours - consecutive_on_hours) if terminal_on else 0.0
+        )
+        residual_down = (
+            0.0 if terminal_on else max(0.0, thermal.minimum_down_hours - consecutive_off_hours)
+        )
+        return TerminalCommitmentState(
+            thermal_on=terminal_on,
+            thermal_output_mw=terminal_output_mw,
+            consecutive_on_hours=float(consecutive_on_hours),
+            consecutive_off_hours=float(consecutive_off_hours),
+            residual_minimum_up_hours=float(residual_up),
+            residual_minimum_down_hours=float(residual_down),
+            terminal_commitment_mode=thermal.terminal_commitment_mode,
+        )
 
     def _cost_components(self, frame: pd.DataFrame) -> dict[str, float]:
         dt = self.config.simulation.time_step_hours

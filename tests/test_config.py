@@ -48,3 +48,38 @@ def test_invalid_terminal_soc_mode_is_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigurationError, match="terminal_soc_mode"):
         load_config(path)
+
+
+def test_invalid_terminal_commitment_mode_is_rejected(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    raw = yaml.safe_load((root / "configs" / "example.yaml").read_text(encoding="utf-8"))
+    raw["thermal"]["terminal_commitment_mode"] = "eventual"
+    path = tmp_path / "invalid.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="terminal_commitment_mode"):
+        load_config(path)
+
+
+def test_fixed_terminal_commitment_requires_terminal_state(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    raw = yaml.safe_load((root / "configs" / "example.yaml").read_text(encoding="utf-8"))
+    raw["thermal"]["terminal_commitment_mode"] = "fixed_terminal_commitment"
+    raw["thermal"].pop("terminal_on", None)
+    path = tmp_path / "invalid.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="terminal_on"):
+        load_config(path)
+
+
+def test_terminal_state_is_only_valid_for_fixed_commitment(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    raw = yaml.safe_load((root / "configs" / "example.yaml").read_text(encoding="utf-8"))
+    raw["thermal"]["terminal_commitment_mode"] = "forbid_incomplete_transitions"
+    raw["thermal"]["terminal_on"] = True
+    path = tmp_path / "invalid.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="terminal_on"):
+        load_config(path)

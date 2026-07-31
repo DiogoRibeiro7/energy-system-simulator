@@ -20,6 +20,8 @@ and this project follows semantic versioning.
 - Release owner, citation, and commercial-contact metadata validation.
 - Authoritative version helper, CLI version output, and package install smoke
   checks.
+- Explicit thermal terminal commitment modes, residual terminal-state reporting,
+  and strict minimum up/down enforcement at the horizon boundary.
 
 ## [0.1.0] - 2026-07-31
 
