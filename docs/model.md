@@ -22,6 +22,12 @@ and the source-equivalent demand passed to the dispatch model is
 g_t=\frac{\bar d_t}{\eta_n}.
 \]
 
+The ordering is deliberate: transfer capacity is applied first to end-user
+demand through the maximum deliverable demand \(\eta_nF^{\max}\). Any excess is
+reported as network-capacity shedding before dispatch optimisation. The dispatch
+model then serves the remaining source-equivalent demand \(g_t\) with generation,
+storage, imports, or source-side load shedding.
+
 ## Renewable generation
 
 Available renewable production is the sum of solar and wind availability:
@@ -233,6 +239,21 @@ absolute tolerances dominate because relative residuals can be unstable near
 zero. For very large systems, the scale-normalised residual helps identify
 whether a small absolute residual is material relative to the period's dispatch
 scale.
+
+## Standalone DC Power Flow
+
+The `solve_dc_power_flow` utility is separate from the aggregate dispatch
+network. It solves bus voltage angles and line flows for specified fixed
+injections on a connected, lossless DC network with exactly one slack bus
+provided by the `slack_bus` argument. Positive injections represent generation;
+negative injections represent load. Net injections must balance before solving.
+
+Line ratings are checked after the power flow is solved. They are not enforced
+and the function does not perform capacity-constrained optimal power flow. The
+default overload policy is `report`, which returns per-line diagnostics with
+line ID, MW flow, rating, utilisation, overload amount, and overloaded flag. The
+optional `raise` policy fails when any overload is detected. The utility omits
+losses, reactive power, voltage magnitudes, unit dispatch, and redispatch.
 
 ## Interpretation limits
 

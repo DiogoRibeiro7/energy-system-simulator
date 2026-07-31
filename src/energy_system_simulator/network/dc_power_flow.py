@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -19,15 +20,33 @@ class Line:
     to_bus: int
     susceptance: float
     capacity_mw: float
+    line_id: str | None = None
+
+
+@dataclass(frozen=True)
+class LineFlowDiagnostic:
+    """Post-solution line loading diagnostic."""
+
+    line_id: str
+    from_bus: int
+    to_bus: int
+    flow_mw: float
+    capacity_mw: float
+    utilisation: float
+    overload_mw: float
+    overloaded: bool
 
 
 @dataclass(frozen=True)
 class DCPowerFlowResult:
-    """Voltage angles and line flows from a DC power-flow calculation."""
+    """Voltage angles, line flows, and diagnostics from a DC power-flow calculation."""
 
     voltage_angles_rad: FloatArray
     line_flows_mw: FloatArray
     capacity_utilisation: FloatArray
+    line_diagnostics: tuple[LineFlowDiagnostic, ...]
+    has_overloads: bool
+    overload_policy: Literal["report", "raise"]
 
 
 def solve_dc_power_flow(
@@ -35,11 +54,13 @@ def solve_dc_power_flow(
     lines: Sequence[Line],
     *,
     slack_bus: int = 0,
+    overload_policy: Literal["report", "raise"] = "report",
 ) -> DCPowerFlowResult:
-    """Solve a connected lossless DC power-flow system.
+    """Solve a connected lossless DC power-flow system for fixed injections.
 
     Positive injections represent generation and negative injections represent load.
-    The sum of injections must be zero within numerical tolerance.
+    The sum of injections must be zero within numerical tolerance. Line ratings are
+    checked after solving but are not enforced by the calculation.
     """
     injections = np.asarray(injections_mw, dtype=np.float64)
     if injections.ndim != 1 or injections.size < 2:
@@ -56,10 +77,18 @@ def solve_dc_power_flow(
         raise ValueError("slack_bus is outside the bus range")
     if not lines:
         raise ValueError("At least one line is required")
+    if overload_policy not in {"report", "raise"}:
+        raise ValueError("overload_policy must be 'report' or 'raise'")
 
     bus_count = injections.size
     matrix = np.zeros((bus_count, bus_count), dtype=np.float64)
+    line_ids: set[str] = set()
     for line in lines:
+        line_id = line.line_id
+        if line_id is not None:
+            if line_id in line_ids:
+                raise ValueError(f"Duplicate line_id: {line_id}")
+            line_ids.add(line_id)
         if not 0 <= line.from_bus < bus_count or not 0 <= line.to_bus < bus_count:
             raise ValueError("Line references an unknown bus")
         if line.from_bus == line.to_bus:
@@ -85,8 +114,31 @@ def solve_dc_power_flow(
         dtype=np.float64,
     )
     capacity = np.array([line.capacity_mw for line in lines], dtype=np.float64)
+    utilisation = np.abs(flows) / capacity
+    diagnostics = tuple(
+        LineFlowDiagnostic(
+            line_id=line.line_id or str(index),
+            from_bus=line.from_bus,
+            to_bus=line.to_bus,
+            flow_mw=float(flows[index]),
+            capacity_mw=float(capacity[index]),
+            utilisation=float(utilisation[index]),
+            overload_mw=max(0.0, float(abs(flows[index]) - capacity[index])),
+            overloaded=bool(abs(flows[index]) > capacity[index]),
+        )
+        for index, line in enumerate(lines)
+    )
+    has_overloads = any(diagnostic.overloaded for diagnostic in diagnostics)
+    if has_overloads and overload_policy == "raise":
+        overloaded_ids = ", ".join(
+            diagnostic.line_id for diagnostic in diagnostics if diagnostic.overloaded
+        )
+        raise ValueError(f"Line overload detected: {overloaded_ids}")
     return DCPowerFlowResult(
         voltage_angles_rad=angles,
         line_flows_mw=flows,
-        capacity_utilisation=np.abs(flows) / capacity,
+        capacity_utilisation=utilisation,
+        line_diagnostics=diagnostics,
+        has_overloads=has_overloads,
+        overload_policy=overload_policy,
     )

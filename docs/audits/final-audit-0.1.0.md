@@ -75,8 +75,8 @@ The following remediation items remain tracked:
   deterministic diagnostics.
 - FIX-08: numerical tolerances are consolidated into a typed policy with
   enforcement and residual-summary coverage.
-- FIX-09: aggregate network and standalone DC power-flow semantics need clearer
-  validation and documentation.
+- FIX-09: aggregate network and standalone DC power-flow semantics are documented
+  and covered by validation and overload diagnostics.
 
 ## Baseline Update Policy
 
