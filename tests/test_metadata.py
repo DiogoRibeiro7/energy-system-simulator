@@ -44,6 +44,7 @@ def test_unknown_version_is_returned_without_installed_or_project_metadata(
         get_package_version(
             distribution_name="energy-system-simulator-not-installed",
             project_root=tmp_path,
+            prefer_installed=False,
         )
         == UNKNOWN_VERSION
     )

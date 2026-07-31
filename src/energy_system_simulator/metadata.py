@@ -21,12 +21,20 @@ def get_package_version(
         except PackageNotFoundError:
             pass
 
-    pyproject_path = _find_pyproject(project_root or Path(__file__).resolve())
+    if project_root is None:
+        pyproject_path = _find_pyproject(Path(__file__).resolve())
+    else:
+        pyproject_path = _pyproject_at_root(project_root)
     if pyproject_path is None:
         return UNKNOWN_VERSION
     pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     raw_version = pyproject.get("tool", {}).get("poetry", {}).get("version")
     return raw_version if isinstance(raw_version, str) and raw_version else UNKNOWN_VERSION
+
+
+def _pyproject_at_root(root: Path) -> Path | None:
+    pyproject_path = root.expanduser().resolve() / "pyproject.toml"
+    return pyproject_path if pyproject_path.is_file() else None
 
 
 def _find_pyproject(start: Path) -> Path | None:
