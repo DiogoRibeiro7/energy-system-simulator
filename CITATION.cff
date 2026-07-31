@@ -3,7 +3,9 @@ message: "If you use this software in research, please cite it using this metada
 title: "Energy System Simulator"
 type: software
 authors:
-  - family-names: "Diogo"
+  - given-names: "Diogo"
+    family-names: "Ribeiro"
+    email: "diogo_dj@hotmail.com"
 version: 0.1.0
 date-released: 2026-07-30
 license: BUSL-1.1

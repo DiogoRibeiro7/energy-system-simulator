@@ -118,9 +118,15 @@ poetry run python scripts/compare_baseline.py
 
 The default simulation uses a single aggregated distribution network. This is appropriate for system planning and policy analysis. The repository also contains a DC power-flow solver that can be integrated into zonal or nodal studies. Detailed low-voltage AC analysis, frequency dynamics, protection systems, and transient stability are outside the current scope.
 
+## Citation
+
+If you use this software in research, cite Energy System Simulator using the
+metadata in [CITATION.cff](CITATION.cff).
+
 ## License
 
-This project is source-available under the Business Source License 1.1.
+This project is source-available under the Business Source License 1.1
+(`BUSL-1.1`).
 
 Personal, educational, academic, research, evaluation, testing, development,
 and other non-production uses are permitted under the terms described in

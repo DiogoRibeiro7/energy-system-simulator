@@ -26,7 +26,7 @@ jobs:
         run: poetry run ruff check .
       - name: Type check
         run: poetry run mypy src
-      - name: License metadata
+      - name: Release metadata
         run: poetry run python scripts/validate_licensing.py
       - name: Example data reproducibility
         run: poetry run python scripts/check_example_data.py

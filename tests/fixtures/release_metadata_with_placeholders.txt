@@ -1,0 +1,6 @@
+Licensor: [FULL LEGAL NAME]
+Commercial licensing enquiries: [CONTACT EMAIL]
+Owner: OWNER
+Website: example.com
+Status: TBD
+Task: TODO

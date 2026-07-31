@@ -127,4 +127,7 @@ No. Newer versions may remain under BSL 1.1 until their own Change Dates.
 
 ## 8. Contact
 
-Commercial licensing enquiries: [CONTACT EMAIL]
+Commercial licensing enquiries: diogo_dj@hotmail.com
+
+Changing licence terms requires separate legal review. Metadata corrections do
+not alter the licence terms.

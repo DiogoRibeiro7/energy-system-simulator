@@ -2,7 +2,7 @@
 name = "energy-system-simulator"
 version = "0.1.0"
 description = "Transparent simulation and unit commitment for hybrid electricity systems"
-authors = ["Diogo"]
+authors = ["Diogo Ribeiro <diogo_dj@hotmail.com>"]
 readme = "README.md"
 license = "BUSL-1.1"
 packages = [{ include = "energy_system_simulator", from = "src" }]
@@ -13,6 +13,7 @@ include = [
   { path = "NOTICE", format = ["sdist", "wheel"] },
   { path = "RELEASES.md", format = ["sdist", "wheel"] },
   { path = "licensing/releases.json", format = ["sdist", "wheel"] },
+  { path = "licensing/metadata.json", format = ["sdist", "wheel"] },
 ]
 
 [tool.poetry.dependencies]

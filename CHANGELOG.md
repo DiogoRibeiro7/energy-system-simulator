@@ -17,6 +17,7 @@ and this project follows semantic versioning.
   battery operating-mode exclusivity, detailed objective accounting, solver
   diagnostics, and energy reconciliation metrics.
 - Audited baseline fixture, comparison command, and remediation roadmap.
+- Release owner, citation, and commercial-contact metadata validation.
 
 ## [0.1.0] - 2026-07-31
 

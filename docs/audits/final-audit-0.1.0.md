@@ -57,7 +57,8 @@ manifest fields such as generated timestamps, local paths, and Git commit hashes
 
 The following remediation items remain tracked:
 
-- FIX-01: unresolved legal-owner and licensing-contact placeholders remain.
+- FIX-01: legal-owner and licensing-contact metadata has been resolved in the
+  remediation history.
 - FIX-02: source-tree and installed-package version authority are not yet unified
   across every execution mode.
 - FIX-03: terminal commitment obligations after the final period are not yet
