@@ -22,6 +22,9 @@ and this project follows semantic versioning.
   checks.
 - Explicit thermal terminal commitment modes, residual terminal-state reporting,
   and strict minimum up/down enforcement at the horizon boundary.
+- Regression coverage for 15-minute, 30-minute, and hourly time-step scaling,
+  residual initial-state obligations, ramp rates, costs, emissions, and battery
+  terminal modes.
 
 ## [0.1.0] - 2026-07-31
 
