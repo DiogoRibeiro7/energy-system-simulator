@@ -21,7 +21,24 @@ def main() -> None:
         venv_dir = temp / "venv"
         venv.EnvBuilder(with_pip=True).create(venv_dir)
         python = _venv_python(venv_dir)
-        subprocess.run([str(python), "-m", "pip", "install", str(wheel)], check=True)
+        subprocess.run(
+            [
+                str(python),
+                "-m",
+                "pip",
+                "install",
+                "--disable-pip-version-check",
+                "--retries",
+                "0",
+                "--timeout",
+                "30",
+                "--only-binary",
+                ":all:",
+                str(wheel),
+            ],
+            check=True,
+            timeout=180,
+        )
         subprocess.run(
             [
                 str(python),
@@ -32,8 +49,13 @@ def main() -> None:
                 ),
             ],
             check=True,
+            timeout=30,
         )
-        subprocess.run([str(python), "-m", "energy_system_simulator", "--version"], check=True)
+        subprocess.run(
+            [str(python), "-m", "energy_system_simulator", "--version"],
+            check=True,
+            timeout=30,
+        )
         reduced_config = _write_reduced_case(root, temp)
         subprocess.run(
             [
@@ -45,6 +67,7 @@ def main() -> None:
                 str(reduced_config),
             ],
             check=True,
+            timeout=60,
         )
         subprocess.run(
             [
@@ -57,6 +80,7 @@ def main() -> None:
                 "--no-plots",
             ],
             check=True,
+            timeout=180,
         )
     print("wheel install smoke ok")
 

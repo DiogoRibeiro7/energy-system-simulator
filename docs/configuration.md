@@ -172,6 +172,30 @@ Network dispatch may run in two modes:
   and time-varying line outage multipliers. The effective rating is
   `capacity_mw * availability_factor * availability_factor_key`.
 
+Operating reserves are configured in the optional `reserves` section. When the
+section is omitted, reserve requirements are zero and the dispatch formulation
+is unchanged. Reserve requirement terms are additive:
+
+- `upward_fixed_mw` and `downward_fixed_mw`: fixed reserve capacity in MW.
+- `upward_demand_fraction` and `downward_demand_fraction`: reserve as a
+  fraction of source-side demand.
+- `upward_renewable_fraction` and `downward_renewable_fraction`: reserve as a
+  fraction of renewable availability.
+- `largest_online_contingency_fraction`: upward reserve adder based on the
+  largest committed thermal capacity.
+- `response_duration_hours`: reserve delivery duration used for ramp and
+  storage-energy limits.
+- `*_shortfall_penalty_eur_per_mw_hour`: explicit shortage penalties for unmet
+  reserve requirements.
+- `thermal_*_cost_eur_per_mw_hour`, `storage_*_cost_eur_per_mw_hour`,
+  `demand_response_upward_cost_eur_per_mw_hour`, and `import_*_cost_eur_per_mw_hour`:
+  reserve procurement costs by provider class and product.
+- `demand_response_upward_fraction`: maximum upward reserve from curtailable or
+  shiftable demand as a fraction of baseline demand, also capped by configured
+  curtailment capability.
+- `allow_import_reserves`: enables import upward/downward reserve. Imports are
+  otherwise excluded from reserve provision.
+
 ## Migration
 
 Convert a legacy configuration with:

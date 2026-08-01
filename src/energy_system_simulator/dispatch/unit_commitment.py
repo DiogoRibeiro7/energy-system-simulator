@@ -70,6 +70,16 @@ THERMAL_SEGMENT_OUTPUT_BLOCK = "thermal_segment_output_mw"
 THERMAL_STARTUP_CATEGORY_BLOCK = "thermal_startup_category"
 BUS_VOLTAGE_ANGLE_BLOCK = "bus_voltage_angle_rad"
 LINE_FLOW_BLOCK = "line_flow_mw"
+THERMAL_UPWARD_RESERVE_BLOCK = "thermal_upward_reserve_mw"
+THERMAL_DOWNWARD_RESERVE_BLOCK = "thermal_downward_reserve_mw"
+STORAGE_UPWARD_RESERVE_BLOCK = "storage_upward_reserve_mw"
+STORAGE_DOWNWARD_RESERVE_BLOCK = "storage_downward_reserve_mw"
+DEMAND_UPWARD_RESERVE_BLOCK = "demand_upward_reserve_mw"
+IMPORT_UPWARD_RESERVE_BLOCK = "import_upward_reserve_mw"
+IMPORT_DOWNWARD_RESERVE_BLOCK = "import_downward_reserve_mw"
+RESERVE_UPWARD_SHORTFALL_BLOCK = "reserve_upward_shortfall_mw"
+RESERVE_DOWNWARD_SHORTFALL_BLOCK = "reserve_downward_shortfall_mw"
+RESERVE_LARGEST_CONTINGENCY_BLOCK = "reserve_largest_online_contingency_mw"
 
 
 def _segment_asset_id(unit_id: str, segment_id: str) -> str:
@@ -180,6 +190,15 @@ class NodalNetwork:
 
 
 @dataclass(frozen=True)
+class ReserveModel:
+    """Resolved reserve requirements for the optimisation model."""
+
+    enabled: bool
+    upward_requirement_mw: FloatArray
+    downward_requirement_mw: FloatArray
+
+
+@dataclass(frozen=True)
 class FormulationProblem:
     """Complete linear mixed-integer problem and source input arrays."""
 
@@ -201,6 +220,7 @@ class FormulationProblem:
     hydro_inflow_mw: dict[str, FloatArray]
     fuel_prices_eur_per_mwh_thermal: dict[str, FloatArray]
     network: NodalNetwork
+    reserves: ReserveModel
     registry: VariableRegistry
     statistics: FormulationStatistics
 
@@ -342,6 +362,7 @@ class UnitCommitment:
         )
         hydro_inflow = self._hydro_inflows(hydro_units, periods, hydro_inflows_mw or {})
         fuel_prices = self._fuel_prices(periods, fuel_price_series or {})
+        reserves = self._reserve_model(renewable, demand)
         registry = self._variable_registry(
             periods,
             thermal_units,
@@ -350,6 +371,7 @@ class UnitCommitment:
             demand_units,
             renewable_units,
             network,
+            reserves,
         )
         objective = self._objective(
             registry,
@@ -359,6 +381,7 @@ class UnitCommitment:
             hydro_units,
             demand_units,
             fuel_prices,
+            reserves,
         )
         bounds, integrality = self._bounds(
             registry,
@@ -372,6 +395,7 @@ class UnitCommitment:
             storage_availability,
             renewable_by_asset,
             network,
+            reserves,
         )
         constraints, component_counts = self._constraints(
             registry,
@@ -385,6 +409,8 @@ class UnitCommitment:
             hydro_inflow,
             renewable_units,
             network,
+            reserves,
+            storage_availability,
         )
 
         integer_variables = int(np.count_nonzero(integrality))
@@ -416,6 +442,7 @@ class UnitCommitment:
             hydro_inflow_mw=hydro_inflow,
             fuel_prices_eur_per_mwh_thermal=fuel_prices,
             network=network,
+            reserves=reserves,
             registry=registry,
             statistics=statistics,
         )
@@ -483,6 +510,7 @@ class UnitCommitment:
         self._add_hydro_accounting_columns(frame, problem.hydro_units, problem)
         self._add_network_accounting_columns(frame, problem)
         self._add_demand_accounting_columns(frame, problem.demand_units)
+        self._add_reserve_accounting_columns(frame, problem)
         nonnegative_cleanup_max_abs = self._clip_nonnegative_solver_noise(
             frame,
             problem.thermal_units,
@@ -493,6 +521,7 @@ class UnitCommitment:
         if problem.demand_units:
             self._add_demand_accounting_columns(frame, problem.demand_units)
         self._add_network_accounting_columns(frame, problem)
+        self._add_reserve_accounting_columns(frame, problem)
 
         constant_curtailment_cost = (
             self.config.penalties.renewable_curtailment_eur_per_mwh
@@ -504,7 +533,7 @@ class UnitCommitment:
             if solver.objective_value is not None
             else None
         )
-        cost_components = self._cost_components(frame, problem.thermal_units, problem.storage_units)
+        cost_components = self._cost_components(frame, problem)
         objective_eur = float(sum(cost_components.values()))
         if (
             primal_objective_eur is not None
@@ -703,6 +732,29 @@ class UnitCommitment:
             lines=tuple(lines),
         )
 
+    def _reserve_model(self, renewable: FloatArray, demand: FloatArray) -> ReserveModel:
+        config = self.config.reserves
+        upward = (
+            config.upward_fixed_mw
+            + config.upward_demand_fraction * demand
+            + config.upward_renewable_fraction * renewable
+        )
+        downward = (
+            config.downward_fixed_mw
+            + config.downward_demand_fraction * demand
+            + config.downward_renewable_fraction * renewable
+        )
+        enabled = bool(
+            np.any(upward > 0.0)
+            or np.any(downward > 0.0)
+            or config.largest_online_contingency_fraction > 0.0
+        )
+        return ReserveModel(
+            enabled=enabled,
+            upward_requirement_mw=np.asarray(upward, dtype=np.float64),
+            downward_requirement_mw=np.asarray(downward, dtype=np.float64),
+        )
+
     def _fuels_by_id(self) -> dict[str, FuelConfig]:
         fuels = {fuel.id: fuel for fuel in self.config.portfolio.fuels}
         for generator in self.config.portfolio.thermal_generators:
@@ -800,10 +852,16 @@ class UnitCommitment:
         demand_units: tuple[DemandUnit, ...],
         renewable_units: tuple[RenewableUnit, ...],
         network: NodalNetwork,
+        reserves: ReserveModel,
     ) -> VariableRegistry:
         registry = VariableRegistry()
         for block in SYSTEM_BLOCKS:
             registry.add(block, periods, binary=block == "battery_charge_mode")
+        if reserves.enabled:
+            registry.add(RESERVE_UPWARD_SHORTFALL_BLOCK, periods)
+            registry.add(RESERVE_DOWNWARD_SHORTFALL_BLOCK, periods)
+            if self.config.reserves.largest_online_contingency_fraction > 0.0:
+                registry.add(RESERVE_LARGEST_CONTINGENCY_BLOCK, periods)
         if network.enabled:
             for renewable in renewable_units:
                 registry.add("renewable_used_mw", periods, asset_id=renewable.id)
@@ -825,6 +883,9 @@ class UnitCommitment:
                     periods,
                     asset_id=_storage_degradation_asset_id(storage.id, band.id),
                 )
+            if reserves.enabled:
+                registry.add(STORAGE_UPWARD_RESERVE_BLOCK, periods, asset_id=storage.id)
+                registry.add(STORAGE_DOWNWARD_RESERVE_BLOCK, periods, asset_id=storage.id)
         for hydro in hydro_units:
             for block in HYDRO_BLOCKS:
                 registry.add(block, periods, asset_id=hydro.id)
@@ -838,6 +899,8 @@ class UnitCommitment:
             if demand.config.kind in {"deferrable", "ev_charging"}:
                 registry.add("demand_task_charge_mw", periods, asset_id=demand.id)
                 registry.add("demand_task_unserved_mwh", periods, asset_id=demand.id)
+            if reserves.enabled and demand.config.kind in {"curtailable", "shiftable"}:
+                registry.add(DEMAND_UPWARD_RESERVE_BLOCK, periods, asset_id=demand.id)
         for thermal_unit in thermal_units:
             for block in THERMAL_BLOCKS:
                 registry.add(
@@ -859,6 +922,12 @@ class UnitCommitment:
                     asset_id=_startup_category_asset_id(thermal_unit.id, category.id),
                     binary=True,
                 )
+            if reserves.enabled:
+                registry.add(THERMAL_UPWARD_RESERVE_BLOCK, periods, asset_id=thermal_unit.id)
+                registry.add(THERMAL_DOWNWARD_RESERVE_BLOCK, periods, asset_id=thermal_unit.id)
+        if reserves.enabled and self.config.reserves.allow_import_reserves:
+            registry.add(IMPORT_UPWARD_RESERVE_BLOCK, periods)
+            registry.add(IMPORT_DOWNWARD_RESERVE_BLOCK, periods)
         return registry
 
     def _objective(
@@ -870,15 +939,31 @@ class UnitCommitment:
         hydro_units: tuple[HydroUnit, ...],
         demand_units: tuple[DemandUnit, ...],
         fuel_prices: dict[str, FloatArray],
+        reserves: ReserveModel,
     ) -> FloatArray:
         periods = renewable.size
         dt = self.config.simulation.time_step_hours
         imports = self.config.imports
         penalties = self.config.penalties
         fuels = self._fuels_by_id()
+        reserve_config = self.config.reserves
         coefficients = np.zeros(registry.size, dtype=np.float64)
 
         for t in range(periods):
+            if reserves.enabled:
+                coefficients[registry.at(RESERVE_UPWARD_SHORTFALL_BLOCK, t)] = (
+                    reserve_config.upward_shortfall_penalty_eur_per_mw_hour * dt
+                )
+                coefficients[registry.at(RESERVE_DOWNWARD_SHORTFALL_BLOCK, t)] = (
+                    reserve_config.downward_shortfall_penalty_eur_per_mw_hour * dt
+                )
+                if reserve_config.allow_import_reserves:
+                    coefficients[registry.at(IMPORT_UPWARD_RESERVE_BLOCK, t)] = (
+                        reserve_config.import_upward_cost_eur_per_mw_hour * dt
+                    )
+                    coefficients[registry.at(IMPORT_DOWNWARD_RESERVE_BLOCK, t)] = (
+                        reserve_config.import_downward_cost_eur_per_mw_hour * dt
+                    )
             coefficients[registry.at("renewable_used_mw", t)] = (
                 -penalties.renewable_curtailment_eur_per_mwh * dt
             )
@@ -890,6 +975,13 @@ class UnitCommitment:
                 coefficients[registry.at("storage_discharge_mw", t, asset_id=storage.id)] = (
                     battery.throughput_cost_eur_per_mwh * dt
                 )
+                if reserves.enabled:
+                    coefficients[
+                        registry.at(STORAGE_UPWARD_RESERVE_BLOCK, t, asset_id=storage.id)
+                    ] = reserve_config.storage_upward_cost_eur_per_mw_hour * dt
+                    coefficients[
+                        registry.at(STORAGE_DOWNWARD_RESERVE_BLOCK, t, asset_id=storage.id)
+                    ] = reserve_config.storage_downward_cost_eur_per_mw_hour * dt
                 for band in battery.degradation_bands:
                     coefficients[
                         registry.at(
@@ -924,6 +1016,10 @@ class UnitCommitment:
                     coefficients[
                         registry.at("demand_voluntary_curtailment_mw", t, asset_id=demand.id)
                     ] = demand_config.voluntary_curtailment_cost_eur_per_mwh * dt
+                    if reserves.enabled:
+                        coefficients[
+                            registry.at(DEMAND_UPWARD_RESERVE_BLOCK, t, asset_id=demand.id)
+                        ] = reserve_config.demand_response_upward_cost_eur_per_mw_hour * dt
                 if demand_config.kind == "shiftable":
                     shift_cost = demand_config.shift_cost_eur_per_mwh * dt
                     coefficients[registry.at("demand_shift_down_mw", t, asset_id=demand.id)] = (
@@ -987,6 +1083,13 @@ class UnitCommitment:
                 coefficients[registry.at("thermal_shutdown", t, asset_id=unit.id)] = (
                     thermal.shutdown_cost_eur
                 )
+                if reserves.enabled:
+                    coefficients[registry.at(THERMAL_UPWARD_RESERVE_BLOCK, t, asset_id=unit.id)] = (
+                        reserve_config.thermal_upward_cost_eur_per_mw_hour * dt
+                    )
+                    coefficients[
+                        registry.at(THERMAL_DOWNWARD_RESERVE_BLOCK, t, asset_id=unit.id)
+                    ] = reserve_config.thermal_downward_cost_eur_per_mw_hour * dt
         return coefficients
 
     def _bounds(
@@ -1002,12 +1105,12 @@ class UnitCommitment:
         storage_availability: dict[str, FloatArray],
         renewable_available_by_asset: dict[str, FloatArray],
         network: NodalNetwork,
+        reserves: ReserveModel,
     ) -> tuple[Bounds, npt.NDArray[np.int_]]:
         periods = renewable.size
         lower = np.zeros(registry.size, dtype=np.float64)
         upper = np.full(registry.size, np.inf, dtype=np.float64)
         integrality = registry.integrality()
-
         for t in range(periods):
             upper[registry.at("renewable_used_mw", t)] = renewable[t]
             upper[registry.at("imports_mw", t)] = self.config.imports.maximum_power_mw
@@ -1151,6 +1254,8 @@ class UnitCommitment:
         hydro_inflow: dict[str, FloatArray],
         renewable_units: tuple[RenewableUnit, ...],
         network: NodalNetwork,
+        reserves: ReserveModel,
+        storage_availability: dict[str, FloatArray],
     ) -> tuple[LinearConstraint, dict[str, int]]:
         builder = _ConstraintBuilder(registry.size)
         if network.enabled:
@@ -1193,6 +1298,19 @@ class UnitCommitment:
         self._add_hydro_constraints(builder, registry, demand.size, hydro_units, hydro_inflow)
         self._add_storage_constraints(builder, registry, demand.size, storage_units)
         self._add_demand_constraints(builder, registry, demand_units, demand_profiles)
+        if reserves.enabled:
+            self._add_reserve_constraints(
+                builder,
+                registry,
+                demand.size,
+                thermal_units,
+                storage_units,
+                demand_units,
+                demand_profiles,
+                thermal_capacity_available,
+                storage_availability,
+                reserves,
+            )
         self._add_terminal_soc_constraints(builder, registry, demand.size, storage_units)
         return builder.build(), builder.component_counts
 
@@ -1310,6 +1428,173 @@ class UnitCommitment:
                     elif line.to_bus_id == bus_id:
                         coefficients[registry.at(LINE_FLOW_BLOCK, t, asset_id=line.id)] = 1.0
                 builder.add(coefficients, rhs, rhs, component="nodal_balance")
+
+    def _add_reserve_constraints(
+        self,
+        builder: _ConstraintBuilder,
+        registry: VariableRegistry,
+        periods: int,
+        thermal_units: tuple[ThermalUnit, ...],
+        storage_units: tuple[StorageUnit, ...],
+        demand_units: tuple[DemandUnit, ...],
+        demand_profiles: dict[str, FloatArray],
+        thermal_capacity_available: dict[str, FloatArray],
+        storage_availability: dict[str, FloatArray],
+        reserves: ReserveModel,
+    ) -> None:
+        config = self.config.reserves
+        duration = config.response_duration_hours
+        for t in range(periods):
+            upward_coefficients = {registry.at(RESERVE_UPWARD_SHORTFALL_BLOCK, t): 1.0}
+            downward_coefficients = {registry.at(RESERVE_DOWNWARD_SHORTFALL_BLOCK, t): 1.0}
+            if config.largest_online_contingency_fraction > 0.0:
+                contingency = registry.at(RESERVE_LARGEST_CONTINGENCY_BLOCK, t)
+                upward_coefficients[contingency] = -config.largest_online_contingency_fraction
+                for unit in thermal_units:
+                    builder.add(
+                        {
+                            contingency: 1.0,
+                            registry.at("thermal_on", t, asset_id=unit.id): (
+                                -thermal_capacity_available[unit.id][t]
+                            ),
+                        },
+                        0.0,
+                        np.inf,
+                        component="reserve_largest_online_contingency",
+                    )
+            for unit in thermal_units:
+                up = registry.at(THERMAL_UPWARD_RESERVE_BLOCK, t, asset_id=unit.id)
+                down = registry.at(THERMAL_DOWNWARD_RESERVE_BLOCK, t, asset_id=unit.id)
+                output = registry.at("thermal_output_mw", t, asset_id=unit.id)
+                online = registry.at("thermal_on", t, asset_id=unit.id)
+                capacity = thermal_capacity_available[unit.id][t]
+                builder.add(
+                    {output: 1.0, up: 1.0, online: -capacity},
+                    -np.inf,
+                    0.0,
+                    component="reserve_thermal_up_headroom",
+                )
+                builder.add(
+                    {up: 1.0, online: -unit.config.ramp_up_mw_per_hour * duration},
+                    -np.inf,
+                    0.0,
+                    component="reserve_thermal_up_ramp",
+                )
+                builder.add(
+                    {down: 1.0, output: -1.0, online: unit.config.minimum_output_mw},
+                    -np.inf,
+                    0.0,
+                    component="reserve_thermal_down_headroom",
+                )
+                builder.add(
+                    {down: 1.0, online: -unit.config.ramp_down_mw_per_hour * duration},
+                    -np.inf,
+                    0.0,
+                    component="reserve_thermal_down_ramp",
+                )
+                upward_coefficients[up] = 1.0
+                downward_coefficients[down] = 1.0
+            for storage in storage_units:
+                up = registry.at(STORAGE_UPWARD_RESERVE_BLOCK, t, asset_id=storage.id)
+                down = registry.at(STORAGE_DOWNWARD_RESERVE_BLOCK, t, asset_id=storage.id)
+                charge = registry.at("storage_charge_mw", t, asset_id=storage.id)
+                discharge = registry.at("storage_discharge_mw", t, asset_id=storage.id)
+                soc = registry.at("storage_soc_mwh", t, asset_id=storage.id)
+                battery = storage.config
+                availability = storage_availability[storage.id][t]
+                builder.add(
+                    {
+                        discharge: 1.0,
+                        up: 1.0,
+                    },
+                    -np.inf,
+                    _storage_discharge_capacity(battery) * availability,
+                    component="reserve_storage_up_headroom",
+                )
+                builder.add(
+                    {up: duration / battery.discharge_efficiency, soc: -1.0},
+                    -np.inf,
+                    -battery.minimum_soc_mwh,
+                    component="reserve_storage_up_energy",
+                )
+                builder.add(
+                    {
+                        charge: 1.0,
+                        down: 1.0,
+                    },
+                    -np.inf,
+                    _storage_charge_capacity(battery) * availability,
+                    component="reserve_storage_down_headroom",
+                )
+                builder.add(
+                    {down: duration * battery.charge_efficiency, soc: 1.0},
+                    -np.inf,
+                    battery.maximum_soc_mwh,
+                    component="reserve_storage_down_energy",
+                )
+                upward_coefficients[up] = 1.0
+                downward_coefficients[down] = 1.0
+            for demand_unit in demand_units:
+                if demand_unit.config.kind not in {"curtailable", "shiftable"}:
+                    continue
+                reserve = registry.at(DEMAND_UPWARD_RESERVE_BLOCK, t, asset_id=demand_unit.id)
+                baseline = demand_profiles[demand_unit.id][t]
+                demand_config = demand_unit.config
+                reserve_limit = baseline * config.demand_response_upward_fraction
+                curtailment_limit = baseline * demand_config.maximum_curtailment_fraction
+                if demand_config.maximum_curtailment_mw is not None:
+                    curtailment_limit = min(curtailment_limit, demand_config.maximum_curtailment_mw)
+                limit = min(reserve_limit, curtailment_limit)
+                coefficients = {reserve: 1.0}
+                if demand_config.kind in {"curtailable", "shiftable"}:
+                    coefficients[
+                        registry.at(
+                            "demand_voluntary_curtailment_mw",
+                            t,
+                            asset_id=demand_unit.id,
+                        )
+                    ] = 1.0
+                if demand_config.kind == "shiftable":
+                    coefficients[
+                        registry.at("demand_shift_down_mw", t, asset_id=demand_unit.id)
+                    ] = 1.0
+                builder.add(
+                    coefficients,
+                    -np.inf,
+                    limit,
+                    component="reserve_demand_response_upward",
+                )
+                upward_coefficients[reserve] = 1.0
+            if config.allow_import_reserves:
+                import_up = registry.at(IMPORT_UPWARD_RESERVE_BLOCK, t)
+                import_down = registry.at(IMPORT_DOWNWARD_RESERVE_BLOCK, t)
+                imports = registry.at("imports_mw", t)
+                builder.add(
+                    {imports: 1.0, import_up: 1.0},
+                    -np.inf,
+                    self.config.imports.maximum_power_mw,
+                    component="reserve_import_up_headroom",
+                )
+                builder.add(
+                    {import_down: 1.0, imports: -1.0},
+                    -np.inf,
+                    0.0,
+                    component="reserve_import_down_headroom",
+                )
+                upward_coefficients[import_up] = 1.0
+                downward_coefficients[import_down] = 1.0
+            builder.add(
+                upward_coefficients,
+                reserves.upward_requirement_mw[t],
+                np.inf,
+                component="reserve_upward_requirement",
+            )
+            builder.add(
+                downward_coefficients,
+                reserves.downward_requirement_mw[t],
+                np.inf,
+                component="reserve_downward_requirement",
+            )
 
     def _add_balance_constraints(
         self,
@@ -2066,11 +2351,45 @@ class UnitCommitment:
         data: dict[str, FloatArray] = {
             block: registry.values(solution, block) for block in SYSTEM_BLOCKS
         }
+        if problem.reserves.enabled:
+            data[RESERVE_UPWARD_SHORTFALL_BLOCK] = registry.values(
+                solution,
+                RESERVE_UPWARD_SHORTFALL_BLOCK,
+            )
+            data[RESERVE_DOWNWARD_SHORTFALL_BLOCK] = registry.values(
+                solution,
+                RESERVE_DOWNWARD_SHORTFALL_BLOCK,
+            )
+            if self.config.reserves.largest_online_contingency_fraction > 0.0:
+                data[RESERVE_LARGEST_CONTINGENCY_BLOCK] = registry.values(
+                    solution,
+                    RESERVE_LARGEST_CONTINGENCY_BLOCK,
+                )
+            if self.config.reserves.allow_import_reserves:
+                data[IMPORT_UPWARD_RESERVE_BLOCK] = registry.values(
+                    solution,
+                    IMPORT_UPWARD_RESERVE_BLOCK,
+                )
+                data[IMPORT_DOWNWARD_RESERVE_BLOCK] = registry.values(
+                    solution,
+                    IMPORT_DOWNWARD_RESERVE_BLOCK,
+                )
         for storage in problem.storage_units:
             for block in STORAGE_BLOCKS:
                 data[f"{block}__{storage.id}"] = registry.values(
                     solution,
                     block,
+                    asset_id=storage.id,
+                )
+            if problem.reserves.enabled:
+                data[f"{STORAGE_UPWARD_RESERVE_BLOCK}__{storage.id}"] = registry.values(
+                    solution,
+                    STORAGE_UPWARD_RESERVE_BLOCK,
+                    asset_id=storage.id,
+                )
+                data[f"{STORAGE_DOWNWARD_RESERVE_BLOCK}__{storage.id}"] = registry.values(
+                    solution,
+                    STORAGE_DOWNWARD_RESERVE_BLOCK,
                     asset_id=storage.id,
                 )
             for band in storage.config.degradation_bands:
@@ -2142,11 +2461,28 @@ class UnitCommitment:
                     "demand_task_unserved_mwh",
                     asset_id=demand.id,
                 )
+            if problem.reserves.enabled and demand.config.kind in {"curtailable", "shiftable"}:
+                data[f"{DEMAND_UPWARD_RESERVE_BLOCK}__{demand.id}"] = registry.values(
+                    solution,
+                    DEMAND_UPWARD_RESERVE_BLOCK,
+                    asset_id=demand.id,
+                )
         for unit in problem.thermal_units:
             for block in THERMAL_BLOCKS:
                 data[f"{block}__{unit.id}"] = registry.values(
                     solution,
                     block,
+                    asset_id=unit.id,
+                )
+            if problem.reserves.enabled:
+                data[f"{THERMAL_UPWARD_RESERVE_BLOCK}__{unit.id}"] = registry.values(
+                    solution,
+                    THERMAL_UPWARD_RESERVE_BLOCK,
+                    asset_id=unit.id,
+                )
+                data[f"{THERMAL_DOWNWARD_RESERVE_BLOCK}__{unit.id}"] = registry.values(
+                    solution,
+                    THERMAL_DOWNWARD_RESERVE_BLOCK,
                     asset_id=unit.id,
                 )
             for segment in unit.config.heat_rate_segments:
@@ -2667,6 +3003,78 @@ class UnitCommitment:
             "demand_task_unserved_cost_eur__",
         )
 
+    def _add_reserve_accounting_columns(
+        self,
+        frame: pd.DataFrame,
+        problem: FormulationProblem,
+    ) -> None:
+        if not problem.reserves.enabled:
+            return
+        reserve_config = self.config.reserves
+        thermal_up = self._sum_prefixed_frame_columns(frame, f"{THERMAL_UPWARD_RESERVE_BLOCK}__")
+        thermal_down = self._sum_prefixed_frame_columns(
+            frame, f"{THERMAL_DOWNWARD_RESERVE_BLOCK}__"
+        )
+        storage_up = self._sum_prefixed_frame_columns(frame, f"{STORAGE_UPWARD_RESERVE_BLOCK}__")
+        storage_down = self._sum_prefixed_frame_columns(
+            frame, f"{STORAGE_DOWNWARD_RESERVE_BLOCK}__"
+        )
+        demand_up = self._sum_prefixed_frame_columns(frame, f"{DEMAND_UPWARD_RESERVE_BLOCK}__")
+        import_up = (
+            frame[IMPORT_UPWARD_RESERVE_BLOCK]
+            if IMPORT_UPWARD_RESERVE_BLOCK in frame
+            else pd.Series(0.0, index=frame.index)
+        )
+        import_down = (
+            frame[IMPORT_DOWNWARD_RESERVE_BLOCK]
+            if IMPORT_DOWNWARD_RESERVE_BLOCK in frame
+            else pd.Series(0.0, index=frame.index)
+        )
+        if RESERVE_LARGEST_CONTINGENCY_BLOCK not in frame:
+            frame[RESERVE_LARGEST_CONTINGENCY_BLOCK] = 0.0
+        frame["reserve_upward_requirement_base_mw"] = problem.reserves.upward_requirement_mw
+        frame["reserve_downward_requirement_mw"] = problem.reserves.downward_requirement_mw
+        frame["reserve_upward_requirement_mw"] = (
+            frame["reserve_upward_requirement_base_mw"]
+            + reserve_config.largest_online_contingency_fraction
+            * frame[RESERVE_LARGEST_CONTINGENCY_BLOCK]
+        )
+        frame["thermal_upward_reserve_mw"] = thermal_up
+        frame["thermal_downward_reserve_mw"] = thermal_down
+        frame["storage_upward_reserve_mw"] = storage_up
+        frame["storage_downward_reserve_mw"] = storage_down
+        frame["demand_upward_reserve_mw"] = demand_up
+        frame["import_upward_reserve_mw"] = import_up
+        frame["import_downward_reserve_mw"] = import_down
+        frame["reserve_upward_procured_mw"] = thermal_up + storage_up + demand_up + import_up
+        frame["reserve_downward_procured_mw"] = thermal_down + storage_down + import_down
+        frame["reserve_upward_residual_mw"] = (
+            frame["reserve_upward_procured_mw"]
+            + frame[RESERVE_UPWARD_SHORTFALL_BLOCK]
+            - frame["reserve_upward_requirement_mw"]
+        )
+        frame["reserve_downward_residual_mw"] = (
+            frame["reserve_downward_procured_mw"]
+            + frame[RESERVE_DOWNWARD_SHORTFALL_BLOCK]
+            - frame["reserve_downward_requirement_mw"]
+        )
+        dt = self.config.simulation.time_step_hours
+        frame["reserve_procurement_cost_eur"] = dt * (
+            thermal_up * reserve_config.thermal_upward_cost_eur_per_mw_hour
+            + thermal_down * reserve_config.thermal_downward_cost_eur_per_mw_hour
+            + storage_up * reserve_config.storage_upward_cost_eur_per_mw_hour
+            + storage_down * reserve_config.storage_downward_cost_eur_per_mw_hour
+            + demand_up * reserve_config.demand_response_upward_cost_eur_per_mw_hour
+            + import_up * reserve_config.import_upward_cost_eur_per_mw_hour
+            + import_down * reserve_config.import_downward_cost_eur_per_mw_hour
+        )
+        frame["reserve_shortfall_cost_eur"] = dt * (
+            frame[RESERVE_UPWARD_SHORTFALL_BLOCK]
+            * reserve_config.upward_shortfall_penalty_eur_per_mw_hour
+            + frame[RESERVE_DOWNWARD_SHORTFALL_BLOCK]
+            * reserve_config.downward_shortfall_penalty_eur_per_mw_hour
+        )
+
     @staticmethod
     def _sum_prefixed_frame_columns(frame: pd.DataFrame, prefix: str) -> pd.Series:
         columns = [column for column in frame.columns if column.startswith(prefix)]
@@ -2740,6 +3148,28 @@ class UnitCommitment:
             "source_load_shed_mw",
             "renewable_curtailed_mw",
         ]
+        columns.extend(
+            column
+            for column in (
+                RESERVE_UPWARD_SHORTFALL_BLOCK,
+                RESERVE_DOWNWARD_SHORTFALL_BLOCK,
+                RESERVE_LARGEST_CONTINGENCY_BLOCK,
+                IMPORT_UPWARD_RESERVE_BLOCK,
+                IMPORT_DOWNWARD_RESERVE_BLOCK,
+                "reserve_upward_procured_mw",
+                "reserve_downward_procured_mw",
+            )
+            if column in frame
+        )
+        columns.extend(
+            column
+            for column in frame.columns
+            if column.startswith(f"{THERMAL_UPWARD_RESERVE_BLOCK}__")
+            or column.startswith(f"{THERMAL_DOWNWARD_RESERVE_BLOCK}__")
+            or column.startswith(f"{STORAGE_UPWARD_RESERVE_BLOCK}__")
+            or column.startswith(f"{STORAGE_DOWNWARD_RESERVE_BLOCK}__")
+            or column.startswith(f"{DEMAND_UPWARD_RESERVE_BLOCK}__")
+        )
         renewable_asset_columns = [
             column
             for column in frame.columns
@@ -2830,13 +3260,14 @@ class UnitCommitment:
     def _cost_components(
         self,
         frame: pd.DataFrame,
-        thermal_units: tuple[ThermalUnit, ...],
-        storage_units: tuple[StorageUnit, ...],
+        problem: FormulationProblem,
     ) -> dict[str, float]:
         dt = self.config.simulation.time_step_hours
         imports = self.config.imports
         penalties = self.config.penalties
         network_efficiency = 1.0 - self.config.network.loss_fraction
+        thermal_units = problem.thermal_units
+        storage_units = problem.storage_units
         demand_shed_cost_columns = [
             column
             for column in frame.columns
@@ -2888,6 +3319,16 @@ class UnitCommitment:
                 frame["renewable_curtailed_mw"].sum()
                 * dt
                 * penalties.renewable_curtailment_eur_per_mwh
+            ),
+            "reserve_procurement_cost_eur": float(
+                frame["reserve_procurement_cost_eur"].sum()
+                if "reserve_procurement_cost_eur" in frame
+                else 0.0
+            ),
+            "reserve_shortfall_cost_eur": float(
+                frame["reserve_shortfall_cost_eur"].sum()
+                if "reserve_shortfall_cost_eur" in frame
+                else 0.0
             ),
             "dispatch_load_shedding_cost_eur": float(
                 frame[demand_shed_cost_columns].sum().sum()

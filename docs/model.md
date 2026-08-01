@@ -417,6 +417,76 @@ spilled. Cascade metadata can be configured for upstream relationships and
 delay hours, but downstream inflow coupling is not yet included in the
 optimisation.
 
+## Operating reserves
+
+Operating reserves are held capacity in MW, not dispatched energy in MWh. When
+reserve requirements are configured, the model adds upward and downward reserve
+variables by eligible provider and period plus explicit shortfall variables.
+Shortfalls are penalised in the objective so an infeasible reserve target is
+reported as reserve inadequacy rather than as a generic optimisation failure.
+
+Upward and downward reserve requirements are additive:
+
+\[
+R_t^{\uparrow} =
+R_{\mathrm{fixed}}^{\uparrow}
++ \alpha_D^{\uparrow} D_t
++ \alpha_R^{\uparrow} A_t^{R}
++ \alpha_C C_t^{\max}
+\]
+
+\[
+R_t^{\downarrow} =
+R_{\mathrm{fixed}}^{\downarrow}
++ \alpha_D^{\downarrow} D_t
++ \alpha_R^{\downarrow} A_t^{R}
+\]
+
+where \(D_t\) is source-side demand, \(A_t^R\) is renewable availability, and
+\(C_t^{\max}\) is the largest committed thermal capacity approximation.
+
+Thermal upward reserve is limited by online headroom and ramp deliverability:
+
+\[
+p_{g,t} + r_{g,t}^{\uparrow} \le \bar P_{g,t} u_{g,t}
+\]
+
+\[
+r_{g,t}^{\uparrow} \le RU_g T_R u_{g,t}
+\]
+
+Downward thermal reserve is limited by reducible output and ramp deliverability:
+
+\[
+r_{g,t}^{\downarrow} \le p_{g,t} - \underline P_g u_{g,t}
+\]
+
+\[
+r_{g,t}^{\downarrow} \le RD_g T_R u_{g,t}
+\]
+
+Storage upward reserve is limited by discharge headroom and stored energy above
+minimum state of charge. Downward reserve is limited by charge headroom and
+remaining storage space:
+
+\[
+d_{s,t} + r_{s,t}^{\uparrow} \le \bar D_{s,t}
+\qquad
+\frac{T_R r_{s,t}^{\uparrow}}{\eta_s^d} \le e_{s,t} - \underline E_s
+\]
+
+\[
+c_{s,t} + r_{s,t}^{\downarrow} \le \bar C_{s,t}
+\qquad
+T_R \eta_s^c r_{s,t}^{\downarrow} \le \bar E_s - e_{s,t}
+\]
+
+Optional demand-response upward reserve is capped by both the reserve fraction
+and remaining configured curtailment or shift-down capability. Optional import
+reserve is available only when explicitly enabled; upward import reserve uses
+unused import capacity and downward import reserve requires scheduled imports
+that can be reduced.
+
 ## Objective
 
 The objective minimizes:
@@ -436,13 +506,16 @@ value credits. Demand response adds voluntary curtailment utility-loss costs,
 shift costs, entity-specific involuntary shedding costs, and unmet task-energy
 penalties. For compatibility-mode thermal units, running cost is scalar variable
 cost times output. For segmented thermal units, running cost is fuel input times
-fuel price.
+fuel price. Reserve procurement costs are capacity payments in EUR/MW-hour
+multiplied by held MW and the time-step duration. Reserve shortfall penalties
+use the same MW-hour convention.
 
 Reported cost components reconcile the solver objective into thermal variable,
 thermal no-load, startup, shutdown, import energy, battery throughput, storage
 degradation, hydro terminal value, demand voluntary curtailment, demand shift,
-unmet task energy, thermal carbon, import carbon, renewable curtailment,
-dispatch load-shedding, and network-capacity load-shedding costs. The simulator
+unmet task energy, thermal carbon, import carbon, renewable curtailment, reserve
+procurement, reserve shortfall, dispatch load-shedding, and network-capacity
+load-shedding costs. The simulator
 raises an error if the reported component sum diverges from the objective beyond
 the configured tolerance.
 

@@ -145,10 +145,32 @@ ROOT_KEYS = {
     "hydro_units",
     "imports",
     "demand",
+    "reserves",
     "penalties",
     "paths",
 }
-REQUIRED_ROOT_KEYS = ROOT_KEYS - {"fuels", "hydro_units"}
+REQUIRED_ROOT_KEYS = ROOT_KEYS - {"fuels", "hydro_units", "reserves"}
+RESERVE_KEYS = {
+    "upward_fixed_mw",
+    "downward_fixed_mw",
+    "upward_demand_fraction",
+    "downward_demand_fraction",
+    "upward_renewable_fraction",
+    "downward_renewable_fraction",
+    "largest_online_contingency_fraction",
+    "response_duration_hours",
+    "upward_shortfall_penalty_eur_per_mw_hour",
+    "downward_shortfall_penalty_eur_per_mw_hour",
+    "thermal_upward_cost_eur_per_mw_hour",
+    "thermal_downward_cost_eur_per_mw_hour",
+    "storage_upward_cost_eur_per_mw_hour",
+    "storage_downward_cost_eur_per_mw_hour",
+    "demand_response_upward_fraction",
+    "demand_response_upward_cost_eur_per_mw_hour",
+    "allow_import_reserves",
+    "import_upward_cost_eur_per_mw_hour",
+    "import_downward_cost_eur_per_mw_hour",
+}
 SECTION_KEYS = {
     "scenario": {"id"},
     "simulation": {"time_step_hours"},
@@ -447,6 +469,15 @@ def _string(section: Mapping[str, Any], key: str) -> str:
 def _section(data: Mapping[str, Any], name: str) -> Mapping[str, Any]:
     if name not in data:
         raise ConfigurationError(f"Missing required configuration section: {name}")
+    value = data.get(name)
+    if not isinstance(value, Mapping):
+        raise ConfigurationError(f"Missing or invalid section: {name}")
+    return value
+
+
+def _optional_mapping_section(data: Mapping[str, Any], name: str) -> Mapping[str, Any]:
+    if name not in data:
+        return {}
     value = data.get(name)
     if not isinstance(value, Mapping):
         raise ConfigurationError(f"Missing or invalid section: {name}")
@@ -854,6 +885,29 @@ class NetworkConfig:
 
 
 @dataclass(frozen=True)
+class ReserveConfig:
+    upward_fixed_mw: float = 0.0
+    downward_fixed_mw: float = 0.0
+    upward_demand_fraction: float = 0.0
+    downward_demand_fraction: float = 0.0
+    upward_renewable_fraction: float = 0.0
+    downward_renewable_fraction: float = 0.0
+    largest_online_contingency_fraction: float = 0.0
+    response_duration_hours: float = 1.0
+    upward_shortfall_penalty_eur_per_mw_hour: float = 100_000.0
+    downward_shortfall_penalty_eur_per_mw_hour: float = 100_000.0
+    thermal_upward_cost_eur_per_mw_hour: float = 0.0
+    thermal_downward_cost_eur_per_mw_hour: float = 0.0
+    storage_upward_cost_eur_per_mw_hour: float = 0.0
+    storage_downward_cost_eur_per_mw_hour: float = 0.0
+    demand_response_upward_fraction: float = 0.0
+    demand_response_upward_cost_eur_per_mw_hour: float = 0.0
+    allow_import_reserves: bool = False
+    import_upward_cost_eur_per_mw_hour: float = 0.0
+    import_downward_cost_eur_per_mw_hour: float = 0.0
+
+
+@dataclass(frozen=True)
 class ImportConfig:
     maximum_power_mw: float
     price_eur_per_mwh: float
@@ -934,6 +988,7 @@ class ModelConfig:
     thermal: ThermalConfig
     battery: BatteryConfig
     network: NetworkConfig
+    reserves: ReserveConfig
     imports: ImportConfig
     penalties: PenaltyConfig
     paths: PathConfig
@@ -1152,6 +1207,7 @@ def _load_legacy_config(
         thermal=thermal,
         battery=battery,
         network=network,
+        reserves=ReserveConfig(),
         imports=imports,
         penalties=penalties,
         paths=paths,
@@ -1183,6 +1239,7 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
     simulation_raw = _section(raw, "simulation")
     solver_raw = _section(raw, "solver")
     network_raw = _section(raw, "aggregate_network")
+    reserves_raw = _optional_mapping_section(raw, "reserves")
     penalties_raw = _section(raw, "penalties")
     paths_raw = _section(raw, "paths")
 
@@ -1307,6 +1364,7 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
             else None
         ),
     )
+    reserves = _parse_reserves(reserves_raw)
     import_config = imports[0].config
     penalties = PenaltyConfig(
         renewable_curtailment_eur_per_mwh=_number_at(
@@ -1334,6 +1392,7 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
         thermal=thermal,
         battery=battery,
         network=network,
+        reserves=reserves,
         imports=import_config,
         penalties=penalties,
         paths=paths,
@@ -1388,6 +1447,80 @@ def _parse_fuel(item: Mapping[str, Any], path: str) -> FuelConfig:
             float,
             0.0,
             path,
+        ),
+    )
+
+
+def _parse_reserves(section: Mapping[str, Any]) -> ReserveConfig:
+    path = "reserves"
+    _validate_allowed_keys(section, path, RESERVE_KEYS)
+    return ReserveConfig(
+        upward_fixed_mw=_optional_number_at(section, "upward_fixed_mw", float, 0.0, path),
+        downward_fixed_mw=_optional_number_at(section, "downward_fixed_mw", float, 0.0, path),
+        upward_demand_fraction=_optional_number_at(
+            section, "upward_demand_fraction", float, 0.0, path
+        ),
+        downward_demand_fraction=_optional_number_at(
+            section, "downward_demand_fraction", float, 0.0, path
+        ),
+        upward_renewable_fraction=_optional_number_at(
+            section, "upward_renewable_fraction", float, 0.0, path
+        ),
+        downward_renewable_fraction=_optional_number_at(
+            section, "downward_renewable_fraction", float, 0.0, path
+        ),
+        largest_online_contingency_fraction=_optional_number_at(
+            section,
+            "largest_online_contingency_fraction",
+            float,
+            0.0,
+            path,
+        ),
+        response_duration_hours=_optional_number_at(
+            section, "response_duration_hours", float, 1.0, path
+        ),
+        upward_shortfall_penalty_eur_per_mw_hour=_optional_number_at(
+            section,
+            "upward_shortfall_penalty_eur_per_mw_hour",
+            float,
+            100_000.0,
+            path,
+        ),
+        downward_shortfall_penalty_eur_per_mw_hour=_optional_number_at(
+            section,
+            "downward_shortfall_penalty_eur_per_mw_hour",
+            float,
+            100_000.0,
+            path,
+        ),
+        thermal_upward_cost_eur_per_mw_hour=_optional_number_at(
+            section, "thermal_upward_cost_eur_per_mw_hour", float, 0.0, path
+        ),
+        thermal_downward_cost_eur_per_mw_hour=_optional_number_at(
+            section, "thermal_downward_cost_eur_per_mw_hour", float, 0.0, path
+        ),
+        storage_upward_cost_eur_per_mw_hour=_optional_number_at(
+            section, "storage_upward_cost_eur_per_mw_hour", float, 0.0, path
+        ),
+        storage_downward_cost_eur_per_mw_hour=_optional_number_at(
+            section, "storage_downward_cost_eur_per_mw_hour", float, 0.0, path
+        ),
+        demand_response_upward_fraction=_optional_number_at(
+            section, "demand_response_upward_fraction", float, 0.0, path
+        ),
+        demand_response_upward_cost_eur_per_mw_hour=_optional_number_at(
+            section,
+            "demand_response_upward_cost_eur_per_mw_hour",
+            float,
+            0.0,
+            path,
+        ),
+        allow_import_reserves=_optional_boolean_at(section, "allow_import_reserves", False, path),
+        import_upward_cost_eur_per_mw_hour=_optional_number_at(
+            section, "import_upward_cost_eur_per_mw_hour", float, 0.0, path
+        ),
+        import_downward_cost_eur_per_mw_hour=_optional_number_at(
+            section, "import_downward_cost_eur_per_mw_hour", float, 0.0, path
         ),
     )
 
@@ -2562,6 +2695,7 @@ def _schema_v2_mapping_from_config(
             for resource in portfolio.imports
         ],
         "demand": [_demand_mapping(demand) for demand in portfolio.demand],
+        "reserves": _reserve_mapping(config.reserves),
         "penalties": {
             "renewable_curtailment_eur_per_mwh": (
                 config.penalties.renewable_curtailment_eur_per_mwh
@@ -2597,6 +2731,36 @@ def _network_mapping(network: NetworkConfig) -> dict[str, Any]:
     if network.slack_bus_id is not None:
         item["slack_bus_id"] = network.slack_bus_id
     return item
+
+
+def _reserve_mapping(reserves: ReserveConfig) -> dict[str, Any]:
+    return {
+        "upward_fixed_mw": reserves.upward_fixed_mw,
+        "downward_fixed_mw": reserves.downward_fixed_mw,
+        "upward_demand_fraction": reserves.upward_demand_fraction,
+        "downward_demand_fraction": reserves.downward_demand_fraction,
+        "upward_renewable_fraction": reserves.upward_renewable_fraction,
+        "downward_renewable_fraction": reserves.downward_renewable_fraction,
+        "largest_online_contingency_fraction": reserves.largest_online_contingency_fraction,
+        "response_duration_hours": reserves.response_duration_hours,
+        "upward_shortfall_penalty_eur_per_mw_hour": (
+            reserves.upward_shortfall_penalty_eur_per_mw_hour
+        ),
+        "downward_shortfall_penalty_eur_per_mw_hour": (
+            reserves.downward_shortfall_penalty_eur_per_mw_hour
+        ),
+        "thermal_upward_cost_eur_per_mw_hour": reserves.thermal_upward_cost_eur_per_mw_hour,
+        "thermal_downward_cost_eur_per_mw_hour": reserves.thermal_downward_cost_eur_per_mw_hour,
+        "storage_upward_cost_eur_per_mw_hour": reserves.storage_upward_cost_eur_per_mw_hour,
+        "storage_downward_cost_eur_per_mw_hour": reserves.storage_downward_cost_eur_per_mw_hour,
+        "demand_response_upward_fraction": reserves.demand_response_upward_fraction,
+        "demand_response_upward_cost_eur_per_mw_hour": (
+            reserves.demand_response_upward_cost_eur_per_mw_hour
+        ),
+        "allow_import_reserves": reserves.allow_import_reserves,
+        "import_upward_cost_eur_per_mw_hour": reserves.import_upward_cost_eur_per_mw_hour,
+        "import_downward_cost_eur_per_mw_hour": reserves.import_downward_cost_eur_per_mw_hour,
+    }
 
 
 def _fuel_mapping(fuel: FuelConfig) -> dict[str, Any]:
@@ -2947,6 +3111,64 @@ def validate_config(config: ModelConfig) -> None:
         raise ConfigurationError("network.slack_bus_id references unknown bus")
     if config.network.network_mode == "nodal":
         _validate_nodal_network(config)
+
+    reserves = config.reserves
+    for name, value in (
+        ("reserves.upward_fixed_mw", reserves.upward_fixed_mw),
+        ("reserves.downward_fixed_mw", reserves.downward_fixed_mw),
+        ("reserves.response_duration_hours", reserves.response_duration_hours),
+        (
+            "reserves.upward_shortfall_penalty_eur_per_mw_hour",
+            reserves.upward_shortfall_penalty_eur_per_mw_hour,
+        ),
+        (
+            "reserves.downward_shortfall_penalty_eur_per_mw_hour",
+            reserves.downward_shortfall_penalty_eur_per_mw_hour,
+        ),
+        (
+            "reserves.thermal_upward_cost_eur_per_mw_hour",
+            reserves.thermal_upward_cost_eur_per_mw_hour,
+        ),
+        (
+            "reserves.thermal_downward_cost_eur_per_mw_hour",
+            reserves.thermal_downward_cost_eur_per_mw_hour,
+        ),
+        (
+            "reserves.storage_upward_cost_eur_per_mw_hour",
+            reserves.storage_upward_cost_eur_per_mw_hour,
+        ),
+        (
+            "reserves.storage_downward_cost_eur_per_mw_hour",
+            reserves.storage_downward_cost_eur_per_mw_hour,
+        ),
+        (
+            "reserves.demand_response_upward_cost_eur_per_mw_hour",
+            reserves.demand_response_upward_cost_eur_per_mw_hour,
+        ),
+        (
+            "reserves.import_upward_cost_eur_per_mw_hour",
+            reserves.import_upward_cost_eur_per_mw_hour,
+        ),
+        (
+            "reserves.import_downward_cost_eur_per_mw_hour",
+            reserves.import_downward_cost_eur_per_mw_hour,
+        ),
+    ):
+        _check_nonnegative(name, value)
+    if reserves.response_duration_hours <= 0.0:
+        raise ConfigurationError("reserves.response_duration_hours must be positive")
+    for name, value in (
+        ("reserves.upward_demand_fraction", reserves.upward_demand_fraction),
+        ("reserves.downward_demand_fraction", reserves.downward_demand_fraction),
+        ("reserves.upward_renewable_fraction", reserves.upward_renewable_fraction),
+        ("reserves.downward_renewable_fraction", reserves.downward_renewable_fraction),
+        (
+            "reserves.largest_online_contingency_fraction",
+            reserves.largest_online_contingency_fraction,
+        ),
+        ("reserves.demand_response_upward_fraction", reserves.demand_response_upward_fraction),
+    ):
+        _check_fraction(name, value)
 
     for name, value in (
         ("imports.maximum_power_mw", config.imports.maximum_power_mw),

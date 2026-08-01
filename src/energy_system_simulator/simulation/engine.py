@@ -624,6 +624,7 @@ class SimulationEngine:
                 "thermal_sox_emissions_kg__",
             ),
             "imports_mwh": energy("imports_mw"),
+            "reserves": self._reserve_summary(frame),
             "battery_charge_mwh": energy("battery_charge_mw"),
             "battery_discharge_mwh": energy("battery_discharge_mw"),
             "final_battery_soc_mwh": float(frame["battery_soc_mwh"].iloc[-1]),
@@ -723,6 +724,32 @@ class SimulationEngine:
             "max_abs_line_utilisation": float(frame["line_max_abs_utilisation"].max()),
             "max_line_overload_residual_mw": float(frame["line_overload_residual_mw"].max()),
             "max_abs_bus_balance_residual_mw": float(frame["bus_balance_residual_mw"].abs().max()),
+        }
+
+    def _reserve_summary(self, frame: pd.DataFrame) -> dict[str, Any]:
+        if "reserve_upward_requirement_mw" not in frame:
+            return {"enabled": False}
+        dt = self.config.simulation.time_step_hours
+        return {
+            "enabled": True,
+            "upward_requirement_mwh": float(frame["reserve_upward_requirement_mw"].sum() * dt),
+            "downward_requirement_mwh": float(frame["reserve_downward_requirement_mw"].sum() * dt),
+            "upward_procured_mwh": float(frame["reserve_upward_procured_mw"].sum() * dt),
+            "downward_procured_mwh": float(frame["reserve_downward_procured_mw"].sum() * dt),
+            "upward_shortfall_mwh": float(frame["reserve_upward_shortfall_mw"].sum() * dt),
+            "downward_shortfall_mwh": float(frame["reserve_downward_shortfall_mw"].sum() * dt),
+            "hours_with_upward_shortfall": float(
+                (frame["reserve_upward_shortfall_mw"] > 0.0).sum() * dt
+            ),
+            "hours_with_downward_shortfall": float(
+                (frame["reserve_downward_shortfall_mw"] > 0.0).sum() * dt
+            ),
+            "max_abs_upward_residual_mw": float(frame["reserve_upward_residual_mw"].abs().max()),
+            "max_abs_downward_residual_mw": float(
+                frame["reserve_downward_residual_mw"].abs().max()
+            ),
+            "procurement_cost_eur": float(frame["reserve_procurement_cost_eur"].sum()),
+            "shortfall_cost_eur": float(frame["reserve_shortfall_cost_eur"].sum()),
         }
 
     def _renewable_asset_summary(self, asset_timeseries: AssetTimeSeries) -> dict[str, Any]:

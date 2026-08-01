@@ -318,3 +318,21 @@ def test_nodal_configuration_loads_with_dc_network() -> None:
         "north-south",
     ]
     assert config.portfolio.lines[1].availability_factor_key == "central_south_availability"
+
+
+def test_reserve_configuration_loads_and_rejects_unknown_fields(tmp_path: Path) -> None:
+    raw = _portfolio_raw()
+    raw["reserves"] = {
+        "upward_fixed_mw": 25.0,
+        "upward_demand_fraction": 0.05,
+        "thermal_upward_cost_eur_per_mw_hour": 2.0,
+    }
+    config = load_config(_write_portfolio(tmp_path, raw))
+
+    assert config.reserves.upward_fixed_mw == 25.0
+    assert config.reserves.upward_demand_fraction == 0.05
+    assert config.reserves.thermal_upward_cost_eur_per_mw_hour == 2.0
+
+    raw["reserves"]["bad_field"] = 1.0
+    with pytest.raises(ConfigurationError, match=r"reserves\.bad_field"):
+        load_config(_write_portfolio(tmp_path, raw))
