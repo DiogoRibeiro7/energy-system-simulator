@@ -1,0 +1,35 @@
+base_config: ../configs/iberia_baseline.yaml
+output_directory: ../outputs/scenarios
+workers: 1
+resume: false
+scenarios:
+- id: solar-plus-25
+  overrides:
+    portfolio.renewable_generators[0].capacity_mw: 7262.5
+    portfolio.renewable_generators[2].capacity_mw: 47700.0
+- id: interconnection-plus-50
+  overrides:
+    portfolio.lines[0].capacity_mw: 5250.0
+- id: gas-retirement-30
+  overrides:
+    portfolio.thermal_generators[0].config.maximum_output_mw: 2933.0
+    portfolio.thermal_generators[1].config.maximum_output_mw: 19180.0
+- id: hydro-drought-proxy
+  overrides:
+    portfolio.hydro_units[0].turbine_efficiency: 0.55
+    portfolio.hydro_units[1].turbine_efficiency: 0.55
+- id: battery-plus-50
+  overrides:
+    portfolio.storage_units[0].config.power_capacity_mw: 1350.0
+    portfolio.storage_units[0].config.charge_power_capacity_mw: 1350.0
+    portfolio.storage_units[0].config.discharge_power_capacity_mw: 1350.0
+    portfolio.storage_units[0].config.energy_capacity_mwh: 5400.0
+    portfolio.storage_units[0].config.maximum_soc_mwh: 5400.0
+    portfolio.storage_units[1].config.power_capacity_mw: 3900.0
+    portfolio.storage_units[1].config.charge_power_capacity_mw: 3900.0
+    portfolio.storage_units[1].config.discharge_power_capacity_mw: 3900.0
+    portfolio.storage_units[1].config.energy_capacity_mwh: 15600.0
+    portfolio.storage_units[1].config.maximum_soc_mwh: 15600.0
+- id: carbon-price-120
+  overrides:
+    penalties.carbon_price_eur_per_tonne: 120.0

@@ -179,6 +179,8 @@ Versioned output tables, diagnostics, reports, and output comparison are documen
 [`docs/reporting.md`](docs/reporting.md).
 CLI commands, exit codes, dry-run behavior, and the public Python API are documented in
 [`docs/api-cli.md`](docs/api-cli.md).
+The reproducible Portugal-Spain approximation case study lives in
+[`case_studies/iberia`](case_studies/iberia).
 
 See [docs/development.md](docs/development.md) for clean-checkout, editable
 install, and wheel-install smoke workflows.

@@ -1,0 +1,29 @@
+area,category,subcategory,variable,unit,value
+Portugal,Electricity demand,Demand,Demand,TWh,57.74
+Portugal,Electricity generation,Fuel,Solar,TWh,7.09
+Portugal,Electricity generation,Fuel,Wind,TWh,14.34
+Portugal,Electricity generation,Fuel,Hydro,TWh,14.89
+Portugal,Electricity generation,Fuel,Gas,TWh,5.63
+Portugal,Electricity generation,Fuel,Nuclear,TWh,0.0
+Portugal,Electricity generation,Total,Total Generation,TWh,47.27
+Portugal,Electricity imports,Electricity imports,Net Imports,TWh,10.47
+Portugal,Power sector emissions,Total,Total emissions,mtCO2,5.23
+Portugal,Capacity,Fuel,Solar,GW,5.81
+Portugal,Capacity,Fuel,Wind,GW,5.6
+Portugal,Capacity,Fuel,Hydro,GW,8.36
+Portugal,Capacity,Fuel,Gas,GW,4.19
+Portugal,Capacity,Fuel,Nuclear,GW,0.0
+Spain,Electricity demand,Demand,Demand,TWh,270.71
+Spain,Electricity generation,Fuel,Solar,TWh,58.29
+Spain,Electricity generation,Fuel,Wind,TWh,62.2
+Spain,Electricity generation,Fuel,Hydro,TWh,34.41
+Spain,Electricity generation,Fuel,Gas,TWh,52.34
+Spain,Electricity generation,Fuel,Nuclear,TWh,54.53
+Spain,Electricity generation,Total,Total Generation,TWh,280.94
+Spain,Electricity imports,Electricity imports,Net Imports,TWh,-10.23
+Spain,Power sector emissions,Total,Total emissions,mtCO2,41.08
+Spain,Capacity,Fuel,Solar,GW,38.16
+Spain,Capacity,Fuel,Wind,GW,32.18
+Spain,Capacity,Fuel,Hydro,GW,16.81
+Spain,Capacity,Fuel,Gas,GW,27.4
+Spain,Capacity,Fuel,Nuclear,GW,7.12
