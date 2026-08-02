@@ -23,6 +23,10 @@ validated when a configured asset reads them.
 - Missing intervals must be inserted or otherwise resolved before simulation.
 - Time-zone-aware timestamps are recommended. The example data use UTC.
 
+Public-data adapters can produce simulator-ready local snapshots with UTC
+timestamps, validation reports, checksums, and provenance manifests. See
+[`public-data-adapters.md`](public-data-adapters.md).
+
 ## Units
 
 The code does not infer or convert units. Supplying kW where MW are expected will produce numerically valid but physically incorrect results.

@@ -1,0 +1,26 @@
+output_csv: ../../outputs/public-data-snapshot/input.csv
+manifest_json: ../../outputs/public-data-snapshot/manifest.json
+time_step_hours: 1.0
+adapters:
+  - kind: european_demand_csv
+    path: public_demand_sample.csv
+    provider: ENTSO-E Transparency Platform sample
+    source: local sample extract
+    licence: example fixture
+    retrieved_at_utc: "2026-08-02T00:00:00Z"
+    timezone: Europe/Paris
+    timestamp_column: local_time
+    demand_column: load_gw
+    demand_unit: GW
+  - kind: weather_csv
+    path: public_weather_sample.csv
+    provider: weather sample
+    source: local sample extract
+    licence: example fixture
+    retrieved_at_utc: "2026-08-02T00:00:00Z"
+    timezone: Europe/Paris
+    timestamp_column: local_time
+    column_map:
+      irradiance_w_m2: ghi
+      ambient_temperature_c: temp_c
+      wind_speed_m_s: wind_ms

@@ -10,6 +10,7 @@ import yaml
 
 from energy_system_simulator.config import load_config, migrate_legacy_config
 from energy_system_simulator.data import load_input_data
+from energy_system_simulator.data_adapters import run_data_preparation_spec
 from energy_system_simulator.exceptions import EnergySystemError
 from energy_system_simulator.metadata import get_package_version
 from energy_system_simulator.reporting import write_outputs
@@ -67,6 +68,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip per-scenario PNG plot generation",
     )
+
+    prepare_data = subparsers.add_parser(
+        "prepare-data",
+        help="Transform local public-data files into a canonical input snapshot",
+    )
+    prepare_data.add_argument("--spec", type=Path, required=True)
     return parser
 
 
@@ -94,6 +101,12 @@ def main(argv: Sequence[str] | None = None) -> None:
                 create_plots=not args.no_plots,
             )
             print(f"Scenario experiment complete: {len(aggregate)} scenarios")
+            return
+
+        if args.command == "prepare-data":
+            snapshot = run_data_preparation_spec(args.spec)
+            print(f"Canonical data written: {snapshot.output_csv}")
+            print(f"Manifest written: {snapshot.manifest_json}")
             return
 
         config = load_config(args.config)
