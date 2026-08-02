@@ -165,9 +165,13 @@ poetry run ruff check .
 poetry run mypy src
 poetry run python scripts/validate_licensing.py
 poetry run python scripts/check_example_data.py
+poetry run python scripts/run_verification_benchmarks.py
 poetry run python scripts/benchmark_example.py
 poetry run python scripts/compare_baseline.py
 ```
+
+Mathematical verification cases and CI benchmark budgets are documented in
+[`docs/verification.md`](docs/verification.md).
 
 See [docs/development.md](docs/development.md) for clean-checkout, editable
 install, and wheel-install smoke workflows.

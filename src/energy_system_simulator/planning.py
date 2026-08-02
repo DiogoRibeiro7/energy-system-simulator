@@ -353,9 +353,9 @@ class CapacityExpansionPlanner:
                         coefficients[
                             registry.at("storage_discharge_mw", t, asset_id=storage.id)
                         ] = 1.0
-                        coefficients[registry.at("storage_charge_mw", t, asset_id=storage.id)] = (
-                            -1.0
-                        )
+                        coefficients[
+                            registry.at("storage_charge_mw", t, asset_id=storage.id)
+                        ] = -1.0
                 for interconnector in data.interconnector_candidates:
                     if interconnector.zone_id == zone_id:
                         coefficients[
@@ -482,9 +482,9 @@ class CapacityExpansionPlanner:
                 if candidate.technology not in {"solar", "wind"}:
                     continue
                 for t in range(data.periods):
-                    coefficients[registry.at("generation_mw", t, asset_id=candidate.id)] = (
-                        -data.weights[t]
-                    )
+                    coefficients[
+                        registry.at("generation_mw", t, asset_id=candidate.id)
+                    ] = -data.weights[t]
             rows.add(
                 coefficients,
                 -policy.renewable_share_min * total_demand_mwh,
@@ -514,9 +514,9 @@ class CapacityExpansionPlanner:
             coefficients = {}
             for candidate in data.generation_candidates:
                 for t in range(data.periods):
-                    coefficients[registry.at("generation_mw", t, asset_id=candidate.id)] = (
-                        -data.weights[t]
-                    )
+                    coefficients[
+                        registry.at("generation_mw", t, asset_id=candidate.id)
+                    ] = -data.weights[t]
             rows.add(
                 coefficients,
                 -policy.minimum_domestic_generation_share * total_demand_mwh,
@@ -549,19 +549,19 @@ class CapacityExpansionPlanner:
         coefficients: dict[int, float] = {}
         existing_firm = 0.0
         for candidate in data.generation_candidates:
-            coefficients[registry.at("generation_build_mw", asset_id=candidate.id)] = (
-                -candidate.capacity_credit
-            )
+            coefficients[
+                registry.at("generation_build_mw", asset_id=candidate.id)
+            ] = -candidate.capacity_credit
             existing_firm += candidate.existing_capacity_mw * candidate.capacity_credit
         for storage in data.storage_candidates:
-            coefficients[registry.at("storage_power_build_mw", asset_id=storage.id)] = (
-                -storage.capacity_credit
-            )
+            coefficients[
+                registry.at("storage_power_build_mw", asset_id=storage.id)
+            ] = -storage.capacity_credit
             existing_firm += storage.existing_power_mw * storage.capacity_credit
         for interconnector in data.interconnector_candidates:
-            coefficients[registry.at("interconnector_build_mw", asset_id=interconnector.id)] = (
-                -interconnector.capacity_credit
-            )
+            coefficients[
+                registry.at("interconnector_build_mw", asset_id=interconnector.id)
+            ] = -interconnector.capacity_credit
             existing_firm += interconnector.existing_capacity_mw * interconnector.capacity_credit
         coefficients[-1] = -existing_firm
         return coefficients
@@ -918,9 +918,7 @@ class _PreparedProblem:
             for candidate in problem.interconnector_candidates
         }
         _validate_candidates(problem)
-        weighted_demand = float(
-            sum(np.dot(values, weights) for values in demand_by_zone.values())
-        )
+        weighted_demand = float(sum(np.dot(values, weights) for values in demand_by_zone.values()))
         aggregate_demand = np.sum(
             np.vstack(list(demand_by_zone.values())),
             axis=0,

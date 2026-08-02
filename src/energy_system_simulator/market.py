@@ -92,11 +92,7 @@ class MarketAnalyzer:
             sum(settlement.make_whole_payment_eur for settlement in generator_settlements)
         )
         residual = (
-            consumer_payment
-            - generator_energy
-            - import_revenue
-            - congestion_rent
-            - make_whole
+            consumer_payment - generator_energy - import_revenue - congestion_rent - make_whole
         )
         return MarketSettlement(
             prices=prices,
@@ -215,9 +211,7 @@ class MarketAnalyzer:
                     t * len(problem.network.bus_ids) : (t + 1) * len(problem.network.bus_ids)
                 ]
                 period_prices = row_duals[period_rows] / dt
-                energy_component = float(
-                    period_prices[problem.network.bus_ids.index(slack_bus)]
-                )
+                energy_component = float(period_prices[problem.network.bus_ids.index(slack_bus)])
                 system_price[t] = energy_component
                 for bus_id, price in zip(problem.network.bus_ids, period_prices, strict=True):
                     records.append(

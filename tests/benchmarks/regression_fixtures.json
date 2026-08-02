@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "fixtures": [
+    {
+      "id": "baseline_0_1_0",
+      "component": "end_to_end_dispatch",
+      "risk": "deterministic example output drift",
+      "path": "tests/fixtures/baseline_0_1_0.json",
+      "covered_by": "tests/test_baseline_comparison.py"
+    },
+    {
+      "id": "subhourly_thermal_energy_cost",
+      "component": "time_step_scaling",
+      "risk": "thermal MWh and cost scaling across subhourly periods",
+      "path": "tests/test_time_state_regressions.py",
+      "covered_by": "tests/test_time_state_regressions.py"
+    },
+    {
+      "id": "subhourly_ramp_limit",
+      "component": "time_step_scaling",
+      "risk": "MW per hour ramp limits not scaled by dispatch interval",
+      "path": "tests/test_time_state_regressions.py",
+      "covered_by": "tests/test_time_state_regressions.py"
+    },
+    {
+      "id": "battery_state_throughput_scaling",
+      "component": "storage",
+      "risk": "state of charge and throughput costs not scaled by interval duration",
+      "path": "tests/test_time_state_regressions.py",
+      "covered_by": "tests/test_time_state_regressions.py"
+    },
+    {
+      "id": "terminal_commitment_residual",
+      "component": "unit_commitment",
+      "risk": "minimum-up obligations lost at horizon boundary",
+      "path": "examples/stress/cases.json",
+      "covered_by": "tests/test_stress_cases.py"
+    },
+    {
+      "id": "invalid_transition_ramp",
+      "component": "configuration_validation",
+      "risk": "startup ramp lower than minimum output accepted as feasible",
+      "path": "examples/stress/cases.json",
+      "covered_by": "tests/test_stress_cases.py"
+    }
+  ]
+}
