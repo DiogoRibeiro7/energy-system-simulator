@@ -29,6 +29,7 @@ make verification
 make benchmark
 poetry run python scripts/benchmark_scaling.py
 make baseline
+make compare-outputs
 make release-metadata
 make version-metadata
 make editable-smoke

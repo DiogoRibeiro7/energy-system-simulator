@@ -175,6 +175,8 @@ Mathematical verification cases and CI benchmark budgets are documented in
 [`docs/verification.md`](docs/verification.md).
 Solver backend capabilities, LP export, and scaling benchmarks are documented in
 [`docs/solver-backends.md`](docs/solver-backends.md).
+Versioned output tables, diagnostics, reports, and output comparison are documented in
+[`docs/reporting.md`](docs/reporting.md).
 
 See [docs/development.md](docs/development.md) for clean-checkout, editable
 install, and wheel-install smoke workflows.

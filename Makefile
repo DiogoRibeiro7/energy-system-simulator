@@ -1,4 +1,4 @@
-.PHONY: install format lint typecheck test validate simulate stress verification check-example-data benchmark scaling-benchmark baseline release-metadata version-metadata package editable-smoke wheel-smoke verify clean
+.PHONY: install format lint typecheck test validate simulate stress verification check-example-data benchmark scaling-benchmark baseline compare-outputs release-metadata version-metadata package editable-smoke wheel-smoke verify clean
 
 install:
 	poetry install
@@ -39,6 +39,9 @@ scaling-benchmark:
 baseline:
 	poetry run python scripts/compare_baseline.py
 
+compare-outputs:
+	poetry run python scripts/compare_outputs.py outputs/example outputs/example --output outputs/comparison.md
+
 release-metadata:
 	poetry run python scripts/validate_licensing.py
 
@@ -54,7 +57,7 @@ editable-smoke:
 wheel-smoke: package
 	poetry run python scripts/smoke_wheel_install.py
 
-verify: format lint typecheck check-example-data test validate simulate stress verification benchmark baseline release-metadata version-metadata editable-smoke wheel-smoke
+verify: format lint typecheck check-example-data test validate simulate compare-outputs stress verification benchmark baseline release-metadata version-metadata editable-smoke wheel-smoke
 
 clean:
 	rm -rf outputs .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage
