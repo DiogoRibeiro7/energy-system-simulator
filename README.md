@@ -26,6 +26,7 @@ The model is designed for research, teaching, and policy experiments. It uses ex
 - Renewable curtailment and involuntary load shedding.
 - Mixed-integer optimisation using `scipy.optimize.milp`.
 - Rolling-horizon simulation with deterministic checkpoint resume.
+- Sequential Monte Carlo reliability studies with seeded outage trajectories.
 - CSV results, JSON summary metrics, and diagnostic plots.
 - A small DC power-flow module for network experiments.
 
@@ -63,7 +64,8 @@ energy-system-simulator/
 Renewable model details, validation rules, and example figure generation are
 documented in `docs/renewable-models.md`.
 Rolling-horizon configuration and state-transfer behaviour are documented in
-`docs/rolling-horizon.md`.
+`docs/rolling-horizon.md`. Probabilistic adequacy studies are documented in
+`docs/reliability.md`.
 
 ## Requirements
 

@@ -29,6 +29,17 @@ from energy_system_simulator.simulation.assets import (
 
 
 @dataclass(frozen=True)
+class AvailabilityOverrides:
+    """Time-varying availability multipliers injected by scenario layers."""
+
+    thermal: dict[str, FloatArray]
+    renewable: dict[str, FloatArray]
+    storage: dict[str, FloatArray]
+    lines: dict[str, FloatArray]
+    imports: FloatArray | None = None
+
+
+@dataclass(frozen=True)
 class SimulationResult:
     """Complete simulation output and aggregate metrics."""
 
@@ -55,8 +66,13 @@ class SimulationResult:
 class SimulationEngine:
     """Coordinate data loading, generation models, dispatch, and accounting."""
 
-    def __init__(self, config: ModelConfig) -> None:
+    def __init__(
+        self,
+        config: ModelConfig,
+        availability_overrides: AvailabilityOverrides | None = None,
+    ) -> None:
         self.config = config
+        self.availability_overrides = availability_overrides
 
     def run(self) -> SimulationResult:
         """Execute the configured simulation."""
@@ -69,6 +85,7 @@ class SimulationEngine:
         """Execute one optimisation over the provided data frame."""
         registry = self._resolve_assets()
         renewable = self._calculate_renewable_availability(registry, data)
+        renewable = self._apply_renewable_overrides(renewable)
         demand = self._calculate_demand(registry, data)
         network = DistributionNetwork(self.config.network)
         distribution = network.prepare_demand(demand)
@@ -746,6 +763,42 @@ class SimulationEngine:
     ) -> RenewableAvailability:
         return registry.renewable_availability(data)
 
+    def _apply_renewable_overrides(
+        self,
+        renewable: RenewableAvailability,
+    ) -> RenewableAvailability:
+        if self.availability_overrides is None or not self.availability_overrides.renewable:
+            return renewable
+        values: dict[str, FloatArray] = {}
+        periods = len(renewable.aggregate_mw)
+        for asset_id, asset_values in renewable.by_asset_mw.items():
+            raw_factor = self.availability_overrides.renewable.get(asset_id)
+            factor = (
+                None
+                if raw_factor is None
+                else self._availability_factor(asset_id, raw_factor, periods)
+            )
+            values[asset_id] = asset_values if factor is None else asset_values * factor
+        aggregate = np.asarray(
+            np.sum(np.vstack(list(values.values())), axis=0, dtype=np.float64),
+            dtype=np.float64,
+        )
+        table = renewable.asset_table.table.copy()
+        value_variables = {"available_mw", "ac_potential_mw", "gross_potential_mw"}
+        for asset_id, raw_factor in self.availability_overrides.renewable.items():
+            factor = self._availability_factor(asset_id, raw_factor, periods)
+            mask = (table["asset_id"] == asset_id) & (table["variable"].isin(value_variables))
+            if mask.any():
+                repeats = int(mask.sum() / periods)
+                table.loc[mask, "value"] = table.loc[mask, "value"].to_numpy(
+                    dtype=np.float64
+                ) * np.tile(factor, repeats)
+        return RenewableAvailability(
+            asset_table=AssetTimeSeries(table),
+            by_asset_mw=values,
+            aggregate_mw=aggregate,
+        )
+
     def _calculate_demand(self, registry: AssetRegistry, data: pd.DataFrame) -> FloatArray:
         return registry.demand_mw(data)
 
@@ -757,17 +810,63 @@ class SimulationEngine:
         gross_demand_mw: FloatArray,
         demand_profiles_mw: dict[str, FloatArray] | None,
     ) -> DispatchResult:
+        thermal_factors = self._merge_availability_overrides(
+            registry.thermal_availability_factors(data),
+            self.availability_overrides.thermal if self.availability_overrides is not None else {},
+        )
+        storage_factors = self._merge_availability_overrides(
+            registry.storage_availability_factors(data),
+            self.availability_overrides.storage if self.availability_overrides is not None else {},
+        )
+        line_factors = self._merge_availability_overrides(
+            self._line_availability_factors(data),
+            self.availability_overrides.lines if self.availability_overrides is not None else {},
+        )
         return UnitCommitment(self.config).solve(
             renewable.aggregate_mw,
             gross_demand_mw,
-            thermal_availability_factors=registry.thermal_availability_factors(data),
+            thermal_availability_factors=thermal_factors,
             fuel_price_series=self._fuel_price_series(data),
-            storage_availability_factors=registry.storage_availability_factors(data),
+            storage_availability_factors=storage_factors,
             hydro_inflows_mw=registry.hydro_inflows_mw(data),
             demand_profiles_mw=demand_profiles_mw,
             renewable_availability_by_asset_mw=renewable.by_asset_mw,
-            line_availability_factors=self._line_availability_factors(data),
+            line_availability_factors=line_factors,
+            import_availability_factors=(
+                self.availability_overrides.imports
+                if self.availability_overrides is not None
+                else None
+            ),
         )
+
+    @staticmethod
+    def _merge_availability_overrides(
+        base: dict[str, FloatArray],
+        overrides: dict[str, FloatArray],
+    ) -> dict[str, FloatArray]:
+        merged = dict(base)
+        for asset_id, factor in overrides.items():
+            if asset_id in merged:
+                factor = SimulationEngine._availability_factor(
+                    asset_id, factor, len(merged[asset_id])
+                )
+                merged[asset_id] = merged[asset_id] * factor
+            else:
+                merged[asset_id] = factor
+        return merged
+
+    @staticmethod
+    def _availability_factor(asset_id: str, factor: FloatArray, periods: int) -> FloatArray:
+        values = np.asarray(factor, dtype=np.float64)
+        if values.shape != (periods,):
+            raise ValueError(
+                f"Availability override for {asset_id!r} must match simulation horizon"
+            )
+        if np.any(~np.isfinite(values)) or np.any((values < 0.0) | (values > 1.0)):
+            raise ValueError(
+                f"Availability override for {asset_id!r} must contain finite values in [0, 1]"
+            )
+        return values
 
     def _source_side_demand_profiles(
         self,

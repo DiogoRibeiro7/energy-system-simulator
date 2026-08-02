@@ -219,6 +219,7 @@ class FormulationProblem:
     storage_availability_factor: dict[str, FloatArray]
     hydro_inflow_mw: dict[str, FloatArray]
     fuel_prices_eur_per_mwh_thermal: dict[str, FloatArray]
+    import_capacity_available_mw: FloatArray
     network: NodalNetwork
     reserves: ReserveModel
     registry: VariableRegistry
@@ -320,6 +321,7 @@ class UnitCommitment:
         demand_profiles_mw: Mapping[str, npt.ArrayLike] | None = None,
         renewable_availability_by_asset_mw: Mapping[str, npt.ArrayLike] | None = None,
         line_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
+        import_availability_factors: npt.ArrayLike | None = None,
     ) -> FormulationProblem:
         """Build the MILP formulation without solving it."""
         renewable = np.asarray(renewable_available_mw, dtype=np.float64)
@@ -362,6 +364,7 @@ class UnitCommitment:
         )
         hydro_inflow = self._hydro_inflows(hydro_units, periods, hydro_inflows_mw or {})
         fuel_prices = self._fuel_prices(periods, fuel_price_series or {})
+        import_capacity = self._import_capacity_available(periods, import_availability_factors)
         reserves = self._reserve_model(renewable, demand)
         registry = self._variable_registry(
             periods,
@@ -394,6 +397,7 @@ class UnitCommitment:
             demand_profiles,
             storage_availability,
             renewable_by_asset,
+            import_capacity,
             network,
             reserves,
         )
@@ -411,6 +415,7 @@ class UnitCommitment:
             network,
             reserves,
             storage_availability,
+            import_capacity,
         )
 
         integer_variables = int(np.count_nonzero(integrality))
@@ -441,6 +446,7 @@ class UnitCommitment:
             storage_availability_factor=storage_availability,
             hydro_inflow_mw=hydro_inflow,
             fuel_prices_eur_per_mwh_thermal=fuel_prices,
+            import_capacity_available_mw=import_capacity,
             network=network,
             reserves=reserves,
             registry=registry,
@@ -458,6 +464,7 @@ class UnitCommitment:
         demand_profiles_mw: Mapping[str, npt.ArrayLike] | None = None,
         renewable_availability_by_asset_mw: Mapping[str, npt.ArrayLike] | None = None,
         line_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
+        import_availability_factors: npt.ArrayLike | None = None,
     ) -> DispatchResult:
         """Solve unit commitment over the full input horizon."""
         problem = self.build_formulation(
@@ -470,6 +477,7 @@ class UnitCommitment:
             demand_profiles_mw,
             renewable_availability_by_asset_mw,
             line_availability_factors,
+            import_availability_factors,
         )
         return self.solve_formulation(problem)
 
@@ -824,6 +832,20 @@ class UnitCommitment:
             result[unit.id] = values
         return result
 
+    def _import_capacity_available(
+        self,
+        periods: int,
+        import_availability_factors: npt.ArrayLike | None,
+    ) -> FloatArray:
+        factor = np.ones(periods, dtype=np.float64)
+        if import_availability_factors is not None:
+            factor = np.asarray(import_availability_factors, dtype=np.float64)
+            if factor.shape != (periods,):
+                raise ValueError("Import availability factors must match dispatch horizon")
+            if np.any(~np.isfinite(factor)) or np.any((factor < 0.0) | (factor > 1.0)):
+                raise ValueError("Import availability factors must be finite values in [0, 1]")
+        return (self.config.imports.maximum_power_mw * factor).astype(np.float64)
+
     def _thermal_capacity_available(
         self,
         units: tuple[ThermalUnit, ...],
@@ -1104,6 +1126,7 @@ class UnitCommitment:
         demand_profiles: dict[str, FloatArray],
         storage_availability: dict[str, FloatArray],
         renewable_available_by_asset: dict[str, FloatArray],
+        import_capacity_available_mw: FloatArray,
         network: NodalNetwork,
         reserves: ReserveModel,
     ) -> tuple[Bounds, npt.NDArray[np.int_]]:
@@ -1113,7 +1136,7 @@ class UnitCommitment:
         integrality = registry.integrality()
         for t in range(periods):
             upper[registry.at("renewable_used_mw", t)] = renewable[t]
-            upper[registry.at("imports_mw", t)] = self.config.imports.maximum_power_mw
+            upper[registry.at("imports_mw", t)] = import_capacity_available_mw[t]
             upper[registry.at("source_load_shed_mw", t)] = 0.0 if demand_units else demand[t]
             if network.enabled:
                 for renewable_id, values in renewable_available_by_asset.items():
@@ -1256,6 +1279,7 @@ class UnitCommitment:
         network: NodalNetwork,
         reserves: ReserveModel,
         storage_availability: dict[str, FloatArray],
+        import_capacity_available_mw: FloatArray,
     ) -> tuple[LinearConstraint, dict[str, int]]:
         builder = _ConstraintBuilder(registry.size)
         if network.enabled:
@@ -1309,6 +1333,7 @@ class UnitCommitment:
                 demand_profiles,
                 thermal_capacity_available,
                 storage_availability,
+                import_capacity_available_mw,
                 reserves,
             )
         self._add_terminal_soc_constraints(builder, registry, demand.size, storage_units)
@@ -1440,6 +1465,7 @@ class UnitCommitment:
         demand_profiles: dict[str, FloatArray],
         thermal_capacity_available: dict[str, FloatArray],
         storage_availability: dict[str, FloatArray],
+        import_capacity_available_mw: FloatArray,
         reserves: ReserveModel,
     ) -> None:
         config = self.config.reserves
@@ -1572,7 +1598,7 @@ class UnitCommitment:
                 builder.add(
                     {imports: 1.0, import_up: 1.0},
                     -np.inf,
-                    self.config.imports.maximum_power_mw,
+                    import_capacity_available_mw[t],
                     component="reserve_import_up_headroom",
                 )
                 builder.add(
