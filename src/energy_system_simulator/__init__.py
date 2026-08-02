@@ -1,5 +1,15 @@
-"""Hybrid electricity-system simulation package."""
+"""Public Python API for hybrid electricity-system simulation."""
 
+from energy_system_simulator.api import (
+    build_model,
+    ensure_writable_output_directory,
+    load_data,
+    load_model_config,
+    run_simulation,
+    solve,
+    validate_data,
+    validate_model_config,
+)
 from energy_system_simulator.config import ModelConfig, load_config
 from energy_system_simulator.data_adapters import (
     DataProvenance,
@@ -11,6 +21,12 @@ from energy_system_simulator.data_adapters import (
     build_canonical_snapshot,
     run_data_preparation_spec,
     validate_canonical_frame,
+)
+from energy_system_simulator.exceptions import (
+    ConfigurationError,
+    DataValidationError,
+    EnergySystemError,
+    OptimisationError,
 )
 from energy_system_simulator.market import GeneratorSettlement, MarketAnalyzer, MarketSettlement
 from energy_system_simulator.metadata import get_package_version
@@ -41,8 +57,11 @@ __all__ = [
     "CapacityExpansionPlanner",
     "CapacityExpansionProblem",
     "CapacityExpansionResult",
+    "ConfigurationError",
     "DataProvenance",
+    "DataValidationError",
     "DataValidationReport",
+    "EnergySystemError",
     "EuropeanDemandCsvAdapter",
     "GenerationCandidate",
     "GeneratorSettlement",
@@ -51,6 +70,7 @@ __all__ = [
     "MarketSettlement",
     "MissingDataPolicy",
     "ModelConfig",
+    "OptimisationError",
     "PlanningBlock",
     "PlanningPolicy",
     "ScenarioDefinition",
@@ -65,11 +85,19 @@ __all__ = [
     "WeatherCsvAdapter",
     "apply_overrides",
     "build_canonical_snapshot",
+    "build_model",
+    "ensure_writable_output_directory",
     "finite_difference_sensitivity",
     "load_config",
+    "load_data",
+    "load_model_config",
     "run_data_preparation_spec",
     "run_experiment_file",
+    "run_simulation",
+    "solve",
     "stable_scenario_id",
     "validate_canonical_frame",
+    "validate_data",
+    "validate_model_config",
 ]
 __version__ = get_package_version()

@@ -19,7 +19,7 @@ validate:
 	poetry run energy-sim validate --config configs/example.yaml
 
 simulate:
-	poetry run energy-sim simulate --config configs/example.yaml
+	poetry run energy-sim simulate --config configs/example.yaml --overwrite
 
 stress:
 	poetry run python scripts/run_stress_cases.py

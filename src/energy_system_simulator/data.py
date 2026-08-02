@@ -24,6 +24,11 @@ def load_input_data(path: str | Path, time_step_hours: float) -> pd.DataFrame:
         raise DataValidationError(f"Input CSV does not exist: {input_path}")
 
     frame = pd.read_csv(input_path)
+    return validate_input_frame(frame, time_step_hours)
+
+
+def validate_input_frame(frame: pd.DataFrame, time_step_hours: float) -> pd.DataFrame:
+    """Return a validated copy of an in-memory simulator input table."""
     missing = [column for column in REQUIRED_COLUMNS if column not in frame.columns]
     if missing:
         raise DataValidationError(f"Missing required columns: {missing}")

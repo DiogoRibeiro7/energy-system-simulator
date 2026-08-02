@@ -1,0 +1,73 @@
+# CLI and Python API
+
+The supported command-line entry point is `energy-sim`.
+
+## Commands
+
+- `validate --config CONFIG`: validate configuration and referenced input data.
+- `validate-config --config CONFIG`: validate configuration only.
+- `validate-data --config CONFIG`: validate referenced input data.
+- `migrate-config --config CONFIG [--output PATH]`: migrate legacy configs.
+- `simulate --config CONFIG`: run deterministic or configured rolling simulation.
+- `rolling-horizon --config CONFIG`: run with `rolling_horizon.enabled=true`.
+- `run-scenarios --experiment EXPERIMENT`: run a scenario experiment.
+- `scenario-experiment --experiment EXPERIMENT`: alias for scenario experiments.
+- `reliability-study --config CONFIG`: run a sequential Monte Carlo reliability study.
+- `capacity-planning --problem PROBLEM`: run a capacity-expansion problem YAML.
+- `compare-outputs OUT1 OUT2 --output REPORT.md`: compare output directories.
+- `export-model --config CONFIG --output MODEL.lp`: export formulation LP.
+- `export-formulation --config CONFIG --output MODEL.lp`: alias for formulation export.
+- `prepare-data --spec SPEC`: build a canonical input snapshot.
+- `capabilities`: show version, commands, exit codes, and solver backend.
+
+Use `--dry-run` with `simulate` or `rolling-horizon` to validate inputs and
+report formulation dimensions without calling the solver. Use `--set PATH=VALUE`
+for command-line overrides; paths are validated against the typed configuration
+and recorded in `manifest.json`.
+
+Output directories and files are not overwritten unless `--overwrite` or
+`--resume` is supplied.
+
+## Exit Codes
+
+| Code | Meaning |
+|---:|---|
+| 0 | Success |
+| 2 | Invalid configuration |
+| 3 | Invalid data |
+| 4 | Infeasible model |
+| 5 | Solver or execution failure |
+| 6 | Partial feasible result accepted by policy |
+
+## Python API
+
+The package root exports the supported library lifecycle:
+
+```python
+import pandas as pd
+import energy_system_simulator as ess
+
+config = ess.load_model_config("configs/example.yaml")
+data = pd.read_csv("data/example_hourly.csv").head(24)
+
+ess.validate_model_config(config)
+validated = ess.validate_data(data, time_step_hours=config.simulation.time_step_hours)
+problem = ess.build_model(config, validated)
+result = ess.solve(config, validated)
+```
+
+For a file-based run with standard outputs:
+
+```python
+import energy_system_simulator as ess
+
+result = ess.run_simulation(
+    "configs/example.yaml",
+    create_plots=False,
+    overwrite=True,
+)
+```
+
+Public exceptions inherit from `EnergySystemError`; configuration, data, and
+optimisation failures use `ConfigurationError`, `DataValidationError`, and
+`OptimisationError`.

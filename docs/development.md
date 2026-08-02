@@ -15,7 +15,7 @@ make verify
 `make verify` runs formatting, linting, strict type checking, deterministic data
 validation, tests with coverage, example validation, example simulation, stress
 cases, mathematical verification benchmarks, example benchmarking, baseline
-comparison, release metadata validation, version metadata validation,
+comparison, output comparison, release metadata validation, version metadata validation,
 editable-install smoke checks, package build, and wheel-install smoke checks.
 
 ## Focused Commands
@@ -25,6 +25,7 @@ make install
 make test
 make validate
 make simulate
+poetry run energy-sim simulate --config configs/example.yaml --dry-run
 make verification
 make benchmark
 poetry run python scripts/benchmark_scaling.py

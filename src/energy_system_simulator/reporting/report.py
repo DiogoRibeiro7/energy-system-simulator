@@ -44,6 +44,7 @@ def write_outputs(
     config: ModelConfig | None = None,
     config_path: str | Path | None = None,
     create_plots: bool = True,
+    command_line_overrides: Mapping[str, Any] | None = None,
 ) -> None:
     """Write simulation time series, summary metrics, and optional plots."""
     output = Path(output_directory)
@@ -74,7 +75,13 @@ def write_outputs(
         encoding="utf-8",
     )
     if config is not None:
-        _write_manifest(result, output / "manifest.json", config, config_path)
+        _write_manifest(
+            result,
+            output / "manifest.json",
+            config,
+            config_path,
+            command_line_overrides=command_line_overrides,
+        )
     if create_plots:
         _write_plots(result, output)
     _write_markdown_report(result, output, diagnostics, create_plots=create_plots)
@@ -269,6 +276,8 @@ def _write_manifest(
     path: Path,
     config: ModelConfig,
     config_path: str | Path | None,
+    *,
+    command_line_overrides: Mapping[str, Any] | None = None,
 ) -> None:
     manifest = {
         "package_version": get_package_version(),
@@ -279,6 +288,7 @@ def _write_manifest(
         "input_file_sha256": _sha256(config.paths.input_csv),
         "configuration_file": str(Path(config_path).resolve()) if config_path else None,
         "configuration_sha256": _sha256(Path(config_path)) if config_path else None,
+        "command_line_overrides": dict(command_line_overrides or {}),
         "solver": {
             "name": "scipy.optimize.milp",
             "time_limit_seconds": config.simulation.solver_time_limit_seconds,

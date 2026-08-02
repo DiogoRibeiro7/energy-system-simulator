@@ -94,34 +94,34 @@ poetry install
 
 ```bash
 poetry run energy-sim validate --config configs/example.yaml
-poetry run energy-sim simulate --config configs/example.yaml
+poetry run energy-sim simulate --config configs/example.yaml --overwrite
 ```
 
 Run the schema v2 hydro portfolio example:
 
 ```bash
 poetry run energy-sim validate --config configs/portfolio_hydro.yaml
-poetry run energy-sim simulate --config configs/portfolio_hydro.yaml
+poetry run energy-sim simulate --config configs/portfolio_hydro.yaml --overwrite
 ```
 
 Run the demand-response portfolio example:
 
 ```bash
 poetry run energy-sim validate --config configs/portfolio_demand_response.yaml
-poetry run energy-sim simulate --config configs/portfolio_demand_response.yaml
+poetry run energy-sim simulate --config configs/portfolio_demand_response.yaml --overwrite
 ```
 
 Run the nodal DC network example:
 
 ```bash
 poetry run energy-sim validate --config configs/portfolio_nodal_three_bus.yaml
-poetry run energy-sim simulate --config configs/portfolio_nodal_three_bus.yaml
+poetry run energy-sim simulate --config configs/portfolio_nodal_three_bus.yaml --overwrite
 ```
 
 Equivalent module invocation:
 
 ```bash
-poetry run python -m energy_system_simulator simulate --config configs/example.yaml
+poetry run python -m energy_system_simulator simulate --config configs/example.yaml --overwrite
 ```
 
 Results are written to `outputs/example/`:
@@ -177,6 +177,8 @@ Solver backend capabilities, LP export, and scaling benchmarks are documented in
 [`docs/solver-backends.md`](docs/solver-backends.md).
 Versioned output tables, diagnostics, reports, and output comparison are documented in
 [`docs/reporting.md`](docs/reporting.md).
+CLI commands, exit codes, dry-run behavior, and the public Python API are documented in
+[`docs/api-cli.md`](docs/api-cli.md).
 
 See [docs/development.md](docs/development.md) for clean-checkout, editable
 install, and wheel-install smoke workflows.

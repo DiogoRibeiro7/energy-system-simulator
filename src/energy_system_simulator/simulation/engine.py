@@ -10,9 +10,10 @@ import pandas as pd
 
 from energy_system_simulator.config import ModelConfig, StorageUnitConfig
 from energy_system_simulator.constants import DEFAULT_NUMERICAL_POLICY
-from energy_system_simulator.data import load_input_data
+from energy_system_simulator.data import load_input_data, validate_input_frame
 from energy_system_simulator.dispatch import (
     DispatchResult,
+    FormulationProblem,
     FormulationStatistics,
     TerminalCommitmentState,
     UnitCommitment,
@@ -80,6 +81,27 @@ class SimulationEngine:
         if self.config.rolling_horizon.enabled:
             return self._run_rolling_horizon(data)
         return self._run_full_horizon_data(data)
+
+    def build_model(self, data: pd.DataFrame | None = None) -> FormulationProblem:
+        """Build the deterministic dispatch optimisation model without solving it."""
+        frame = (
+            self._load_data()
+            if data is None
+            else validate_input_frame(data, self.config.simulation.time_step_hours)
+        )
+        registry = self._resolve_assets()
+        renewable = self._apply_renewable_overrides(
+            self._calculate_renewable_availability(registry, frame)
+        )
+        demand = self._calculate_demand(registry, frame)
+        distribution = DistributionNetwork(self.config.network).prepare_demand(demand)
+        return self._build_dispatch_problem(
+            registry,
+            frame,
+            renewable,
+            distribution.gross_demand_mw,
+            self._source_side_demand_profiles(registry, frame, demand, distribution),
+        )
 
     def _run_full_horizon_data(self, data: pd.DataFrame) -> SimulationResult:
         """Execute one optimisation over the provided data frame."""
@@ -810,6 +832,23 @@ class SimulationEngine:
         gross_demand_mw: FloatArray,
         demand_profiles_mw: dict[str, FloatArray] | None,
     ) -> DispatchResult:
+        problem = self._build_dispatch_problem(
+            registry,
+            data,
+            renewable,
+            gross_demand_mw,
+            demand_profiles_mw,
+        )
+        return UnitCommitment(self.config).solve_formulation(problem)
+
+    def _build_dispatch_problem(
+        self,
+        registry: AssetRegistry,
+        data: pd.DataFrame,
+        renewable: RenewableAvailability,
+        gross_demand_mw: FloatArray,
+        demand_profiles_mw: dict[str, FloatArray] | None,
+    ) -> FormulationProblem:
         thermal_factors = self._merge_availability_overrides(
             registry.thermal_availability_factors(data),
             self.availability_overrides.thermal if self.availability_overrides is not None else {},
@@ -822,7 +861,7 @@ class SimulationEngine:
             self._line_availability_factors(data),
             self.availability_overrides.lines if self.availability_overrides is not None else {},
         )
-        return UnitCommitment(self.config).solve(
+        return UnitCommitment(self.config).build_formulation(
             renewable.aggregate_mw,
             gross_demand_mw,
             thermal_availability_factors=thermal_factors,
