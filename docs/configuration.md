@@ -66,6 +66,27 @@ Wind generators default to `time_series_key: wind_speed_m_s`. Demand entries
 default to `time_series_key: demand_mw`. Referenced columns are validated after
 the input CSV is loaded.
 
+Renewable generators support `availability_model: simple` by default. Solar may
+also use `availability_model: detailed` with optional `dc_capacity_mw`,
+`inverter_ac_capacity_mw`, `module_performance_ratio`,
+`inverter_efficiency`, `degradation_factor`, `availability_factor`,
+`availability_factor_key`, `maintenance_factor_key`, `soiling_loss_fraction`,
+`soiling_loss_key`, `snow_loss_fraction`, and `snow_loss_key`. Plane-of-array
+irradiance is assumed unless
+`irradiance_basis: global_horizontal` is paired with
+`transposition_model: isotropic_fixed_tilt` and `tilt_degrees`.
+
+Wind may use `availability_model: detailed` or `availability_model: power_curve`.
+Detailed wind fields include `measurement_height_m`,
+`hub_height_m`, `wind_speed_adjustment`, `wind_shear_exponent`,
+`roughness_length_m`, `air_density_correction`, `air_temperature_key`,
+`air_pressure_key`, `wake_loss_fraction`, `wake_loss_key`,
+`electrical_loss_fraction`, and `electrical_loss_key`. Power-curve mode also
+accepts `turbine_count`, `turbine_rated_capacity_mw`, and inline `power_curve`
+points with `wind_speed_m_s` and `power_mw`. Curve speeds must be strictly
+increasing, and runtime wind speeds outside the configured curve range are
+rejected.
+
 Thermal generators may set:
 
 - `must_run`: optional boolean. When true, the unit is committed in every period.

@@ -36,7 +36,28 @@ factor used for the aggregate dispatch input.
 ## Renewable generation
 
 Let \(K^{\mathrm{ren}}\) be the configured renewable asset set. Each asset \(k\)
-has exogenous availability \(a_{k,t}\) from its configured weather columns.
+has exogenous availability \(a_{k,t}\) from its configured weather columns and
+asset derating settings. The simple solar and wind modes preserve the original
+deterministic models. Detailed solar reports DC potential, AC potential,
+clipping, temperature, and other derating losses. Detailed wind reports
+hub-height speed, gross potential, high-wind shutdown, wake, electrical, and
+availability losses. Tabulated wind curves are interpolated deterministically
+inside the validated curve range.
+
+For a detailed renewable profile, final availability is reconciled from gross
+potential by explicit losses:
+
+\[
+a_{k,t}=g_{k,t}
+-\lambda^{\mathrm{clip/temp/shutdown}}_{k,t}
+-\lambda^{\mathrm{wake/electrical/availability}}_{k,t}.
+\]
+
+All loss terms are non-negative, configured as transparent scalar factors or
+validated input-column schedules. The implementation rejects non-finite values,
+negative weather inputs, factors outside \([0,1]\), and wind speeds outside a
+tabulated power-curve range.
+
 Available renewable production passed to the current aggregate dispatch
 formulation is:
 

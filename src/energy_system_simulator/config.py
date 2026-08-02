@@ -200,13 +200,46 @@ LIST_SECTION_KEYS = {
         "kind",
         "bus_id",
         "capacity_mw",
+        "availability_model",
+        "dc_capacity_mw",
+        "inverter_ac_capacity_mw",
+        "inverter_efficiency",
+        "degradation_factor",
+        "availability_factor",
+        "availability_factor_key",
+        "maintenance_factor_key",
+        "irradiance_basis",
+        "transposition_model",
+        "tilt_degrees",
+        "surface_azimuth_degrees",
+        "albedo",
+        "soiling_loss_fraction",
+        "soiling_loss_key",
+        "snow_loss_fraction",
+        "snow_loss_key",
         "performance_ratio",
+        "module_performance_ratio",
         "reference_irradiance_w_m2",
         "temperature_coefficient_per_c",
         "nominal_operating_cell_temperature_c",
         "cut_in_speed_m_s",
         "rated_speed_m_s",
         "cut_out_speed_m_s",
+        "measurement_height_m",
+        "hub_height_m",
+        "wind_speed_adjustment",
+        "wind_shear_exponent",
+        "roughness_length_m",
+        "air_density_correction",
+        "air_temperature_key",
+        "air_pressure_key",
+        "turbine_count",
+        "turbine_rated_capacity_mw",
+        "power_curve",
+        "wake_loss_fraction",
+        "wake_loss_key",
+        "electrical_loss_fraction",
+        "electrical_loss_key",
         "time_series_key",
         "ambient_temperature_key",
     },
@@ -291,6 +324,7 @@ LIST_SECTION_KEYS = {
 LIST_OPTIONAL_KEYS = {
     "renewable_generators": {
         "performance_ratio",
+        "module_performance_ratio",
         "reference_irradiance_w_m2",
         "temperature_coefficient_per_c",
         "nominal_operating_cell_temperature_c",
@@ -298,6 +332,38 @@ LIST_OPTIONAL_KEYS = {
         "rated_speed_m_s",
         "cut_out_speed_m_s",
         "ambient_temperature_key",
+        "availability_model",
+        "dc_capacity_mw",
+        "inverter_ac_capacity_mw",
+        "inverter_efficiency",
+        "degradation_factor",
+        "availability_factor",
+        "availability_factor_key",
+        "maintenance_factor_key",
+        "irradiance_basis",
+        "transposition_model",
+        "tilt_degrees",
+        "surface_azimuth_degrees",
+        "albedo",
+        "soiling_loss_fraction",
+        "soiling_loss_key",
+        "snow_loss_fraction",
+        "snow_loss_key",
+        "measurement_height_m",
+        "hub_height_m",
+        "wind_speed_adjustment",
+        "wind_shear_exponent",
+        "roughness_length_m",
+        "air_density_correction",
+        "air_temperature_key",
+        "air_pressure_key",
+        "turbine_count",
+        "turbine_rated_capacity_mw",
+        "power_curve",
+        "wake_loss_fraction",
+        "wake_loss_key",
+        "electrical_loss_fraction",
+        "electrical_loss_key",
     },
     "thermal_generators": OPTIONAL_SECTION_KEYS["thermal"]
     | {
@@ -728,6 +794,12 @@ class WindConfig:
 
 
 @dataclass(frozen=True)
+class WindPowerCurvePointConfig:
+    wind_speed_m_s: float
+    power_mw: float
+
+
+@dataclass(frozen=True)
 class RenewableGeneratorConfig:
     id: str
     kind: Literal["solar", "wind"]
@@ -735,13 +807,46 @@ class RenewableGeneratorConfig:
     capacity_mw: float
     time_series_key: str
     ambient_temperature_key: str | None = None
+    availability_model: Literal["simple", "detailed", "power_curve"] = "simple"
+    dc_capacity_mw: float | None = None
+    inverter_ac_capacity_mw: float | None = None
+    inverter_efficiency: float = 1.0
+    degradation_factor: float = 1.0
+    availability_factor: float = 1.0
+    availability_factor_key: str | None = None
+    maintenance_factor_key: str | None = None
+    irradiance_basis: Literal["plane_of_array", "global_horizontal"] = "plane_of_array"
+    transposition_model: Literal["none", "isotropic_fixed_tilt"] = "none"
+    tilt_degrees: float | None = None
+    surface_azimuth_degrees: float = 180.0
+    albedo: float = 0.2
+    soiling_loss_fraction: float = 0.0
+    soiling_loss_key: str | None = None
+    snow_loss_fraction: float = 0.0
+    snow_loss_key: str | None = None
     performance_ratio: float | None = None
+    module_performance_ratio: float | None = None
     reference_irradiance_w_m2: float | None = None
     temperature_coefficient_per_c: float | None = None
     nominal_operating_cell_temperature_c: float | None = None
     cut_in_speed_m_s: float | None = None
     rated_speed_m_s: float | None = None
     cut_out_speed_m_s: float | None = None
+    measurement_height_m: float | None = None
+    hub_height_m: float | None = None
+    wind_speed_adjustment: Literal["none", "power_law", "logarithmic"] = "none"
+    wind_shear_exponent: float = 1.0 / 7.0
+    roughness_length_m: float | None = None
+    air_density_correction: bool = False
+    air_temperature_key: str | None = None
+    air_pressure_key: str | None = None
+    turbine_count: int | None = None
+    turbine_rated_capacity_mw: float | None = None
+    power_curve: tuple[WindPowerCurvePointConfig, ...] = ()
+    wake_loss_fraction: float = 0.0
+    wake_loss_key: str | None = None
+    electrical_loss_fraction: float = 0.0
+    electrical_loss_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1532,6 +1637,26 @@ def _parse_renewable_generator(
     kind = _string_at(item, "kind", path)
     if kind not in {"solar", "wind"}:
         raise ConfigurationError(f"{path}.kind must be one of: solar, wind")
+    availability_model = _optional_string_at(item, "availability_model", "simple", path)
+    if availability_model not in {"simple", "detailed", "power_curve"}:
+        raise ConfigurationError(
+            f"{path}.availability_model must be one of: simple, detailed, power_curve"
+        )
+    irradiance_basis = _optional_string_at(item, "irradiance_basis", "plane_of_array", path)
+    if irradiance_basis not in {"plane_of_array", "global_horizontal"}:
+        raise ConfigurationError(
+            f"{path}.irradiance_basis must be one of: plane_of_array, global_horizontal"
+        )
+    transposition_model = _optional_string_at(item, "transposition_model", "none", path)
+    if transposition_model not in {"none", "isotropic_fixed_tilt"}:
+        raise ConfigurationError(
+            f"{path}.transposition_model must be one of: none, isotropic_fixed_tilt"
+        )
+    wind_speed_adjustment = _optional_string_at(item, "wind_speed_adjustment", "none", path)
+    if wind_speed_adjustment not in {"none", "power_law", "logarithmic"}:
+        raise ConfigurationError(
+            f"{path}.wind_speed_adjustment must be one of: none, power_law, logarithmic"
+        )
     default_key = "irradiance_w_m2" if kind == "solar" else "wind_speed_m_s"
     ambient_temperature_key = None
     if kind == "solar":
@@ -1548,7 +1673,66 @@ def _parse_renewable_generator(
         capacity_mw=_number_at(item, "capacity_mw", float, path),
         time_series_key=_optional_input_key_at(item, "time_series_key", default_key, path),
         ambient_temperature_key=ambient_temperature_key,
-        performance_ratio=_optional_number_at(item, "performance_ratio", float, 0.86, path),
+        availability_model=cast(
+            Literal["simple", "detailed", "power_curve"],
+            availability_model,
+        ),
+        dc_capacity_mw=(
+            _number_at(item, "dc_capacity_mw", float, path) if "dc_capacity_mw" in item else None
+        ),
+        inverter_ac_capacity_mw=(
+            _number_at(item, "inverter_ac_capacity_mw", float, path)
+            if "inverter_ac_capacity_mw" in item
+            else None
+        ),
+        inverter_efficiency=_optional_number_at(item, "inverter_efficiency", float, 1.0, path),
+        degradation_factor=_optional_number_at(item, "degradation_factor", float, 1.0, path),
+        availability_factor=_optional_number_at(item, "availability_factor", float, 1.0, path),
+        availability_factor_key=(
+            _input_key_at(item, "availability_factor_key", path)
+            if "availability_factor_key" in item
+            else None
+        ),
+        maintenance_factor_key=(
+            _input_key_at(item, "maintenance_factor_key", path)
+            if "maintenance_factor_key" in item
+            else None
+        ),
+        irradiance_basis=cast(
+            Literal["plane_of_array", "global_horizontal"],
+            irradiance_basis,
+        ),
+        transposition_model=cast(
+            Literal["none", "isotropic_fixed_tilt"],
+            transposition_model,
+        ),
+        tilt_degrees=(
+            _number_at(item, "tilt_degrees", float, path) if "tilt_degrees" in item else None
+        ),
+        surface_azimuth_degrees=_optional_number_at(
+            item, "surface_azimuth_degrees", float, 180.0, path
+        ),
+        albedo=_optional_number_at(item, "albedo", float, 0.2, path),
+        soiling_loss_fraction=_optional_number_at(item, "soiling_loss_fraction", float, 0.0, path),
+        soiling_loss_key=(
+            _input_key_at(item, "soiling_loss_key", path) if "soiling_loss_key" in item else None
+        ),
+        snow_loss_fraction=_optional_number_at(item, "snow_loss_fraction", float, 0.0, path),
+        snow_loss_key=(
+            _input_key_at(item, "snow_loss_key", path) if "snow_loss_key" in item else None
+        ),
+        performance_ratio=_optional_number_at(
+            item,
+            "performance_ratio",
+            float,
+            _optional_number_at(item, "module_performance_ratio", float, 0.86, path),
+            path,
+        ),
+        module_performance_ratio=(
+            _number_at(item, "module_performance_ratio", float, path)
+            if "module_performance_ratio" in item
+            else None
+        ),
         reference_irradiance_w_m2=_optional_number_at(
             item,
             "reference_irradiance_w_m2",
@@ -1573,7 +1757,83 @@ def _parse_renewable_generator(
         cut_in_speed_m_s=_optional_number_at(item, "cut_in_speed_m_s", float, 3.0, path),
         rated_speed_m_s=_optional_number_at(item, "rated_speed_m_s", float, 12.0, path),
         cut_out_speed_m_s=_optional_number_at(item, "cut_out_speed_m_s", float, 25.0, path),
+        measurement_height_m=(
+            _number_at(item, "measurement_height_m", float, path)
+            if "measurement_height_m" in item
+            else None
+        ),
+        hub_height_m=(
+            _number_at(item, "hub_height_m", float, path) if "hub_height_m" in item else None
+        ),
+        wind_speed_adjustment=cast(
+            Literal["none", "power_law", "logarithmic"],
+            wind_speed_adjustment,
+        ),
+        wind_shear_exponent=_optional_number_at(
+            item, "wind_shear_exponent", float, 1.0 / 7.0, path
+        ),
+        roughness_length_m=(
+            _number_at(item, "roughness_length_m", float, path)
+            if "roughness_length_m" in item
+            else None
+        ),
+        air_density_correction=_optional_boolean_at(item, "air_density_correction", False, path),
+        air_temperature_key=(
+            _input_key_at(item, "air_temperature_key", path)
+            if "air_temperature_key" in item
+            else None
+        ),
+        air_pressure_key=(
+            _input_key_at(item, "air_pressure_key", path) if "air_pressure_key" in item else None
+        ),
+        turbine_count=(
+            _integer_at(item, "turbine_count", path) if "turbine_count" in item else None
+        ),
+        turbine_rated_capacity_mw=(
+            _number_at(item, "turbine_rated_capacity_mw", float, path)
+            if "turbine_rated_capacity_mw" in item
+            else None
+        ),
+        power_curve=_parse_wind_power_curve(item, path),
+        wake_loss_fraction=_optional_number_at(item, "wake_loss_fraction", float, 0.0, path),
+        wake_loss_key=(
+            _input_key_at(item, "wake_loss_key", path) if "wake_loss_key" in item else None
+        ),
+        electrical_loss_fraction=_optional_number_at(
+            item, "electrical_loss_fraction", float, 0.0, path
+        ),
+        electrical_loss_key=(
+            _input_key_at(item, "electrical_loss_key", path)
+            if "electrical_loss_key" in item
+            else None
+        ),
     )
+
+
+def _parse_wind_power_curve(
+    item: Mapping[str, Any],
+    path: str,
+) -> tuple[WindPowerCurvePointConfig, ...]:
+    if "power_curve" not in item:
+        return ()
+    value = item.get("power_curve")
+    if not isinstance(value, list):
+        raise ConfigurationError(f"{path}.power_curve must be a list")
+    points: list[WindPowerCurvePointConfig] = []
+    allowed_keys = {"wind_speed_m_s", "power_mw"}
+    for index, point in enumerate(value):
+        point_path = f"{path}.power_curve[{index}]"
+        if not isinstance(point, Mapping):
+            raise ConfigurationError(f"{point_path} must be a mapping")
+        _validate_allowed_keys(point, point_path, allowed_keys)
+        _validate_required_keys(point, point_path, allowed_keys)
+        points.append(
+            WindPowerCurvePointConfig(
+                wind_speed_m_s=_number_at(point, "wind_speed_m_s", float, point_path),
+                power_mw=_number_at(point, "power_mw", float, point_path),
+            )
+        )
+    return tuple(points)
 
 
 def _parse_thermal_generator(item: Mapping[str, Any], path: str) -> ThermalGeneratorConfig:
@@ -2249,10 +2509,41 @@ def _validate_fuel_at(fuel: FuelConfig, path: str) -> None:
 
 
 def _validate_solar_generator_at(generator: RenewableGeneratorConfig, path: str) -> None:
+    if generator.availability_model == "power_curve":
+        raise ConfigurationError(f"{path}.availability_model=power_curve is only valid for wind")
+    _validate_common_renewable_derates(generator, path)
+    if generator.dc_capacity_mw is not None:
+        _check_nonnegative_at(f"{path}.dc_capacity_mw", generator.dc_capacity_mw)
+    if generator.inverter_ac_capacity_mw is not None:
+        _check_nonnegative_at(f"{path}.inverter_ac_capacity_mw", generator.inverter_ac_capacity_mw)
+    _check_fraction_at(f"{path}.inverter_efficiency", generator.inverter_efficiency)
+    if generator.inverter_efficiency == 0.0:
+        raise ConfigurationError(f"{path}.inverter_efficiency must be positive")
+    _check_fraction_at(f"{path}.degradation_factor", generator.degradation_factor)
+    _check_fraction_at(f"{path}.soiling_loss_fraction", generator.soiling_loss_fraction)
+    _check_fraction_at(f"{path}.snow_loss_fraction", generator.snow_loss_fraction)
+    _check_fraction_at(f"{path}.albedo", generator.albedo)
+    if generator.irradiance_basis == "global_horizontal":
+        if generator.transposition_model != "isotropic_fixed_tilt":
+            raise ConfigurationError(
+                f"{path}.transposition_model must be isotropic_fixed_tilt for "
+                "global_horizontal irradiance"
+            )
+        if generator.tilt_degrees is None:
+            raise ConfigurationError(f"{path}.tilt_degrees is required for transposition")
+    if generator.transposition_model == "isotropic_fixed_tilt" and generator.tilt_degrees is None:
+        raise ConfigurationError(f"{path}.tilt_degrees is required for transposition")
+    if generator.tilt_degrees is not None and not 0.0 <= generator.tilt_degrees <= 90.0:
+        raise ConfigurationError(f"{path}.tilt_degrees must be in [0, 90]")
     _check_fraction_at(
         f"{path}.performance_ratio",
         _required_float(generator.performance_ratio, path),
     )
+    if generator.module_performance_ratio is not None:
+        _check_fraction_at(
+            f"{path}.module_performance_ratio",
+            generator.module_performance_ratio,
+        )
     reference = _required_float(generator.reference_irradiance_w_m2, path)
     if reference <= 0.0:
         raise ConfigurationError(f"{path}.reference_irradiance_w_m2 must be positive")
@@ -2261,11 +2552,83 @@ def _validate_solar_generator_at(generator: RenewableGeneratorConfig, path: str)
 
 
 def _validate_wind_generator_at(generator: RenewableGeneratorConfig, path: str) -> None:
+    if generator.availability_model == "detailed" and generator.power_curve:
+        raise ConfigurationError(f"{path}.power_curve requires availability_model=power_curve")
+    _validate_common_renewable_derates(generator, path)
     cut_in = _required_float(generator.cut_in_speed_m_s, path)
     rated = _required_float(generator.rated_speed_m_s, path)
     cut_out = _required_float(generator.cut_out_speed_m_s, path)
     if not 0.0 <= cut_in < rated < cut_out:
         raise ConfigurationError(f"{path} wind speeds must satisfy cut-in < rated < cut-out")
+    _check_fraction_at(f"{path}.wake_loss_fraction", generator.wake_loss_fraction)
+    _check_fraction_at(f"{path}.electrical_loss_fraction", generator.electrical_loss_fraction)
+    if generator.measurement_height_m is not None and generator.measurement_height_m <= 0.0:
+        raise ConfigurationError(f"{path}.measurement_height_m must be positive")
+    if generator.hub_height_m is not None and generator.hub_height_m <= 0.0:
+        raise ConfigurationError(f"{path}.hub_height_m must be positive")
+    if generator.wind_speed_adjustment != "none":
+        if generator.measurement_height_m is None or generator.hub_height_m is None:
+            raise ConfigurationError(
+                f"{path}.measurement_height_m and hub_height_m are required for "
+                "wind speed adjustment"
+            )
+        if generator.wind_speed_adjustment == "power_law":
+            _check_nonnegative_at(f"{path}.wind_shear_exponent", generator.wind_shear_exponent)
+        if generator.wind_speed_adjustment == "logarithmic":
+            if generator.roughness_length_m is None or generator.roughness_length_m <= 0.0:
+                raise ConfigurationError(f"{path}.roughness_length_m must be positive")
+            if generator.measurement_height_m <= generator.roughness_length_m:
+                raise ConfigurationError(
+                    f"{path}.measurement_height_m must exceed roughness_length_m"
+                )
+            if generator.hub_height_m <= generator.roughness_length_m:
+                raise ConfigurationError(f"{path}.hub_height_m must exceed roughness_length_m")
+    if generator.air_density_correction and (
+        generator.air_temperature_key is None or generator.air_pressure_key is None
+    ):
+        raise ConfigurationError(
+            f"{path}.air_temperature_key and air_pressure_key are required for "
+            "air_density_correction"
+        )
+    if generator.turbine_count is not None and generator.turbine_count <= 0:
+        raise ConfigurationError(f"{path}.turbine_count must be positive")
+    if (
+        generator.turbine_rated_capacity_mw is not None
+        and generator.turbine_rated_capacity_mw <= 0.0
+    ):
+        raise ConfigurationError(f"{path}.turbine_rated_capacity_mw must be positive")
+    if (generator.turbine_count is None) != (generator.turbine_rated_capacity_mw is None):
+        raise ConfigurationError(
+            f"{path}.turbine_count and turbine_rated_capacity_mw must be supplied together"
+        )
+    if generator.availability_model == "power_curve" and not generator.power_curve:
+        raise ConfigurationError(
+            f"{path}.power_curve is required for availability_model=power_curve"
+        )
+    if generator.power_curve:
+        _validate_wind_power_curve_at(generator, path)
+
+
+def _validate_common_renewable_derates(generator: RenewableGeneratorConfig, path: str) -> None:
+    _check_fraction_at(f"{path}.availability_factor", generator.availability_factor)
+
+
+def _validate_wind_power_curve_at(generator: RenewableGeneratorConfig, path: str) -> None:
+    previous_speed = -1.0
+    rated_power = (
+        generator.turbine_rated_capacity_mw
+        if generator.turbine_rated_capacity_mw is not None
+        else generator.capacity_mw
+    )
+    for index, point in enumerate(generator.power_curve):
+        point_path = f"{path}.power_curve[{index}]"
+        _check_nonnegative_at(f"{point_path}.wind_speed_m_s", point.wind_speed_m_s)
+        _check_nonnegative_at(f"{point_path}.power_mw", point.power_mw)
+        if point.wind_speed_m_s <= previous_speed:
+            raise ConfigurationError(f"{path}.power_curve wind speeds must be strictly increasing")
+        if point.power_mw > rated_power:
+            raise ConfigurationError(f"{point_path}.power_mw exceeds rated capacity")
+        previous_speed = point.wind_speed_m_s
 
 
 def _validate_thermal_config_at(th: ThermalConfig, path: str) -> None:
@@ -2790,6 +3153,12 @@ def _renewable_generator_mapping(generator: RenewableGeneratorConfig) -> dict[st
         "capacity_mw": generator.capacity_mw,
         "time_series_key": generator.time_series_key,
     }
+    _add_non_default(item, "availability_model", generator.availability_model, "simple")
+    _add_non_default(item, "availability_factor", generator.availability_factor, 1.0)
+    if generator.availability_factor_key is not None:
+        item["availability_factor_key"] = generator.availability_factor_key
+    if generator.maintenance_factor_key is not None:
+        item["maintenance_factor_key"] = generator.maintenance_factor_key
     if generator.kind == "solar":
         item.update(
             {
@@ -2802,6 +3171,26 @@ def _renewable_generator_mapping(generator: RenewableGeneratorConfig) -> dict[st
                 ),
             }
         )
+        if generator.module_performance_ratio is not None:
+            item["module_performance_ratio"] = generator.module_performance_ratio
+        if generator.dc_capacity_mw is not None:
+            item["dc_capacity_mw"] = generator.dc_capacity_mw
+        if generator.inverter_ac_capacity_mw is not None:
+            item["inverter_ac_capacity_mw"] = generator.inverter_ac_capacity_mw
+        _add_non_default(item, "inverter_efficiency", generator.inverter_efficiency, 1.0)
+        _add_non_default(item, "degradation_factor", generator.degradation_factor, 1.0)
+        _add_non_default(item, "irradiance_basis", generator.irradiance_basis, "plane_of_array")
+        _add_non_default(item, "transposition_model", generator.transposition_model, "none")
+        if generator.tilt_degrees is not None:
+            item["tilt_degrees"] = generator.tilt_degrees
+        _add_non_default(item, "surface_azimuth_degrees", generator.surface_azimuth_degrees, 180.0)
+        _add_non_default(item, "albedo", generator.albedo, 0.2)
+        _add_non_default(item, "soiling_loss_fraction", generator.soiling_loss_fraction, 0.0)
+        if generator.soiling_loss_key is not None:
+            item["soiling_loss_key"] = generator.soiling_loss_key
+        _add_non_default(item, "snow_loss_fraction", generator.snow_loss_fraction, 0.0)
+        if generator.snow_loss_key is not None:
+            item["snow_loss_key"] = generator.snow_loss_key
     else:
         item.update(
             {
@@ -2810,7 +3199,48 @@ def _renewable_generator_mapping(generator: RenewableGeneratorConfig) -> dict[st
                 "cut_out_speed_m_s": generator.cut_out_speed_m_s,
             }
         )
+        if generator.measurement_height_m is not None:
+            item["measurement_height_m"] = generator.measurement_height_m
+        if generator.hub_height_m is not None:
+            item["hub_height_m"] = generator.hub_height_m
+        _add_non_default(item, "wind_speed_adjustment", generator.wind_speed_adjustment, "none")
+        _add_non_default(item, "wind_shear_exponent", generator.wind_shear_exponent, 1.0 / 7.0)
+        if generator.roughness_length_m is not None:
+            item["roughness_length_m"] = generator.roughness_length_m
+        _add_non_default(item, "air_density_correction", generator.air_density_correction, False)
+        if generator.air_temperature_key is not None:
+            item["air_temperature_key"] = generator.air_temperature_key
+        if generator.air_pressure_key is not None:
+            item["air_pressure_key"] = generator.air_pressure_key
+        if generator.turbine_count is not None:
+            item["turbine_count"] = generator.turbine_count
+        if generator.turbine_rated_capacity_mw is not None:
+            item["turbine_rated_capacity_mw"] = generator.turbine_rated_capacity_mw
+        if generator.power_curve:
+            item["power_curve"] = [
+                {
+                    "wind_speed_m_s": point.wind_speed_m_s,
+                    "power_mw": point.power_mw,
+                }
+                for point in generator.power_curve
+            ]
+        _add_non_default(item, "wake_loss_fraction", generator.wake_loss_fraction, 0.0)
+        if generator.wake_loss_key is not None:
+            item["wake_loss_key"] = generator.wake_loss_key
+        _add_non_default(
+            item,
+            "electrical_loss_fraction",
+            generator.electrical_loss_fraction,
+            0.0,
+        )
+        if generator.electrical_loss_key is not None:
+            item["electrical_loss_key"] = generator.electrical_loss_key
     return item
+
+
+def _add_non_default(item: dict[str, Any], key: str, value: Any, default: Any) -> None:
+    if value != default:
+        item[key] = value
 
 
 def _thermal_generator_mapping(generator: ThermalGeneratorConfig) -> dict[str, Any]:

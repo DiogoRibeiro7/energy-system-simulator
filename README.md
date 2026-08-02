@@ -6,8 +6,8 @@ The model is designed for research, teaching, and policy experiments. It uses ex
 
 ## Main capabilities
 
-- Solar generation from irradiance and ambient temperature.
-- Wind generation from a configurable turbine power curve.
+- Solar generation with simple and detailed DC/AC derating models.
+- Wind generation with simple cubic curves or validated tabulated power curves.
 - Thermal unit commitment with minimum and maximum output, ramp limits,
   start-up and shutdown decisions, minimum up/down times, terminal commitment
   policy, fuel definitions, piecewise heat-rate segments, startup categories,
@@ -58,6 +58,9 @@ energy-system-simulator/
 │   └── storage/              Battery model helpers
 └── tests/                    Unit and integration tests
 ```
+
+Renewable model details, validation rules, and example figure generation are
+documented in `docs/renewable-models.md`.
 
 ## Requirements
 

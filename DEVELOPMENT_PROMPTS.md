@@ -125,7 +125,8 @@ Require this response format after every major prompt:
 | CORE-07 | Sector demand and demand response | `feat/demand-response` | Sequential by dependency | Complete |
 | CORE-08 | Integrated nodal DC optimal power flow | `feat/nodal-dc-dispatch` | Sequential by dependency | Complete |
 | CORE-09 | Operating reserves | `feat/operating-reserves` | Sequential by dependency | Complete |
-| CORE-10–CORE-24 | Research-grade electricity-system roadmap | See each prompt | Sequential by dependency | Not started |
+| CORE-10 | Renewable model extensions | `feat/renewable-model-extensions` | Sequential by dependency | Complete |
+| CORE-11–CORE-24 | Research-grade electricity-system roadmap | See each prompt | Sequential by dependency | Not started |
 | ADV-01–ADV-15 | Optional post-core model families | See each prompt | Select by research question | Not started |
 
 ---
