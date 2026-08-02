@@ -29,6 +29,7 @@ The model is designed for research, teaching, and policy experiments. It uses ex
 - Sequential Monte Carlo reliability studies with seeded outage trajectories.
 - Scenario-based stochastic dispatch with value-of-information benchmarks.
 - Optional post-dispatch market prices and settlements from fixed-commitment LP duals.
+- Single-year capacity-expansion planning with representative-period weights.
 - CSV results, JSON summary metrics, and diagnostic plots.
 - A small DC power-flow module for network experiments.
 
@@ -69,7 +70,8 @@ Rolling-horizon configuration and state-transfer behaviour are documented in
 `docs/rolling-horizon.md`. Probabilistic adequacy studies are documented in
 `docs/reliability.md`. Scenario-based stochastic dispatch is documented in
 `docs/stochastic-dispatch.md`. Market pricing and settlement outputs are
-documented in `docs/market-model.md`.
+documented in `docs/market-model.md`. Capacity-expansion planning is documented
+in `docs/capacity-expansion.md`.
 
 ## Requirements
 
@@ -183,6 +185,7 @@ make stress
 | Demand | Demand entities with fixed, curtailable, shiftable, deferrable, and EV-charging modes, temperature-sensitive preprocessing, sector-specific lost-load values, and demand-response cost accounting |
 | Network | Aggregate delivery losses and transfer-capacity shedding in dispatch |
 | Markets | Optional dual-based energy prices, nodal LMPs, congestion rent, consumer payments, generator revenue, and make-whole uplift |
+| Planning | Continuous single-year capacity expansion for generation, storage, interconnectors, and transmission with weighted representative periods |
 | DC flow | Standalone fixed-injection DC power flow with overload diagnostics |
 | Outputs | Aggregate CSV time series, tidy renewable, thermal, storage, and hydro asset time series, fuel and emissions accounting, JSON summary, manifest, plots, benchmark, baseline, and stress comparison table |
 
