@@ -13,6 +13,7 @@ from energy_system_simulator.data import load_input_data
 from energy_system_simulator.exceptions import EnergySystemError
 from energy_system_simulator.metadata import get_package_version
 from energy_system_simulator.reporting import write_outputs
+from energy_system_simulator.scenarios import run_experiment_file
 from energy_system_simulator.simulation import SimulationEngine
 
 
@@ -51,6 +52,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     migrate.add_argument("--config", type=Path, required=True)
     migrate.add_argument("--output", type=Path)
+
+    scenarios = subparsers.add_parser("run-scenarios", help="Run a scenario experiment YAML")
+    scenarios.add_argument("--experiment", type=Path, required=True)
+    scenarios.add_argument("--workers", type=int)
+    scenarios.add_argument(
+        "--resume",
+        action="store_true",
+        default=None,
+        help="Skip verified completed scenarios",
+    )
+    scenarios.add_argument(
+        "--no-plots",
+        action="store_true",
+        help="Skip per-scenario PNG plot generation",
+    )
     return parser
 
 
@@ -68,6 +84,16 @@ def main(argv: Sequence[str] | None = None) -> None:
                 print(f"Migrated configuration written: {args.output}")
             else:
                 print(text, end="")
+            return
+
+        if args.command == "run-scenarios":
+            aggregate = run_experiment_file(
+                args.experiment,
+                workers=args.workers,
+                resume=args.resume,
+                create_plots=not args.no_plots,
+            )
+            print(f"Scenario experiment complete: {len(aggregate)} scenarios")
             return
 
         config = load_config(args.config)

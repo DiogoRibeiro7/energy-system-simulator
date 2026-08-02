@@ -1,0 +1,29 @@
+base_config: ../../configs/example.yaml
+output_directory: ../../outputs/policy-sweeps
+workers: 2
+resume: false
+
+scenarios:
+  - id: reference
+    overrides: {}
+
+sweeps:
+  - parameter: penalties.carbon_price_eur_per_tonne
+    values: [0.0, 50.0, 100.0, 150.0]
+  - parameter: solar.capacity_mw
+    values: [80.0, 120.0, 160.0]
+  - parameter: wind.capacity_mw
+    values: [100.0, 150.0, 200.0]
+  - parameter: battery.energy_capacity_mwh
+    values: [120.0, 240.0, 360.0]
+  - parameter: battery.power_capacity_mw
+    values: [40.0, 80.0, 120.0]
+  - parameter: thermal.variable_cost_eur_per_mwh
+    values: [50.0, 72.0, 95.0]
+  - parameter: network.transfer_capacity_mw
+    values: [300.0, 420.0, 540.0]
+
+grid:
+  parameters:
+    penalties.carbon_price_eur_per_tonne: [0.0, 100.0]
+    battery.energy_capacity_mwh: [120.0, 360.0]
