@@ -6,7 +6,8 @@ from typing import Any, Final, Literal
 
 import numpy as np
 import numpy.typing as npt
-from scipy.optimize import Bounds, LinearConstraint, milp
+from scipy.optimize import Bounds, LinearConstraint, linprog, milp
+from scipy.sparse import csr_matrix, vstack
 
 from energy_system_simulator.constants import DEFAULT_NUMERICAL_POLICY
 
@@ -44,6 +45,18 @@ class BackendSolverResult:
     objective_bound: float | None
     relative_gap: float | None
     node_count: int | None
+
+
+@dataclass(frozen=True)
+class LinearProgramResult:
+    """LP result with marginal values mapped back to original constraint rows."""
+
+    status_code: int
+    status_name: str
+    message: str
+    solution: FloatArray | None
+    objective_value: float | None
+    constraint_marginals: FloatArray
 
 
 @dataclass(frozen=True)
@@ -94,6 +107,40 @@ def solve_milp(
         objective_bound=_finite_optional(getattr(result, "mip_dual_bound", None)),
         relative_gap=_finite_optional(getattr(result, "mip_gap", None)),
         node_count=_integer_optional(getattr(result, "mip_node_count", None)),
+    )
+
+
+def solve_linear_program(
+    *,
+    objective: FloatArray,
+    bounds: Bounds,
+    constraints: LinearConstraint,
+) -> LinearProgramResult:
+    """Solve a continuous LP and return row marginals using SciPy/HiGHS conventions."""
+    converted = _constraint_to_linprog(constraints)
+    result = linprog(
+        c=objective,
+        A_ub=converted["A_ub"],
+        b_ub=converted["b_ub"],
+        A_eq=converted["A_eq"],
+        b_eq=converted["b_eq"],
+        bounds=list(zip(bounds.lb, bounds.ub, strict=True)),
+        method="highs",
+    )
+    status_code = int(result.status)
+    row_marginals = np.full(constraints.lb.shape, np.nan, dtype=np.float64)
+    if result.success:
+        equality_rows = converted["equality_rows"]
+        equality_marginals = np.asarray(result.eqlin.marginals, dtype=np.float64)
+        row_marginals[equality_rows] = equality_marginals
+    solution = None if result.x is None else np.asarray(result.x, dtype=np.float64)
+    return LinearProgramResult(
+        status_code=status_code,
+        status_name=SCIPY_STATUS_NAMES.get(status_code, "unknown"),
+        message=str(result.message),
+        solution=solution,
+        objective_value=_finite_optional(result.fun),
+        constraint_marginals=row_marginals,
     )
 
 
@@ -180,3 +227,40 @@ def _integer_optional(value: Any) -> int | None:
     if value is None:
         return None
     return int(value)
+
+
+def _constraint_to_linprog(constraints: LinearConstraint) -> dict[str, Any]:
+    matrix = constraints.A.tocsr()
+    lower = np.asarray(constraints.lb, dtype=np.float64)
+    upper = np.asarray(constraints.ub, dtype=np.float64)
+    equality_rows: list[int] = []
+    equality_rhs: list[float] = []
+    upper_rows: list[csr_matrix] = []
+    upper_rhs: list[float] = []
+
+    for row in range(matrix.shape[0]):
+        lb = lower[row]
+        ub = upper[row]
+        row_matrix = matrix.getrow(row)
+        has_lower = np.isfinite(lb)
+        has_upper = np.isfinite(ub)
+        if has_lower and has_upper and np.isclose(lb, ub, atol=0.0, rtol=0.0):
+            equality_rows.append(row)
+            equality_rhs.append(float(lb))
+            continue
+        if has_upper:
+            upper_rows.append(row_matrix)
+            upper_rhs.append(float(ub))
+        if has_lower:
+            upper_rows.append(-row_matrix)
+            upper_rhs.append(float(-lb))
+
+    return {
+        "A_eq": vstack([matrix.getrow(row) for row in equality_rows]).tocsr()
+        if equality_rows
+        else None,
+        "b_eq": np.asarray(equality_rhs, dtype=np.float64) if equality_rows else None,
+        "A_ub": vstack(upper_rows).tocsr() if upper_rows else None,
+        "b_ub": np.asarray(upper_rhs, dtype=np.float64) if upper_rows else None,
+        "equality_rows": np.asarray(equality_rows, dtype=np.int64),
+    }

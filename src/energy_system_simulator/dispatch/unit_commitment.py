@@ -206,6 +206,7 @@ class FormulationProblem:
     integrality: npt.NDArray[np.int_]
     bounds: Bounds
     constraints: LinearConstraint
+    constraint_components: tuple[str, ...]
     renewable_available_mw: FloatArray
     gross_demand_mw: FloatArray
     thermal_units: tuple[ThermalUnit, ...]
@@ -272,6 +273,7 @@ class _ConstraintBuilder:
         self.values: list[float] = []
         self.lower: list[float] = []
         self.upper: list[float] = []
+        self.components: list[str] = []
         self.component_counts: dict[str, int] = {}
 
     def add(
@@ -290,6 +292,7 @@ class _ConstraintBuilder:
                 self.values.append(value)
         self.lower.append(lower)
         self.upper.append(upper)
+        self.components.append(component)
         self.component_counts[component] = self.component_counts.get(component, 0) + 1
 
     def build(self) -> LinearConstraint:
@@ -412,7 +415,7 @@ class UnitCommitment:
             network,
             reserves,
         )
-        constraints, component_counts = self._constraints(
+        constraints, component_counts, constraint_components = self._constraints(
             registry,
             demand,
             thermal_units,
@@ -444,6 +447,7 @@ class UnitCommitment:
             integrality=integrality,
             bounds=bounds,
             constraints=constraints,
+            constraint_components=constraint_components,
             renewable_available_mw=renewable,
             gross_demand_mw=demand,
             thermal_units=thermal_units,
@@ -1345,7 +1349,7 @@ class UnitCommitment:
         reserves: ReserveModel,
         storage_availability: dict[str, FloatArray],
         import_capacity_available_mw: FloatArray,
-    ) -> tuple[LinearConstraint, dict[str, int]]:
+    ) -> tuple[LinearConstraint, dict[str, int], tuple[str, ...]]:
         builder = _ConstraintBuilder(registry.size)
         if network.enabled:
             self._add_renewable_aggregate_constraints(
@@ -1402,7 +1406,7 @@ class UnitCommitment:
                 reserves,
             )
         self._add_terminal_soc_constraints(builder, registry, demand.size, storage_units)
-        return builder.build(), builder.component_counts
+        return builder.build(), builder.component_counts, tuple(builder.components)
 
     def _add_renewable_aggregate_constraints(
         self,

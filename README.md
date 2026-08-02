@@ -28,6 +28,7 @@ The model is designed for research, teaching, and policy experiments. It uses ex
 - Rolling-horizon simulation with deterministic checkpoint resume.
 - Sequential Monte Carlo reliability studies with seeded outage trajectories.
 - Scenario-based stochastic dispatch with value-of-information benchmarks.
+- Optional post-dispatch market prices and settlements from fixed-commitment LP duals.
 - CSV results, JSON summary metrics, and diagnostic plots.
 - A small DC power-flow module for network experiments.
 
@@ -67,7 +68,8 @@ documented in `docs/renewable-models.md`.
 Rolling-horizon configuration and state-transfer behaviour are documented in
 `docs/rolling-horizon.md`. Probabilistic adequacy studies are documented in
 `docs/reliability.md`. Scenario-based stochastic dispatch is documented in
-`docs/stochastic-dispatch.md`.
+`docs/stochastic-dispatch.md`. Market pricing and settlement outputs are
+documented in `docs/market-model.md`.
 
 ## Requirements
 
@@ -180,6 +182,7 @@ make stress
 | Hydro | Reservoir and run-of-river assets with inflows, release, spill, energy-equivalent reservoir state, evaporation losses, environmental releases, terminal policies, and water-value accounting |
 | Demand | Demand entities with fixed, curtailable, shiftable, deferrable, and EV-charging modes, temperature-sensitive preprocessing, sector-specific lost-load values, and demand-response cost accounting |
 | Network | Aggregate delivery losses and transfer-capacity shedding in dispatch |
+| Markets | Optional dual-based energy prices, nodal LMPs, congestion rent, consumer payments, generator revenue, and make-whole uplift |
 | DC flow | Standalone fixed-injection DC power flow with overload diagnostics |
 | Outputs | Aggregate CSV time series, tidy renewable, thermal, storage, and hydro asset time series, fuel and emissions accounting, JSON summary, manifest, plots, benchmark, baseline, and stress comparison table |
 
