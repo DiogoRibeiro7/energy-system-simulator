@@ -14,6 +14,16 @@ from energy_system_simulator.simulation.reliability import (
     ReliabilityStudy,
     ReliabilityStudyConfig,
 )
+from energy_system_simulator.simulation.stochastic import (
+    StochasticBenchmarks,
+    StochasticDispatch,
+    StochasticDispatchConfig,
+    StochasticDispatchResult,
+    StochasticScenario,
+    StochasticScenarioResult,
+    SyntheticScenarioConfig,
+    generate_synthetic_scenarios,
+)
 
 __all__ = [
     "AssetRegistry",
@@ -27,4 +37,12 @@ __all__ = [
     "ReliabilityStudyConfig",
     "SimulationEngine",
     "SimulationResult",
+    "StochasticBenchmarks",
+    "StochasticDispatch",
+    "StochasticDispatchConfig",
+    "StochasticDispatchResult",
+    "StochasticScenario",
+    "StochasticScenarioResult",
+    "SyntheticScenarioConfig",
+    "generate_synthetic_scenarios",
 ]

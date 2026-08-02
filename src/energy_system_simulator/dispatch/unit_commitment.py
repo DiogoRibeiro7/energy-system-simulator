@@ -220,6 +220,7 @@ class FormulationProblem:
     hydro_inflow_mw: dict[str, FloatArray]
     fuel_prices_eur_per_mwh_thermal: dict[str, FloatArray]
     import_capacity_available_mw: FloatArray
+    import_prices_eur_per_mwh: FloatArray
     network: NodalNetwork
     reserves: ReserveModel
     registry: VariableRegistry
@@ -322,6 +323,8 @@ class UnitCommitment:
         renewable_availability_by_asset_mw: Mapping[str, npt.ArrayLike] | None = None,
         line_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
         import_availability_factors: npt.ArrayLike | None = None,
+        import_price_series: npt.ArrayLike | None = None,
+        fixed_thermal_commitment: Mapping[str, npt.ArrayLike] | None = None,
     ) -> FormulationProblem:
         """Build the MILP formulation without solving it."""
         renewable = np.asarray(renewable_available_mw, dtype=np.float64)
@@ -365,6 +368,12 @@ class UnitCommitment:
         hydro_inflow = self._hydro_inflows(hydro_units, periods, hydro_inflows_mw or {})
         fuel_prices = self._fuel_prices(periods, fuel_price_series or {})
         import_capacity = self._import_capacity_available(periods, import_availability_factors)
+        import_prices = self._import_prices(periods, import_price_series)
+        fixed_commitment = self._fixed_thermal_commitment(
+            thermal_units,
+            periods,
+            fixed_thermal_commitment or {},
+        )
         reserves = self._reserve_model(renewable, demand)
         registry = self._variable_registry(
             periods,
@@ -384,6 +393,7 @@ class UnitCommitment:
             hydro_units,
             demand_units,
             fuel_prices,
+            import_prices,
             reserves,
         )
         bounds, integrality = self._bounds(
@@ -398,6 +408,7 @@ class UnitCommitment:
             storage_availability,
             renewable_by_asset,
             import_capacity,
+            fixed_commitment,
             network,
             reserves,
         )
@@ -447,6 +458,7 @@ class UnitCommitment:
             hydro_inflow_mw=hydro_inflow,
             fuel_prices_eur_per_mwh_thermal=fuel_prices,
             import_capacity_available_mw=import_capacity,
+            import_prices_eur_per_mwh=import_prices,
             network=network,
             reserves=reserves,
             registry=registry,
@@ -465,6 +477,8 @@ class UnitCommitment:
         renewable_availability_by_asset_mw: Mapping[str, npt.ArrayLike] | None = None,
         line_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
         import_availability_factors: npt.ArrayLike | None = None,
+        import_price_series: npt.ArrayLike | None = None,
+        fixed_thermal_commitment: Mapping[str, npt.ArrayLike] | None = None,
     ) -> DispatchResult:
         """Solve unit commitment over the full input horizon."""
         problem = self.build_formulation(
@@ -478,6 +492,8 @@ class UnitCommitment:
             renewable_availability_by_asset_mw,
             line_availability_factors,
             import_availability_factors,
+            import_price_series,
+            fixed_thermal_commitment,
         )
         return self.solve_formulation(problem)
 
@@ -846,6 +862,47 @@ class UnitCommitment:
                 raise ValueError("Import availability factors must be finite values in [0, 1]")
         return (self.config.imports.maximum_power_mw * factor).astype(np.float64)
 
+    def _import_prices(
+        self,
+        periods: int,
+        import_price_series: npt.ArrayLike | None,
+    ) -> FloatArray:
+        values = np.full(periods, self.config.imports.price_eur_per_mwh, dtype=np.float64)
+        if import_price_series is not None:
+            values = np.asarray(import_price_series, dtype=np.float64)
+            if values.shape != (periods,):
+                raise ValueError("Import price series must match dispatch horizon")
+            if np.any(~np.isfinite(values)) or np.any(values < 0.0):
+                raise ValueError("Import price series must contain non-negative finite values")
+        return values.astype(np.float64)
+
+    def _fixed_thermal_commitment(
+        self,
+        units: tuple[ThermalUnit, ...],
+        periods: int,
+        fixed_thermal_commitment: Mapping[str, npt.ArrayLike],
+    ) -> dict[str, FloatArray]:
+        unit_ids = {unit.id for unit in units}
+        unknown = set(fixed_thermal_commitment) - unit_ids
+        if unknown:
+            raise ValueError(
+                f"Fixed thermal commitment references unknown units: {sorted(unknown)}"
+            )
+        result: dict[str, FloatArray] = {}
+        for unit_id, raw_values in fixed_thermal_commitment.items():
+            raw = np.asarray(raw_values, dtype=np.float64)
+            if raw.ndim != 1 or raw.size > periods:
+                raise ValueError(
+                    "Fixed thermal commitment must be a one-dimensional horizon prefix"
+                )
+            values = np.full(periods, np.nan, dtype=np.float64)
+            values[: raw.size] = raw
+            fixed = values[~np.isnan(values)]
+            if np.any(~np.isin(fixed, [0.0, 1.0])):
+                raise ValueError("Fixed thermal commitment values must be 0, 1, or NaN")
+            result[unit_id] = values
+        return result
+
     def _thermal_capacity_available(
         self,
         units: tuple[ThermalUnit, ...],
@@ -961,6 +1018,7 @@ class UnitCommitment:
         hydro_units: tuple[HydroUnit, ...],
         demand_units: tuple[DemandUnit, ...],
         fuel_prices: dict[str, FloatArray],
+        import_prices: FloatArray,
         reserves: ReserveModel,
     ) -> FloatArray:
         periods = renewable.size
@@ -1018,7 +1076,7 @@ class UnitCommitment:
                         registry.at("hydro_reservoir_mwh", t, asset_id=hydro.id)
                     ] = -hydro.config.water_value_eur_per_mwh
             coefficients[registry.at("imports_mw", t)] = dt * (
-                imports.price_eur_per_mwh
+                import_prices[t]
                 + penalties.carbon_price_eur_per_tonne * imports.emission_factor_tonnes_per_mwh
             )
             coefficients[registry.at("source_load_shed_mw", t)] = (
@@ -1127,6 +1185,7 @@ class UnitCommitment:
         storage_availability: dict[str, FloatArray],
         renewable_available_by_asset: dict[str, FloatArray],
         import_capacity_available_mw: FloatArray,
+        fixed_thermal_commitment: dict[str, FloatArray],
         network: NodalNetwork,
         reserves: ReserveModel,
     ) -> tuple[Bounds, npt.NDArray[np.int_]]:
@@ -1246,6 +1305,12 @@ class UnitCommitment:
                 )
                 for block in ("thermal_on", "thermal_startup", "thermal_shutdown"):
                     upper[registry.at(block, t, asset_id=unit.id)] = 1.0
+                if unit.id in fixed_thermal_commitment:
+                    fixed_value = fixed_thermal_commitment[unit.id][t]
+                    if not np.isnan(fixed_value):
+                        column = registry.at("thermal_on", t, asset_id=unit.id)
+                        lower[column] = fixed_value
+                        upper[column] = fixed_value
                 for segment in unit.config.heat_rate_segments:
                     upper[
                         registry.at(
@@ -3313,7 +3378,11 @@ class UnitCommitment:
                 sum(frame[f"thermal_shutdown_cost_eur__{unit.id}"].sum() for unit in thermal_units)
             ),
             "import_energy_cost_eur": float(
-                frame["imports_mw"].sum() * dt * imports.price_eur_per_mwh
+                np.dot(
+                    frame["imports_mw"].to_numpy(dtype=np.float64),
+                    problem.import_prices_eur_per_mwh,
+                )
+                * dt
             ),
             "battery_throughput_cost_eur": float(
                 sum(
