@@ -27,6 +27,7 @@ make validate
 make simulate
 make verification
 make benchmark
+poetry run python scripts/benchmark_scaling.py
 make baseline
 make release-metadata
 make version-metadata

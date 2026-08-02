@@ -11,8 +11,12 @@ import yaml
 from energy_system_simulator.config import load_config, migrate_legacy_config
 from energy_system_simulator.data import load_input_data
 from energy_system_simulator.data_adapters import run_data_preparation_spec
+from energy_system_simulator.dispatch import FormulationProblem, UnitCommitment
+from energy_system_simulator.dispatch.solver import export_problem_lp
 from energy_system_simulator.exceptions import EnergySystemError
+from energy_system_simulator.generation import SolarPlant, WindFarm
 from energy_system_simulator.metadata import get_package_version
+from energy_system_simulator.network import DistributionNetwork
 from energy_system_simulator.reporting import write_outputs
 from energy_system_simulator.scenarios import run_experiment_file
 from energy_system_simulator.simulation import SimulationEngine
@@ -46,6 +50,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-plots",
         action="store_true",
         help="Skip PNG plot generation",
+    )
+    export_model = subparsers.add_parser(
+        "export-model",
+        help="Export the dispatch optimisation model for debugging",
+    )
+    export_model.add_argument("--config", type=Path, required=True)
+    export_model.add_argument("--output", type=Path, required=True)
+    export_model.add_argument(
+        "--format",
+        choices=("lp",),
+        default="lp",
+        help="Model export format",
     )
     migrate = subparsers.add_parser(
         "migrate-config",
@@ -119,6 +135,13 @@ def main(argv: Sequence[str] | None = None) -> None:
                 print(f"Configuration valid. Input contains {len(data)} periods.")
             return
 
+        if args.command == "export-model":
+            problem = _build_dispatch_problem(args.config)
+            if args.format == "lp":
+                export_problem_lp(problem.solver_problem(), args.output)
+                print(f"Model exported: {args.output}")
+                return
+
         if args.command == "simulate":
             result = SimulationEngine(config).run()
             write_outputs(
@@ -152,3 +175,16 @@ def main(argv: Sequence[str] | None = None) -> None:
         raise SystemExit(2) from error
 
     raise RuntimeError(f"Unsupported command: {args.command}")
+
+
+def _build_dispatch_problem(config_path: Path) -> FormulationProblem:
+    config = load_config(config_path)
+    data = load_input_data(config.paths.input_csv, config.simulation.time_step_hours)
+    solar = SolarPlant(config.solar).output_mw(
+        data["irradiance_w_m2"].to_numpy(),
+        data["ambient_temperature_c"].to_numpy(),
+    )
+    wind = WindFarm(config.wind).output_mw(data["wind_speed_m_s"].to_numpy())
+    renewable = solar + wind
+    demand = DistributionNetwork(config.network).prepare_demand(data["demand_mw"].to_numpy())
+    return UnitCommitment(config).build_formulation(renewable, demand.gross_demand_mw)

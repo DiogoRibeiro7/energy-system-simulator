@@ -6,6 +6,7 @@ import numpy as np
 
 from energy_system_simulator.config import load_config
 from energy_system_simulator.dispatch import UnitCommitment
+from energy_system_simulator.dispatch.solver import export_problem_lp
 
 
 def test_unit_commitment_respects_balance_and_bounds() -> None:
@@ -32,3 +33,24 @@ def test_unit_commitment_respects_balance_and_bounds() -> None:
     assert result.formulation_statistics.integer_variables == 25
     assert result.formulation_statistics.linear_constraints > 0
     assert result.formulation_statistics.matrix_nonzeros > 0
+    assert {"objective", "bounds", "constraints", "total"} <= set(
+        result.formulation_statistics.build_profile_seconds
+    )
+
+
+def test_formulation_exports_stable_lp_debug_names(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "configs" / "example.yaml")
+    problem = UnitCommitment(config).build_formulation(
+        np.array([0.0], dtype=float),
+        np.array([50.0], dtype=float),
+    )
+    export_path = tmp_path / "model.lp"
+
+    export_problem_lp(problem.solver_problem(), export_path)
+
+    exported = export_path.read_text(encoding="utf-8")
+    assert "Minimize" in exported
+    assert "Subject To" in exported
+    assert "renewable_used_mw__t0" in exported
+    assert "balance_0_" in exported

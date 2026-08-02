@@ -1,4 +1,4 @@
-.PHONY: install format lint typecheck test validate simulate stress verification check-example-data benchmark baseline release-metadata version-metadata package editable-smoke wheel-smoke verify clean
+.PHONY: install format lint typecheck test validate simulate stress verification check-example-data benchmark scaling-benchmark baseline release-metadata version-metadata package editable-smoke wheel-smoke verify clean
 
 install:
 	poetry install
@@ -32,6 +32,9 @@ check-example-data:
 
 benchmark:
 	poetry run python scripts/benchmark_example.py
+
+scaling-benchmark:
+	poetry run python scripts/benchmark_scaling.py
 
 baseline:
 	poetry run python scripts/compare_baseline.py

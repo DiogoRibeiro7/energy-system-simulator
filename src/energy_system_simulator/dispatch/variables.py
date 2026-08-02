@@ -19,6 +19,18 @@ class VariableBlock:
     binary: bool = False
 
 
+@dataclass(frozen=True)
+class VariableMetadata:
+    """Stable solver-facing metadata for one optimisation variable."""
+
+    index: int
+    name: str
+    block: str
+    period: int
+    asset_id: str | None
+    binary: bool
+
+
 class VariableRegistry:
     """Deterministic variable index registry with optional asset dimensions."""
 
@@ -78,3 +90,23 @@ class VariableRegistry:
             label = block.name if block.asset_id is None else f"{block.name}[{block.asset_id}]"
             counts[label] = block.size
         return counts
+
+    def variable_metadata(self) -> tuple[VariableMetadata, ...]:
+        """Return deterministic metadata for every variable index."""
+        metadata: list[VariableMetadata] = []
+        for key in self._order:
+            block = self._blocks[key]
+            for period in range(block.size):
+                index = block.offset + period
+                asset_part = "" if block.asset_id is None else f"__{block.asset_id}"
+                metadata.append(
+                    VariableMetadata(
+                        index=index,
+                        name=f"{block.name}{asset_part}__t{period}",
+                        block=block.name,
+                        period=period,
+                        asset_id=block.asset_id,
+                        binary=block.binary,
+                    )
+                )
+        return tuple(metadata)

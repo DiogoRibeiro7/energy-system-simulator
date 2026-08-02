@@ -73,6 +73,19 @@ def test_cli_simulate_writes_outputs_without_plots(tmp_path: Path, capsys) -> No
     assert not (output / "dispatch.png").exists()
 
 
+def test_cli_export_model_writes_lp_file(tmp_path: Path, capsys) -> None:
+    config_path = _write_config_with_output(tmp_path)
+    output_path = tmp_path / "debug" / "model.lp"
+
+    main(["export-model", "--config", str(config_path), "--output", str(output_path)])
+
+    captured = capsys.readouterr()
+    assert "Model exported" in captured.out
+    exported = output_path.read_text(encoding="utf-8")
+    assert "Minimize" in exported
+    assert "Binary" in exported
+
+
 def test_cli_migrate_config_writes_portfolio_schema(tmp_path: Path, capsys) -> None:
     root = Path(__file__).resolve().parents[1]
     output = tmp_path / "portfolio.yaml"

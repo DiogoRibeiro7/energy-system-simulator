@@ -6,9 +6,12 @@ import pytest
 from energy_system_simulator.dispatch.solver import (
     BackendSolverResult,
     absolute_gap,
+    available_solver_backends,
+    get_solver_backend,
     interpret_solver_result,
     objective_bound_with_constant,
     relative_gap,
+    solver_capability_matrix,
 )
 
 
@@ -153,3 +156,21 @@ def test_objective_gaps_handle_zero_negative_and_missing_bounds(
     assert relative_gap(primal, bound) == (
         None if expected_relative is None else pytest.approx(expected_relative)
     )
+
+
+def test_scipy_backend_capabilities_are_explicit() -> None:
+    capabilities = solver_capability_matrix()["scipy"]
+
+    assert available_solver_backends() == ("scipy",)
+    assert capabilities.milp is True
+    assert capabilities.lp_duals is True
+    assert capabilities.time_limits is True
+    assert capabilities.mip_gaps is True
+    assert capabilities.node_counts is True
+    assert capabilities.warm_starts is False
+    assert capabilities.solution_pools is False
+
+
+def test_unknown_backend_fails_with_installation_message() -> None:
+    with pytest.raises(ValueError, match="not installed"):
+        get_solver_backend("highs-direct")

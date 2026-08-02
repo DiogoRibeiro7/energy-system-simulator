@@ -38,6 +38,7 @@ def test_verification_benchmark_output_schema_is_stable(tmp_path: Path) -> None:
         "matrix_nonzeros",
         "variable_counts_by_block",
         "constraint_counts_by_component",
+        "build_profile_seconds",
         "build_time_seconds",
         "solve_time_seconds",
         "solver_status",
@@ -45,6 +46,7 @@ def test_verification_benchmark_output_schema_is_stable(tmp_path: Path) -> None:
     }
     assert isinstance(first["variable_counts_by_block"], dict)
     assert isinstance(first["constraint_counts_by_component"], dict)
+    assert isinstance(first["build_profile_seconds"], dict)
 
 
 def test_verification_benchmarks_stay_within_ci_budgets(tmp_path: Path) -> None:

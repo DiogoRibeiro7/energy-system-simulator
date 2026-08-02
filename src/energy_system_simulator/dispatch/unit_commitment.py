@@ -8,7 +8,6 @@ from time import perf_counter
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from scipy.optimize import Bounds, LinearConstraint
 from scipy.sparse import coo_matrix
 
 from energy_system_simulator.config import (
@@ -22,13 +21,16 @@ from energy_system_simulator.config import (
 )
 from energy_system_simulator.constants import DEFAULT_NUMERICAL_POLICY
 from energy_system_simulator.dispatch.solver import (
+    LinearConstraintData,
+    SolverProblem,
+    VariableBounds,
     absolute_gap,
     interpret_solver_result,
     objective_bound_with_constant,
     relative_gap,
     solve_milp,
 )
-from energy_system_simulator.dispatch.variables import VariableRegistry
+from energy_system_simulator.dispatch.variables import VariableMetadata, VariableRegistry
 from energy_system_simulator.exceptions import OptimisationError
 
 FloatArray = npt.NDArray[np.float64]
@@ -121,6 +123,7 @@ class FormulationStatistics:
     matrix_nonzeros: int
     variable_counts_by_block: dict[str, int] = field(default_factory=dict)
     constraint_counts_by_component: dict[str, int] = field(default_factory=dict)
+    build_profile_seconds: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -204,9 +207,10 @@ class FormulationProblem:
 
     objective: FloatArray
     integrality: npt.NDArray[np.int_]
-    bounds: Bounds
-    constraints: LinearConstraint
+    bounds: VariableBounds
+    constraints: LinearConstraintData
     constraint_components: tuple[str, ...]
+    variable_metadata: tuple[VariableMetadata, ...]
     renewable_available_mw: FloatArray
     gross_demand_mw: FloatArray
     thermal_units: tuple[ThermalUnit, ...]
@@ -226,6 +230,16 @@ class FormulationProblem:
     reserves: ReserveModel
     registry: VariableRegistry
     statistics: FormulationStatistics
+
+    def solver_problem(self) -> SolverProblem:
+        """Return the backend-neutral optimisation payload."""
+        return SolverProblem(
+            objective=self.objective,
+            integrality=self.integrality,
+            bounds=self.bounds,
+            constraints=self.constraints,
+            variable_names=tuple(variable.name for variable in self.variable_metadata),
+        )
 
 
 @dataclass(frozen=True)
@@ -274,6 +288,7 @@ class _ConstraintBuilder:
         self.lower: list[float] = []
         self.upper: list[float] = []
         self.components: list[str] = []
+        self.names: list[str] = []
         self.component_counts: dict[str, int] = {}
 
     def add(
@@ -285,6 +300,7 @@ class _ConstraintBuilder:
         component: str,
     ) -> None:
         row = len(self.lower)
+        component_index = self.component_counts.get(component, 0)
         for column, value in coefficients.items():
             if value != 0.0:
                 self.row_indices.append(row)
@@ -293,18 +309,20 @@ class _ConstraintBuilder:
         self.lower.append(lower)
         self.upper.append(upper)
         self.components.append(component)
-        self.component_counts[component] = self.component_counts.get(component, 0) + 1
+        self.names.append(f"{component}[{component_index}]")
+        self.component_counts[component] = component_index + 1
 
-    def build(self) -> LinearConstraint:
+    def build(self) -> LinearConstraintData:
         matrix = coo_matrix(
             (self.values, (self.row_indices, self.column_indices)),
             shape=(len(self.lower), self.variable_count),
             dtype=np.float64,
         ).tocsr()
-        return LinearConstraint(
+        return LinearConstraintData(
             matrix,
             np.asarray(self.lower, dtype=np.float64),
             np.asarray(self.upper, dtype=np.float64),
+            tuple(self.names),
         )
 
 
@@ -330,6 +348,8 @@ class UnitCommitment:
         fixed_thermal_commitment: Mapping[str, npt.ArrayLike] | None = None,
     ) -> FormulationProblem:
         """Build the MILP formulation without solving it."""
+        build_started = perf_counter()
+        profile: dict[str, float] = {}
         renewable = np.asarray(renewable_available_mw, dtype=np.float64)
         demand = np.asarray(gross_demand_mw, dtype=np.float64)
         if renewable.ndim != 1 or demand.ndim != 1 or renewable.shape != demand.shape:
@@ -342,12 +362,17 @@ class UnitCommitment:
             raise ValueError("Dispatch inputs must be finite")
         if np.any(renewable < 0.0) or np.any(demand < 0.0):
             raise ValueError("Dispatch inputs must be non-negative")
+        profile["input_validation"] = perf_counter() - build_started
 
+        phase_started = perf_counter()
         periods = renewable.size
         thermal_units = self._thermal_units()
         storage_units = self._storage_units()
         hydro_units = self._hydro_units()
         demand_units = self._demand_units(demand_profiles_mw)
+        profile["asset_resolution"] = perf_counter() - phase_started
+
+        phase_started = perf_counter()
         demand_profiles = self._demand_profiles(demand_units, demand, demand_profiles_mw or {})
         network = self._nodal_network(periods, line_availability_factors or {})
         if network.enabled and not demand_units:
@@ -378,6 +403,9 @@ class UnitCommitment:
             fixed_thermal_commitment or {},
         )
         reserves = self._reserve_model(renewable, demand)
+        profile["series_resolution"] = perf_counter() - phase_started
+
+        phase_started = perf_counter()
         registry = self._variable_registry(
             periods,
             thermal_units,
@@ -388,6 +416,9 @@ class UnitCommitment:
             network,
             reserves,
         )
+        profile["variable_registry"] = perf_counter() - phase_started
+
+        phase_started = perf_counter()
         objective = self._objective(
             registry,
             renewable,
@@ -399,6 +430,9 @@ class UnitCommitment:
             import_prices,
             reserves,
         )
+        profile["objective"] = perf_counter() - phase_started
+
+        phase_started = perf_counter()
         bounds, integrality = self._bounds(
             registry,
             renewable,
@@ -415,6 +449,9 @@ class UnitCommitment:
             network,
             reserves,
         )
+        profile["bounds"] = perf_counter() - phase_started
+
+        phase_started = perf_counter()
         constraints, component_counts, constraint_components = self._constraints(
             registry,
             demand,
@@ -431,8 +468,10 @@ class UnitCommitment:
             storage_availability,
             import_capacity,
         )
+        profile["constraints"] = perf_counter() - phase_started
 
         integer_variables = int(np.count_nonzero(integrality))
+        profile["total"] = perf_counter() - build_started
         statistics = FormulationStatistics(
             continuous_variables=registry.size - integer_variables,
             integer_variables=integer_variables,
@@ -441,6 +480,7 @@ class UnitCommitment:
             matrix_nonzeros=constraints.A.nnz,
             variable_counts_by_block=registry.variable_counts_by_block(),
             constraint_counts_by_component=component_counts,
+            build_profile_seconds=profile,
         )
         return FormulationProblem(
             objective=objective,
@@ -448,6 +488,7 @@ class UnitCommitment:
             bounds=bounds,
             constraints=constraints,
             constraint_components=constraint_components,
+            variable_metadata=registry.variable_metadata(),
             renewable_available_mw=renewable,
             gross_demand_mw=demand,
             thermal_units=thermal_units,
@@ -505,10 +546,7 @@ class UnitCommitment:
         """Solve a previously built formulation."""
         solve_started = perf_counter()
         backend_result = solve_milp(
-            objective=problem.objective,
-            integrality=problem.integrality,
-            bounds=problem.bounds,
-            constraints=problem.constraints,
+            problem.solver_problem(),
             time_limit_seconds=self.config.simulation.solver_time_limit_seconds,
             mip_relative_gap=self.config.simulation.mip_relative_gap,
         )
@@ -1192,7 +1230,7 @@ class UnitCommitment:
         fixed_thermal_commitment: dict[str, FloatArray],
         network: NodalNetwork,
         reserves: ReserveModel,
-    ) -> tuple[Bounds, npt.NDArray[np.int_]]:
+    ) -> tuple[VariableBounds, npt.NDArray[np.int_]]:
         periods = renewable.size
         lower = np.zeros(registry.size, dtype=np.float64)
         upper = np.full(registry.size, np.inf, dtype=np.float64)
@@ -1331,7 +1369,7 @@ class UnitCommitment:
                             asset_id=_startup_category_asset_id(unit.id, category.id),
                         )
                     ] = 1.0
-        return Bounds(lower, upper), integrality
+        return VariableBounds(lower, upper), integrality
 
     def _constraints(
         self,
@@ -1349,7 +1387,7 @@ class UnitCommitment:
         reserves: ReserveModel,
         storage_availability: dict[str, FloatArray],
         import_capacity_available_mw: FloatArray,
-    ) -> tuple[LinearConstraint, dict[str, int], tuple[str, ...]]:
+    ) -> tuple[LinearConstraintData, dict[str, int], tuple[str, ...]]:
         builder = _ConstraintBuilder(registry.size)
         if network.enabled:
             self._add_renewable_aggregate_constraints(

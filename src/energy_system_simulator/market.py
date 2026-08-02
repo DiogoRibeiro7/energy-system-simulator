@@ -5,10 +5,13 @@ from dataclasses import dataclass
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from scipy.optimize import Bounds
 
 from energy_system_simulator.config import ModelConfig
-from energy_system_simulator.dispatch.solver import solve_linear_program
+from energy_system_simulator.dispatch.solver import (
+    SolverProblem,
+    VariableBounds,
+    solve_linear_program,
+)
 from energy_system_simulator.dispatch.unit_commitment import (
     THERMAL_DOWNWARD_RESERVE_BLOCK,
     THERMAL_STARTUP_CATEGORY_BLOCK,
@@ -122,10 +125,15 @@ class MarketAnalyzer:
         dispatch: DispatchResult,
     ) -> tuple[FloatArray, FloatArray, float]:
         fixed_bounds = self._fixed_integer_bounds(problem, dispatch.frame)
-        result = solve_linear_program(
+        pricing_problem = SolverProblem(
             objective=problem.objective,
+            integrality=np.zeros_like(problem.integrality),
             bounds=fixed_bounds,
             constraints=problem.constraints,
+            variable_names=tuple(variable.name for variable in problem.variable_metadata),
+        )
+        result = solve_linear_program(
+            pricing_problem,
         )
         if result.status_code != 0 or result.solution is None or result.objective_value is None:
             raise OptimisationError(
@@ -138,9 +146,9 @@ class MarketAnalyzer:
         self,
         problem: FormulationProblem,
         frame: pd.DataFrame,
-    ) -> Bounds:
-        lower = np.asarray(problem.bounds.lb, dtype=np.float64).copy()
-        upper = np.asarray(problem.bounds.ub, dtype=np.float64).copy()
+    ) -> VariableBounds:
+        lower = np.asarray(problem.bounds.lower, dtype=np.float64).copy()
+        upper = np.asarray(problem.bounds.upper, dtype=np.float64).copy()
         for t in range(problem.gross_demand_mw.size):
             for unit in problem.thermal_units:
                 self._fix_binary(lower, upper, problem, frame, "thermal_on", t, unit.id)
@@ -170,7 +178,7 @@ class MarketAnalyzer:
                     t,
                     storage.id,
                 )
-        return Bounds(lower, upper)
+        return VariableBounds(lower, upper)
 
     @staticmethod
     def _fix_binary(
