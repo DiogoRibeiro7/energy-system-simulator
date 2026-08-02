@@ -124,6 +124,17 @@ OPTIONAL_SECTION_KEYS = {
         "discharge_ramp_mw_per_hour",
     },
     "aggregate_network": {"network_mode", "slack_bus_id"},
+    "rolling_horizon": {
+        "enabled",
+        "optimisation_window_periods",
+        "implementation_periods",
+        "lookahead_periods",
+        "terminal_treatment",
+        "forecast_mode",
+        "checkpoint_directory",
+        "resume_from_checkpoint",
+        "compare_full_horizon",
+    },
 }
 LEGACY_REQUIRED_SECTION_KEYS = {
     section: keys - OPTIONAL_SECTION_KEYS.get(section, set())
@@ -139,6 +150,7 @@ ROOT_KEYS = {
     "buses",
     "lines",
     "aggregate_network",
+    "rolling_horizon",
     "renewable_generators",
     "thermal_generators",
     "storage_units",
@@ -149,7 +161,7 @@ ROOT_KEYS = {
     "penalties",
     "paths",
 }
-REQUIRED_ROOT_KEYS = ROOT_KEYS - {"fuels", "hydro_units", "reserves"}
+REQUIRED_ROOT_KEYS = ROOT_KEYS - {"fuels", "hydro_units", "reserves", "rolling_horizon"}
 RESERVE_KEYS = {
     "upward_fixed_mw",
     "downward_fixed_mw",
@@ -180,6 +192,17 @@ SECTION_KEYS = {
         "allow_non_optimal_solution",
     },
     "aggregate_network": {"loss_fraction", "transfer_capacity_mw", "network_mode", "slack_bus_id"},
+    "rolling_horizon": {
+        "enabled",
+        "optimisation_window_periods",
+        "implementation_periods",
+        "lookahead_periods",
+        "terminal_treatment",
+        "forecast_mode",
+        "checkpoint_directory",
+        "resume_from_checkpoint",
+        "compare_full_horizon",
+    },
     "penalties": LEGACY_SECTION_KEYS["penalties"],
     "paths": LEGACY_SECTION_KEYS["paths"],
 }
@@ -1062,6 +1085,19 @@ class PenaltyConfig:
 
 
 @dataclass(frozen=True)
+class RollingHorizonConfig:
+    enabled: bool = False
+    optimisation_window_periods: int = 0
+    implementation_periods: int = 0
+    lookahead_periods: int = 0
+    terminal_treatment: Literal["inherit", "relaxed", "enforce"] = "inherit"
+    forecast_mode: Literal["perfect_foresight", "forecast_inputs"] = "perfect_foresight"
+    checkpoint_directory: Path | None = None
+    resume_from_checkpoint: bool = False
+    compare_full_horizon: bool = False
+
+
+@dataclass(frozen=True)
 class PathConfig:
     input_csv: Path
     output_directory: Path
@@ -1094,6 +1130,7 @@ class ModelConfig:
     battery: BatteryConfig
     network: NetworkConfig
     reserves: ReserveConfig
+    rolling_horizon: RollingHorizonConfig
     imports: ImportConfig
     penalties: PenaltyConfig
     paths: PathConfig
@@ -1313,6 +1350,7 @@ def _load_legacy_config(
         battery=battery,
         network=network,
         reserves=ReserveConfig(),
+        rolling_horizon=RollingHorizonConfig(),
         imports=imports,
         penalties=penalties,
         paths=paths,
@@ -1325,7 +1363,11 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
     _validate_allowed_keys(raw, "", ROOT_KEYS)
     _validate_required_keys(raw, "", REQUIRED_ROOT_KEYS)
     for section_name, allowed_keys in SECTION_KEYS.items():
-        section = _section(raw, section_name)
+        section = (
+            _optional_mapping_section(raw, section_name)
+            if section_name == "rolling_horizon"
+            else _section(raw, section_name)
+        )
         _validate_allowed_keys(section, section_name, allowed_keys)
         required_keys = allowed_keys - OPTIONAL_SECTION_KEYS.get(section_name, set())
         _validate_required_keys(section, section_name, required_keys)
@@ -1345,6 +1387,7 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
     solver_raw = _section(raw, "solver")
     network_raw = _section(raw, "aggregate_network")
     reserves_raw = _optional_mapping_section(raw, "reserves")
+    rolling_raw = _optional_mapping_section(raw, "rolling_horizon")
     penalties_raw = _section(raw, "penalties")
     paths_raw = _section(raw, "paths")
 
@@ -1470,6 +1513,7 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
         ),
     )
     reserves = _parse_reserves(reserves_raw)
+    rolling = _parse_rolling_horizon(rolling_raw, config_path.parent)
     import_config = imports[0].config
     penalties = PenaltyConfig(
         renewable_curtailment_eur_per_mwh=_number_at(
@@ -1498,6 +1542,7 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
         battery=battery,
         network=network,
         reserves=reserves,
+        rolling_horizon=rolling,
         imports=import_config,
         penalties=penalties,
         paths=paths,
@@ -1627,6 +1672,49 @@ def _parse_reserves(section: Mapping[str, Any]) -> ReserveConfig:
         import_downward_cost_eur_per_mw_hour=_optional_number_at(
             section, "import_downward_cost_eur_per_mw_hour", float, 0.0, path
         ),
+    )
+
+
+def _parse_rolling_horizon(
+    section: Mapping[str, Any],
+    base: Path,
+    path: str = "rolling_horizon",
+) -> RollingHorizonConfig:
+    terminal_treatment = _optional_string_at(section, "terminal_treatment", "inherit", path)
+    if terminal_treatment not in {"inherit", "relaxed", "enforce"}:
+        raise ConfigurationError(
+            f"{path}.terminal_treatment must be one of: inherit, relaxed, enforce"
+        )
+    forecast_mode = _optional_string_at(section, "forecast_mode", "perfect_foresight", path)
+    if forecast_mode not in {"perfect_foresight", "forecast_inputs"}:
+        raise ConfigurationError(
+            f"{path}.forecast_mode must be one of: perfect_foresight, forecast_inputs"
+        )
+    checkpoint_directory = (
+        (base / _string_at(section, "checkpoint_directory", path)).resolve()
+        if "checkpoint_directory" in section
+        else None
+    )
+    return RollingHorizonConfig(
+        enabled=_optional_boolean_at(section, "enabled", False, path),
+        optimisation_window_periods=_optional_integer_at(
+            section,
+            "optimisation_window_periods",
+            0,
+            path,
+        ),
+        implementation_periods=_optional_integer_at(section, "implementation_periods", 0, path),
+        lookahead_periods=_optional_integer_at(section, "lookahead_periods", 0, path),
+        terminal_treatment=cast(Literal["inherit", "relaxed", "enforce"], terminal_treatment),
+        forecast_mode=cast(Literal["perfect_foresight", "forecast_inputs"], forecast_mode),
+        checkpoint_directory=checkpoint_directory,
+        resume_from_checkpoint=_optional_boolean_at(
+            section,
+            "resume_from_checkpoint",
+            False,
+            path,
+        ),
+        compare_full_horizon=_optional_boolean_at(section, "compare_full_horizon", False, path),
     )
 
 
@@ -3039,6 +3127,7 @@ def _schema_v2_mapping_from_config(
         "buses": [{"id": bus.id, "zone_id": bus.zone_id} for bus in portfolio.buses],
         "lines": [_line_mapping(line) for line in portfolio.lines],
         "aggregate_network": _network_mapping(config.network),
+        "rolling_horizon": _rolling_horizon_mapping(config.rolling_horizon),
         "renewable_generators": [
             _renewable_generator_mapping(generator) for generator in portfolio.renewable_generators
         ],
@@ -3093,6 +3182,26 @@ def _network_mapping(network: NetworkConfig) -> dict[str, Any]:
     }
     if network.slack_bus_id is not None:
         item["slack_bus_id"] = network.slack_bus_id
+    return item
+
+
+def _rolling_horizon_mapping(rolling: RollingHorizonConfig) -> dict[str, Any]:
+    item: dict[str, Any] = {}
+    _add_non_default(item, "enabled", rolling.enabled, False)
+    _add_non_default(
+        item,
+        "optimisation_window_periods",
+        rolling.optimisation_window_periods,
+        0,
+    )
+    _add_non_default(item, "implementation_periods", rolling.implementation_periods, 0)
+    _add_non_default(item, "lookahead_periods", rolling.lookahead_periods, 0)
+    _add_non_default(item, "terminal_treatment", rolling.terminal_treatment, "inherit")
+    _add_non_default(item, "forecast_mode", rolling.forecast_mode, "perfect_foresight")
+    if rolling.checkpoint_directory is not None:
+        item["checkpoint_directory"] = str(rolling.checkpoint_directory)
+    _add_non_default(item, "resume_from_checkpoint", rolling.resume_from_checkpoint, False)
+    _add_non_default(item, "compare_full_horizon", rolling.compare_full_horizon, False)
     return item
 
 
@@ -3404,6 +3513,44 @@ def validate_config(config: ModelConfig) -> None:
     if config.simulation.solver_time_limit_seconds <= 0.0:
         raise ConfigurationError("solver_time_limit_seconds must be positive")
     _check_fraction("mip_relative_gap", config.simulation.mip_relative_gap)
+    rolling = config.rolling_horizon
+    for rolling_name, rolling_value in (
+        ("rolling_horizon.optimisation_window_periods", rolling.optimisation_window_periods),
+        ("rolling_horizon.implementation_periods", rolling.implementation_periods),
+        ("rolling_horizon.lookahead_periods", rolling.lookahead_periods),
+    ):
+        if rolling_value < 0:
+            raise ConfigurationError(f"{rolling_name} must be non-negative")
+    if rolling.enabled:
+        if rolling.optimisation_window_periods <= 0:
+            raise ConfigurationError(
+                "rolling_horizon.optimisation_window_periods must be positive when enabled"
+            )
+        if rolling.implementation_periods <= 0:
+            raise ConfigurationError(
+                "rolling_horizon.implementation_periods must be positive when enabled"
+            )
+        if rolling.implementation_periods > rolling.optimisation_window_periods:
+            raise ConfigurationError(
+                "rolling_horizon.implementation_periods cannot exceed optimisation_window_periods"
+            )
+        if rolling.lookahead_periods > rolling.optimisation_window_periods:
+            raise ConfigurationError(
+                "rolling_horizon.lookahead_periods cannot exceed optimisation_window_periods"
+            )
+        if (
+            rolling.implementation_periods + rolling.lookahead_periods
+            > rolling.optimisation_window_periods
+        ):
+            raise ConfigurationError(
+                "rolling_horizon implementation plus look-ahead cannot exceed the "
+                "optimisation window"
+            )
+        if rolling.resume_from_checkpoint and rolling.checkpoint_directory is None:
+            raise ConfigurationError(
+                "rolling_horizon.checkpoint_directory is required when "
+                "resume_from_checkpoint is true"
+            )
 
     _check_nonnegative("solar.capacity_mw", config.solar.capacity_mw)
     _check_fraction("solar.performance_ratio", config.solar.performance_ratio)

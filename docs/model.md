@@ -83,6 +83,24 @@ when \(a_t^{\mathrm{ren}}>0\), and zero otherwise. Asset-level curtailment is
 \(a_{k,t}-r_{k,t}\). These reported asset quantities reconcile exactly to the
 aggregate dispatch variables.
 
+## Rolling horizon
+
+Full-horizon simulation solves all periods \(1,\ldots,T\) in one optimisation.
+Rolling-horizon simulation instead solves subproblems over windows
+\(\mathcal{W}_m\), retains only an implementation segment
+\(\mathcal{I}_m \subseteq \mathcal{W}_m\), and transfers terminal states from
+\(\mathcal{I}_m\) into the next subproblem:
+
+\[
+x^{0}_{m+1}=x^{\mathrm{end}}_{\mathcal{I}_m}.
+\]
+
+Transferred states include thermal commitment and elapsed up/down durations,
+storage state of charge, reservoir storage, and remaining task demand energy.
+The retained implementation segments are concatenated in timestamp order. The
+solution can differ from the full-horizon optimum because each subproblem only
+observes its configured look-ahead horizon.
+
 ## Power balance
 
 All dispatch variables are represented on the source side:

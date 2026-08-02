@@ -87,6 +87,23 @@ points with `wind_speed_m_s` and `power_mw`. Curve speeds must be strictly
 increasing, and runtime wind speeds outside the configured curve range are
 rejected.
 
+## Rolling Horizon
+
+Schema v2 may include an optional `rolling_horizon` section. When omitted,
+simulation uses a full-horizon solve.
+
+- `enabled`: run rolling-horizon optimisation when true.
+- `optimisation_window_periods`: total periods solved in each subproblem.
+- `implementation_periods`: periods retained from each solved window.
+- `lookahead_periods`: non-retained periods available for forward-looking
+  decisions.
+- `terminal_treatment`: `inherit`, `relaxed`, or `enforce`.
+- `forecast_mode`: `perfect_foresight` or `forecast_inputs`.
+- `checkpoint_directory`: optional deterministic checkpoint directory.
+- `resume_from_checkpoint`: resume from an existing checkpoint.
+- `compare_full_horizon`: run an additional full-horizon comparison for small
+  cases.
+
 Thermal generators may set:
 
 - `must_run`: optional boolean. When true, the unit is committed in every period.

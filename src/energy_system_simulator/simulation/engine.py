@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+import json
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -60,6 +61,12 @@ class SimulationEngine:
     def run(self) -> SimulationResult:
         """Execute the configured simulation."""
         data = self._load_data()
+        if self.config.rolling_horizon.enabled:
+            return self._run_rolling_horizon(data)
+        return self._run_full_horizon_data(data)
+
+    def _run_full_horizon_data(self, data: pd.DataFrame) -> SimulationResult:
+        """Execute one optimisation over the provided data frame."""
         registry = self._resolve_assets()
         renewable = self._calculate_renewable_availability(registry, data)
         demand = self._calculate_demand(registry, data)
@@ -166,11 +173,568 @@ class SimulationEngine:
             numerical_diagnostics=dispatch.numerical_diagnostics,
         )
 
+    def _run_rolling_horizon(self, data: pd.DataFrame) -> SimulationResult:
+        rolling = self.config.rolling_horizon
+        total_periods = len(data)
+        checkpoint_path = self._rolling_checkpoint_path()
+        state = self._initial_rolling_state()
+        start = 0
+        window_records: list[dict[str, Any]] = []
+        implemented_frames: list[pd.DataFrame] = []
+        implemented_assets: list[pd.DataFrame] = []
+        if rolling.resume_from_checkpoint and checkpoint_path.exists():
+            checkpoint = self._read_rolling_checkpoint(checkpoint_path)
+            start = int(checkpoint["next_start"])
+            state = checkpoint["state"]
+            window_records = list(checkpoint["windows"])
+            implemented_frames = [
+                self._records_frame(checkpoint["timeseries"], checkpoint["timeseries_columns"])
+            ]
+            implemented_assets = [
+                self._records_frame(
+                    checkpoint["asset_timeseries"],
+                    checkpoint["asset_timeseries_columns"],
+                )
+            ]
+
+        last_result: SimulationResult | None = None
+        while start < total_periods:
+            implementation_end = min(start + rolling.implementation_periods, total_periods)
+            solve_end = min(start + rolling.optimisation_window_periods, total_periods)
+            if solve_end < implementation_end:
+                raise OptimisationError("Rolling horizon window does not cover implementation step")
+            is_final_window = implementation_end >= total_periods
+            window_config = self._rolling_window_config(
+                state,
+                window_start=start,
+                is_final_window=is_final_window,
+            )
+            window_data = data.iloc[start:solve_end].reset_index(drop=True)
+            window_result = SimulationEngine(window_config)._run_full_horizon_data(window_data)
+            last_result = window_result
+            implemented_count = implementation_end - start
+            implemented_frame = window_result.timeseries.iloc[:implemented_count].copy()
+            retained_timestamps = set(implemented_frame["timestamp"])
+            implemented_asset = window_result.asset_timeseries[
+                window_result.asset_timeseries["timestamp"].isin(retained_timestamps)
+            ].copy()
+            state = self._rolling_state_after_segment(
+                state,
+                window_config,
+                implemented_frame,
+                window_start=start,
+            )
+            window_record = {
+                "window_index": len(window_records),
+                "start_period": start,
+                "solve_end_period": solve_end,
+                "implementation_end_period": implementation_end,
+                "implemented_periods": implemented_count,
+                "lookahead_periods": solve_end - implementation_end,
+                "solver_status": window_result.solver_status,
+                "backend_solver_status": window_result.backend_solver_status,
+                "backend_solver_status_code": window_result.backend_solver_status_code,
+                "objective_eur": window_result.objective_eur,
+                "solver_runtime_seconds": window_result.solver_runtime_seconds,
+                "solver_node_count": window_result.solver_node_count,
+                "mip_gap": window_result.mip_gap,
+                "absolute_gap_eur": window_result.absolute_gap_eur,
+                "formulation_statistics": asdict(window_result.formulation_statistics),
+                "transferred_state": state,
+                "fallback": None,
+            }
+            window_records.append(window_record)
+            implemented_frames.append(implemented_frame)
+            implemented_assets.append(implemented_asset)
+            start = implementation_end
+            self._write_rolling_checkpoint(
+                checkpoint_path,
+                start,
+                state,
+                window_records,
+                pd.concat(implemented_frames, ignore_index=True),
+                pd.concat(implemented_assets, ignore_index=True),
+            )
+
+        if last_result is None and not window_records:
+            raise OptimisationError("Rolling horizon requires at least one period")
+        last_window = window_records[-1]
+        formulation_statistics = (
+            last_result.formulation_statistics
+            if last_result is not None
+            else FormulationStatistics(**last_window["formulation_statistics"])
+        )
+        frame = pd.concat(implemented_frames, ignore_index=True)
+        asset_frame = pd.concat(implemented_assets, ignore_index=True)
+        if frame["timestamp"].duplicated().any():
+            raise OptimisationError("Rolling horizon produced duplicated timestamps")
+        if len(frame) != total_periods:
+            raise OptimisationError("Rolling horizon did not cover the complete input horizon")
+
+        cost_components = self._rolling_cost_components(frame)
+        objective_eur = float(sum(cost_components.values()))
+        asset_timeseries = AssetTimeSeries(asset_frame)
+        terminal_by_unit = self._terminal_commitment_from_state(state)
+        terminal_state = terminal_by_unit[self.config.portfolio.thermal_generators[0].id]
+        numerical_diagnostics = self._combine_window_diagnostics(window_records)
+        summary = self._summary(
+            frame,
+            asset_timeseries,
+            objective_eur,
+            cost_components,
+            terminal_state,
+            terminal_by_unit,
+            numerical_diagnostics,
+        )
+        summary["rolling_horizon"] = {
+            "enabled": True,
+            "optimisation_window_periods": rolling.optimisation_window_periods,
+            "implementation_periods": rolling.implementation_periods,
+            "lookahead_periods": rolling.lookahead_periods,
+            "terminal_treatment": rolling.terminal_treatment,
+            "forecast_mode": rolling.forecast_mode,
+            "checkpoint_path": str(checkpoint_path),
+            "windows": window_records,
+        }
+        if rolling.compare_full_horizon:
+            summary["rolling_horizon"]["full_horizon_comparison"] = self._full_horizon_comparison(
+                data, frame, objective_eur
+            )
+
+        return SimulationResult(
+            timeseries=frame,
+            asset_timeseries=asset_frame,
+            summary=summary,
+            objective_eur=objective_eur,
+            solver_message=f"Rolling horizon solved {len(window_records)} windows",
+            solver_status=(
+                "optimal"
+                if all(window["solver_status"] == "optimal" for window in window_records)
+                else "accepted"
+            ),
+            backend_solver_status=str(last_window["backend_solver_status"]),
+            backend_solver_status_code=(
+                int(last_window["backend_solver_status_code"])
+                if last_window["backend_solver_status_code"] is not None
+                else None
+            ),
+            mip_gap=max(
+                (window["mip_gap"] for window in window_records if window["mip_gap"] is not None),
+                default=None,
+            ),
+            objective_bound_eur=None,
+            absolute_gap_eur=None,
+            relative_gap=None,
+            solver_runtime_seconds=float(
+                sum(window["solver_runtime_seconds"] for window in window_records)
+            ),
+            solver_node_count=(
+                int(last_window["solver_node_count"])
+                if last_window["solver_node_count"] is not None
+                else None
+            ),
+            formulation_statistics=formulation_statistics,
+            terminal_commitment_state=terminal_state,
+            terminal_commitment_by_unit=terminal_by_unit,
+            numerical_diagnostics=numerical_diagnostics,
+        )
+
     def _load_data(self) -> pd.DataFrame:
         return load_input_data(
             self.config.paths.input_csv,
             self.config.simulation.time_step_hours,
         )
+
+    def _rolling_checkpoint_path(self) -> Path:
+        directory = (
+            self.config.rolling_horizon.checkpoint_directory
+            if self.config.rolling_horizon.checkpoint_directory is not None
+            else self.config.paths.output_directory / "rolling-checkpoints"
+        )
+        return directory / "rolling_checkpoint.json"
+
+    def _initial_rolling_state(self) -> dict[str, Any]:
+        return {
+            "thermal": {
+                unit.id: {
+                    "initial_on": unit.config.initial_on,
+                    "initial_output_mw": unit.config.initial_output_mw,
+                    "initial_up_time_hours": unit.config.initial_up_time_hours,
+                    "initial_down_time_hours": unit.config.initial_down_time_hours,
+                }
+                for unit in self.config.portfolio.thermal_generators
+            },
+            "storage": {
+                unit.id: {"initial_soc_mwh": unit.config.initial_soc_mwh}
+                for unit in self.config.portfolio.storage_units
+            },
+            "hydro": {
+                unit.id: {"initial_reservoir_mwh": unit.initial_reservoir_mwh}
+                for unit in self.config.portfolio.hydro_units
+            },
+            "demand": {
+                demand.id: {"remaining_task_energy_mwh": demand.task_required_energy_mwh}
+                for demand in self.config.portfolio.demand
+                if demand.kind in {"deferrable", "ev_charging"}
+            },
+        }
+
+    def _rolling_window_config(
+        self,
+        state: dict[str, Any],
+        *,
+        window_start: int,
+        is_final_window: bool,
+    ) -> ModelConfig:
+        rolling = self.config.rolling_horizon
+        relax_terminal = rolling.terminal_treatment == "relaxed" and not is_final_window
+        thermal_generators = tuple(
+            replace(
+                unit,
+                config=replace(
+                    unit.config,
+                    initial_on=bool(state["thermal"][unit.id]["initial_on"]),
+                    initial_output_mw=float(state["thermal"][unit.id]["initial_output_mw"]),
+                    initial_up_time_hours=float(state["thermal"][unit.id]["initial_up_time_hours"]),
+                    initial_down_time_hours=float(
+                        state["thermal"][unit.id]["initial_down_time_hours"]
+                    ),
+                    terminal_commitment_mode=(
+                        "carry_residual_obligations"
+                        if relax_terminal
+                        else unit.config.terminal_commitment_mode
+                    ),
+                    terminal_on=None if relax_terminal else unit.config.terminal_on,
+                ),
+            )
+            for unit in self.config.portfolio.thermal_generators
+        )
+        storage_units = tuple(
+            replace(
+                unit,
+                config=replace(
+                    unit.config,
+                    initial_soc_mwh=float(state["storage"][unit.id]["initial_soc_mwh"]),
+                    terminal_soc_mode="free" if relax_terminal else unit.config.terminal_soc_mode,
+                ),
+            )
+            for unit in self.config.portfolio.storage_units
+        )
+        hydro_units = tuple(
+            replace(
+                unit,
+                initial_reservoir_mwh=float(state["hydro"][unit.id]["initial_reservoir_mwh"]),
+                terminal_reservoir_mode=(
+                    "free" if relax_terminal else unit.terminal_reservoir_mode
+                ),
+                water_value_eur_per_mwh=(0.0 if relax_terminal else unit.water_value_eur_per_mwh),
+            )
+            for unit in self.config.portfolio.hydro_units
+        )
+        demand_units = tuple(
+            self._rolling_window_demand(demand, state, window_start)
+            for demand in self.config.portfolio.demand
+        )
+        portfolio = replace(
+            self.config.portfolio,
+            thermal_generators=thermal_generators,
+            storage_units=storage_units,
+            hydro_units=hydro_units,
+            demand=demand_units,
+        )
+        return replace(
+            self.config,
+            portfolio=portfolio,
+            thermal=thermal_generators[0].config,
+            battery=storage_units[0].config,
+            rolling_horizon=replace(self.config.rolling_horizon, enabled=False),
+        )
+
+    def _rolling_window_demand(
+        self,
+        demand: Any,
+        state: dict[str, Any],
+        window_start: int,
+    ) -> Any:
+        if demand.kind not in {"deferrable", "ev_charging"}:
+            return demand
+        remaining = float(state["demand"][demand.id]["remaining_task_energy_mwh"])
+        task_end_period = (
+            max(0, demand.task_end_period - window_start)
+            if demand.task_end_period is not None
+            else None
+        )
+        return replace(
+            demand,
+            task_required_energy_mwh=remaining,
+            task_start_period=max(0, demand.task_start_period - window_start),
+            task_end_period=task_end_period,
+        )
+
+    def _rolling_state_after_segment(
+        self,
+        previous_state: dict[str, Any],
+        window_config: ModelConfig,
+        frame: pd.DataFrame,
+        *,
+        window_start: int,
+    ) -> dict[str, Any]:
+        state = cast(dict[str, Any], json.loads(json.dumps(previous_state)))
+        for thermal_unit in window_config.portfolio.thermal_generators:
+            state["thermal"][thermal_unit.id] = self._thermal_state_after_segment(
+                thermal_unit.id, thermal_unit.config, frame
+            )
+        for storage_unit in window_config.portfolio.storage_units:
+            state["storage"][storage_unit.id] = {
+                "initial_soc_mwh": float(frame[f"storage_soc_mwh__{storage_unit.id}"].iloc[-1])
+            }
+        for hydro_unit in window_config.portfolio.hydro_units:
+            state["hydro"][hydro_unit.id] = {
+                "initial_reservoir_mwh": float(
+                    frame[f"hydro_reservoir_mwh__{hydro_unit.id}"].iloc[-1]
+                )
+            }
+        dt = self.config.simulation.time_step_hours
+        for demand in window_config.portfolio.demand:
+            if demand.kind not in {"deferrable", "ev_charging"}:
+                continue
+            charge_column = f"demand_task_charge_mw__{demand.id}"
+            charged = float(frame[charge_column].sum() * dt) if charge_column in frame else 0.0
+            remaining = max(
+                0.0,
+                float(previous_state["demand"][demand.id]["remaining_task_energy_mwh"]) - charged,
+            )
+            state["demand"][demand.id] = {
+                "remaining_task_energy_mwh": remaining,
+                "last_implemented_period": window_start + len(frame) - 1,
+            }
+        return state
+
+    def _thermal_state_after_segment(
+        self,
+        unit_id: str,
+        thermal: Any,
+        frame: pd.DataFrame,
+    ) -> dict[str, Any]:
+        dt = self.config.simulation.time_step_hours
+        on_values = frame[f"thermal_on__{unit_id}"].to_numpy(dtype=np.float64)
+        output = float(frame[f"thermal_output_mw__{unit_id}"].iloc[-1])
+        terminal_on = bool(round(float(on_values[-1])))
+        matching = 0
+        for value in reversed(on_values):
+            if bool(round(float(value))) != terminal_on:
+                break
+            matching += 1
+        if terminal_on:
+            elapsed_up = matching * dt
+            if matching == len(on_values):
+                elapsed_up += thermal.initial_up_time_hours
+            return {
+                "initial_on": True,
+                "initial_output_mw": output,
+                "initial_up_time_hours": elapsed_up,
+                "initial_down_time_hours": 0.0,
+            }
+        elapsed_down = matching * dt
+        if matching == len(on_values):
+            elapsed_down += thermal.initial_down_time_hours
+        return {
+            "initial_on": False,
+            "initial_output_mw": 0.0,
+            "initial_up_time_hours": 0.0,
+            "initial_down_time_hours": elapsed_down,
+        }
+
+    def _terminal_commitment_from_state(
+        self,
+        state: dict[str, Any],
+    ) -> dict[str, TerminalCommitmentState]:
+        result: dict[str, TerminalCommitmentState] = {}
+        for unit in self.config.portfolio.thermal_generators:
+            thermal_state = state["thermal"][unit.id]
+            result[unit.id] = TerminalCommitmentState(
+                thermal_on=bool(thermal_state["initial_on"]),
+                thermal_output_mw=float(thermal_state["initial_output_mw"]),
+                consecutive_on_hours=float(thermal_state["initial_up_time_hours"]),
+                consecutive_off_hours=float(thermal_state["initial_down_time_hours"]),
+                residual_minimum_up_hours=max(
+                    0.0,
+                    unit.config.minimum_up_hours - float(thermal_state["initial_up_time_hours"]),
+                )
+                if bool(thermal_state["initial_on"])
+                else 0.0,
+                residual_minimum_down_hours=max(
+                    0.0,
+                    unit.config.minimum_down_hours
+                    - float(thermal_state["initial_down_time_hours"]),
+                )
+                if not bool(thermal_state["initial_on"])
+                else 0.0,
+                terminal_commitment_mode=unit.config.terminal_commitment_mode,
+            )
+        return result
+
+    def _write_rolling_checkpoint(
+        self,
+        path: Path,
+        next_start: int,
+        state: dict[str, Any],
+        windows: list[dict[str, Any]],
+        timeseries: pd.DataFrame,
+        asset_timeseries: pd.DataFrame,
+    ) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "schema_version": 1,
+            "next_start": next_start,
+            "state": state,
+            "windows": windows,
+            "timeseries_columns": list(timeseries.columns),
+            "timeseries": timeseries.to_dict(orient="records"),
+            "asset_timeseries_columns": list(asset_timeseries.columns),
+            "asset_timeseries": asset_timeseries.to_dict(orient="records"),
+        }
+        path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True, default=str), encoding="utf-8"
+        )
+
+    def _read_rolling_checkpoint(self, path: Path) -> dict[str, Any]:
+        payload = cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
+        if payload.get("schema_version") != 1:
+            raise OptimisationError("Unsupported rolling checkpoint schema version")
+        return payload
+
+    @staticmethod
+    def _records_frame(records: list[dict[str, Any]], columns: list[str]) -> pd.DataFrame:
+        frame = pd.DataFrame(records)
+        if "timestamp" in frame:
+            frame["timestamp"] = pd.to_datetime(frame["timestamp"])
+        frame = frame[columns]
+        return frame
+
+    def _rolling_cost_components(self, frame: pd.DataFrame) -> dict[str, float]:
+        dt = self.config.simulation.time_step_hours
+        imports = self.config.imports
+        penalties = self.config.penalties
+        network_efficiency = 1.0 - self.config.network.loss_fraction
+        thermal_units = self.config.portfolio.thermal_generators
+        storage_units = self.config.portfolio.storage_units
+        demand_shed_cost_columns = [
+            column
+            for column in frame.columns
+            if column.startswith("demand_involuntary_shed_cost_eur__")
+        ]
+        fixed_network_shedding_cost = (
+            frame["network_capacity_shed_mw"].sum() * penalties.lost_load_eur_per_mwh * dt
+        )
+        return {
+            "thermal_variable_cost_eur": float(
+                sum(frame[f"thermal_variable_cost_eur__{unit.id}"].sum() for unit in thermal_units)
+            ),
+            "thermal_no_load_cost_eur": float(
+                sum(frame[f"thermal_no_load_cost_eur__{unit.id}"].sum() for unit in thermal_units)
+            ),
+            "startup_cost_eur": float(
+                sum(frame[f"thermal_startup_cost_eur__{unit.id}"].sum() for unit in thermal_units)
+            ),
+            "shutdown_cost_eur": float(
+                sum(frame[f"thermal_shutdown_cost_eur__{unit.id}"].sum() for unit in thermal_units)
+            ),
+            "import_energy_cost_eur": float(
+                frame["imports_mw"].sum() * dt * imports.price_eur_per_mwh
+            ),
+            "battery_throughput_cost_eur": float(
+                sum(
+                    frame[f"storage_throughput_cost_eur__{unit.id}"].sum() for unit in storage_units
+                )
+            ),
+            "storage_degradation_cost_eur": float(
+                sum(
+                    frame[f"storage_degradation_cost_eur__{unit.id}"].sum()
+                    for unit in storage_units
+                )
+            ),
+            "hydro_terminal_value_eur": -float(frame["hydro_terminal_value_eur"].sum()),
+            "demand_voluntary_curtailment_cost_eur": float(
+                frame["demand_voluntary_curtailment_cost_eur"].sum()
+            ),
+            "demand_shift_cost_eur": float(frame["demand_shift_cost_eur"].sum()),
+            "demand_task_unserved_cost_eur": float(frame["demand_task_unserved_cost_eur"].sum()),
+            "thermal_carbon_cost_eur": float(
+                sum(frame[f"thermal_carbon_cost_eur__{unit.id}"].sum() for unit in thermal_units)
+            ),
+            "import_carbon_cost_eur": float(
+                frame["imports_mw"].sum()
+                * dt
+                * imports.emission_factor_tonnes_per_mwh
+                * penalties.carbon_price_eur_per_tonne
+            ),
+            "renewable_curtailment_cost_eur": float(
+                frame["renewable_curtailed_mw"].sum()
+                * dt
+                * penalties.renewable_curtailment_eur_per_mwh
+            ),
+            "reserve_procurement_cost_eur": float(
+                frame["reserve_procurement_cost_eur"].sum()
+                if "reserve_procurement_cost_eur" in frame
+                else 0.0
+            ),
+            "reserve_shortfall_cost_eur": float(
+                frame["reserve_shortfall_cost_eur"].sum()
+                if "reserve_shortfall_cost_eur" in frame
+                else 0.0
+            ),
+            "dispatch_load_shedding_cost_eur": float(
+                frame[demand_shed_cost_columns].sum().sum()
+                if demand_shed_cost_columns
+                else frame["source_load_shed_mw"].sum()
+                * network_efficiency
+                * dt
+                * penalties.lost_load_eur_per_mwh
+            ),
+            "network_capacity_load_shedding_cost_eur": float(fixed_network_shedding_cost),
+        }
+
+    @staticmethod
+    def _combine_window_diagnostics(windows: list[dict[str, Any]]) -> dict[str, float]:
+        return {
+            "rolling_window_count": float(len(windows)),
+            "rolling_total_solver_runtime_seconds": float(
+                sum(window["solver_runtime_seconds"] for window in windows)
+            ),
+        }
+
+    def _full_horizon_comparison(
+        self,
+        data: pd.DataFrame,
+        rolling_frame: pd.DataFrame,
+        rolling_objective_eur: float,
+    ) -> dict[str, float]:
+        full = SimulationEngine(
+            replace(
+                self.config, rolling_horizon=replace(self.config.rolling_horizon, enabled=False)
+            )
+        )._run_full_horizon_data(data)
+        common_columns = [
+            "renewable_used_mw",
+            "thermal_output_mw",
+            "battery_soc_mwh",
+            "hydro_reservoir_mwh",
+            "served_demand_mw",
+        ]
+        max_abs_difference = 0.0
+        for column in common_columns:
+            if column in rolling_frame and column in full.timeseries:
+                max_abs_difference = max(
+                    max_abs_difference,
+                    float((rolling_frame[column] - full.timeseries[column]).abs().max()),
+                )
+        return {
+            "full_horizon_objective_eur": full.objective_eur,
+            "rolling_objective_eur": rolling_objective_eur,
+            "objective_delta_eur": rolling_objective_eur - full.objective_eur,
+            "max_abs_common_timeseries_difference": max_abs_difference,
+        }
 
     def _resolve_assets(self) -> AssetRegistry:
         return AssetRegistry.from_config(self.config)
