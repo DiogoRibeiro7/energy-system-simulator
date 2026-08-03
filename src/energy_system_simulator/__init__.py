@@ -1,5 +1,13 @@
 """Public Python API for hybrid electricity-system simulation."""
 
+from energy_system_simulator.ac_validation import (
+    ACDispatchResult,
+    ACValidation,
+    ACValidationError,
+    ACValidationOptions,
+    select_ac_validation_periods,
+    validate_ac_power_flow,
+)
 from energy_system_simulator.api import (
     build_model,
     ensure_writable_output_directory,
@@ -79,6 +87,10 @@ from energy_system_simulator.security import (
 from energy_system_simulator.simulation.engine import SimulationEngine, SimulationResult
 
 __all__ = [
+    "ACDispatchResult",
+    "ACValidation",
+    "ACValidationError",
+    "ACValidationOptions",
     "CapacityExpansionPlanner",
     "CapacityExpansionProblem",
     "CapacityExpansionResult",
@@ -138,8 +150,10 @@ __all__ = [
     "run_experiment_file",
     "run_research_experiment",
     "run_simulation",
+    "select_ac_validation_periods",
     "solve",
     "stable_scenario_id",
+    "validate_ac_power_flow",
     "validate_canonical_frame",
     "validate_data",
     "validate_model_config",

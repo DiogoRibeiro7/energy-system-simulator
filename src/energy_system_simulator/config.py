@@ -123,7 +123,7 @@ OPTIONAL_SECTION_KEYS = {
         "charge_ramp_mw_per_hour",
         "discharge_ramp_mw_per_hour",
     },
-    "aggregate_network": {"network_mode", "slack_bus_id"},
+    "aggregate_network": {"network_mode", "slack_bus_id", "ac_base_mva"},
     "rolling_horizon": {
         "enabled",
         "optimisation_window_periods",
@@ -209,7 +209,13 @@ SECTION_KEYS = {
         "mip_relative_gap",
         "allow_non_optimal_solution",
     },
-    "aggregate_network": {"loss_fraction", "transfer_capacity_mw", "network_mode", "slack_bus_id"},
+    "aggregate_network": {
+        "loss_fraction",
+        "transfer_capacity_mw",
+        "network_mode",
+        "slack_bus_id",
+        "ac_base_mva",
+    },
     "rolling_horizon": {
         "enabled",
         "optimisation_window_periods",
@@ -227,7 +233,15 @@ SECTION_KEYS = {
 }
 LIST_SECTION_KEYS = {
     "zones": {"id"},
-    "buses": {"id", "zone_id"},
+    "buses": {
+        "id",
+        "zone_id",
+        "voltage_min_pu",
+        "voltage_max_pu",
+        "voltage_initial_pu",
+        "voltage_angle_initial_deg",
+        "shunt_mvar",
+    },
     "lines": {
         "id",
         "from_bus_id",
@@ -236,6 +250,11 @@ LIST_SECTION_KEYS = {
         "capacity_mw",
         "availability_factor",
         "availability_factor_key",
+        "ac_resistance_pu",
+        "ac_reactance_pu",
+        "ac_line_charging_pu",
+        "ac_rating_mva",
+        "transformer_tap_ratio",
     },
     "renewable_generators": {
         "id",
@@ -284,6 +303,8 @@ LIST_SECTION_KEYS = {
         "electrical_loss_key",
         "time_series_key",
         "ambient_temperature_key",
+        "reactive_power_min_mvar",
+        "reactive_power_max_mvar",
     },
     "thermal_generators": LEGACY_SECTION_KEYS["thermal"]
     | {
@@ -299,6 +320,8 @@ LIST_SECTION_KEYS = {
         "synchronous_inertia_mw_s",
         "primary_response_mw",
         "primary_response_time_seconds",
+        "reactive_power_min_mvar",
+        "reactive_power_max_mvar",
     },
     "fuels": {
         "id",
@@ -344,6 +367,8 @@ LIST_SECTION_KEYS = {
         "synchronous_inertia_mw_s",
         "primary_response_mw",
         "primary_response_time_seconds",
+        "reactive_power_min_mvar",
+        "reactive_power_max_mvar",
     },
     "imports": LEGACY_SECTION_KEYS["imports"] | {"id", "bus_id"},
     "demand": {
@@ -371,6 +396,7 @@ LIST_SECTION_KEYS = {
         "cooling_base_temperature_c",
         "heating_sensitivity_mw_per_c",
         "cooling_sensitivity_mw_per_c",
+        "reactive_demand_mvar_per_mw",
     },
 }
 LIST_OPTIONAL_KEYS = {
@@ -416,6 +442,8 @@ LIST_OPTIONAL_KEYS = {
         "wake_loss_key",
         "electrical_loss_fraction",
         "electrical_loss_key",
+        "reactive_power_min_mvar",
+        "reactive_power_max_mvar",
     },
     "thermal_generators": OPTIONAL_SECTION_KEYS["thermal"]
     | {
@@ -428,6 +456,8 @@ LIST_OPTIONAL_KEYS = {
         "synchronous_inertia_mw_s",
         "primary_response_mw",
         "primary_response_time_seconds",
+        "reactive_power_min_mvar",
+        "reactive_power_max_mvar",
     },
     "fuels": {
         "price_time_series_key",
@@ -470,9 +500,26 @@ LIST_OPTIONAL_KEYS = {
         "synchronous_inertia_mw_s",
         "primary_response_mw",
         "primary_response_time_seconds",
+        "reactive_power_min_mvar",
+        "reactive_power_max_mvar",
     },
     "imports": set(),
-    "lines": {"availability_factor", "availability_factor_key"},
+    "lines": {
+        "availability_factor",
+        "availability_factor_key",
+        "ac_resistance_pu",
+        "ac_reactance_pu",
+        "ac_line_charging_pu",
+        "ac_rating_mva",
+        "transformer_tap_ratio",
+    },
+    "buses": {
+        "voltage_min_pu",
+        "voltage_max_pu",
+        "voltage_initial_pu",
+        "voltage_angle_initial_deg",
+        "shunt_mvar",
+    },
     "demand": {
         "kind",
         "sector",
@@ -495,6 +542,7 @@ LIST_OPTIONAL_KEYS = {
         "cooling_base_temperature_c",
         "heating_sensitivity_mw_per_c",
         "cooling_sensitivity_mw_per_c",
+        "reactive_demand_mvar_per_mw",
     },
 }
 LIST_REQUIRED_KEYS = {
@@ -825,6 +873,11 @@ class ZoneConfig:
 class BusConfig:
     id: str
     zone_id: str
+    voltage_min_pu: float = 0.95
+    voltage_max_pu: float = 1.05
+    voltage_initial_pu: float = 1.0
+    voltage_angle_initial_deg: float = 0.0
+    shunt_mvar: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -836,6 +889,11 @@ class TransmissionLineConfig:
     capacity_mw: float
     availability_factor: float = 1.0
     availability_factor_key: str | None = None
+    ac_resistance_pu: float = 0.0
+    ac_reactance_pu: float | None = None
+    ac_line_charging_pu: float = 0.0
+    ac_rating_mva: float | None = None
+    transformer_tap_ratio: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -909,6 +967,8 @@ class RenewableGeneratorConfig:
     wake_loss_key: str | None = None
     electrical_loss_fraction: float = 0.0
     electrical_loss_key: str | None = None
+    reactive_power_min_mvar: float | None = None
+    reactive_power_max_mvar: float | None = None
 
 
 @dataclass(frozen=True)
@@ -984,6 +1044,8 @@ class ThermalGeneratorConfig:
     synchronous_inertia_mw_s: float = 0.0
     primary_response_mw: float = 0.0
     primary_response_time_seconds: float = 30.0
+    reactive_power_min_mvar: float | None = None
+    reactive_power_max_mvar: float | None = None
 
 
 @dataclass(frozen=True)
@@ -1051,6 +1113,8 @@ class HydroUnitConfig:
     synchronous_inertia_mw_s: float = 0.0
     primary_response_mw: float = 0.0
     primary_response_time_seconds: float = 30.0
+    reactive_power_min_mvar: float | None = None
+    reactive_power_max_mvar: float | None = None
 
 
 @dataclass(frozen=True)
@@ -1059,6 +1123,7 @@ class NetworkConfig:
     transfer_capacity_mw: float
     network_mode: Literal["aggregate", "nodal"] = "aggregate"
     slack_bus_id: str | None = None
+    ac_base_mva: float = 100.0
 
 
 @dataclass(frozen=True)
@@ -1137,6 +1202,7 @@ class DemandConfig:
     cooling_base_temperature_c: float | None = None
     heating_sensitivity_mw_per_c: float = 0.0
     cooling_sensitivity_mw_per_c: float = 0.0
+    reactive_demand_mvar_per_mw: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -1478,32 +1544,11 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
         for index, item in enumerate(_list_section(raw, "zones"))
     )
     buses = tuple(
-        BusConfig(
-            id=_id_at(item, "id", f"buses[{index}]"),
-            zone_id=_id_at(item, "zone_id", f"buses[{index}]"),
-        )
+        _parse_bus(item, f"buses[{index}]")
         for index, item in enumerate(_list_section(raw, "buses"))
     )
     lines = tuple(
-        TransmissionLineConfig(
-            id=_id_at(item, "id", f"lines[{index}]"),
-            from_bus_id=_id_at(item, "from_bus_id", f"lines[{index}]"),
-            to_bus_id=_id_at(item, "to_bus_id", f"lines[{index}]"),
-            susceptance=_number_at(item, "susceptance", float, f"lines[{index}]"),
-            capacity_mw=_number_at(item, "capacity_mw", float, f"lines[{index}]"),
-            availability_factor=_optional_number_at(
-                item,
-                "availability_factor",
-                float,
-                1.0,
-                f"lines[{index}]",
-            ),
-            availability_factor_key=(
-                _input_key_at(item, "availability_factor_key", f"lines[{index}]")
-                if "availability_factor_key" in item
-                else None
-            ),
-        )
+        _parse_transmission_line(item, f"lines[{index}]")
         for index, item in enumerate(_list_section(raw, "lines"))
     )
     fuels = tuple(
@@ -1579,6 +1624,13 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
             _id_at(network_raw, "slack_bus_id", "aggregate_network")
             if "slack_bus_id" in network_raw
             else None
+        ),
+        ac_base_mva=_optional_number_at(
+            network_raw,
+            "ac_base_mva",
+            float,
+            100.0,
+            "aggregate_network",
         ),
     )
     reserves = _parse_reserves(reserves_raw)
@@ -1839,6 +1891,64 @@ def _parse_rolling_horizon(
     )
 
 
+def _parse_bus(item: Mapping[str, Any], path: str) -> BusConfig:
+    return BusConfig(
+        id=_id_at(item, "id", path),
+        zone_id=_id_at(item, "zone_id", path),
+        voltage_min_pu=_optional_number_at(item, "voltage_min_pu", float, 0.95, path),
+        voltage_max_pu=_optional_number_at(item, "voltage_max_pu", float, 1.05, path),
+        voltage_initial_pu=_optional_number_at(item, "voltage_initial_pu", float, 1.0, path),
+        voltage_angle_initial_deg=_optional_number_at(
+            item,
+            "voltage_angle_initial_deg",
+            float,
+            0.0,
+            path,
+        ),
+        shunt_mvar=_optional_number_at(item, "shunt_mvar", float, 0.0, path),
+    )
+
+
+def _parse_transmission_line(
+    item: Mapping[str, Any],
+    path: str,
+) -> TransmissionLineConfig:
+    return TransmissionLineConfig(
+        id=_id_at(item, "id", path),
+        from_bus_id=_id_at(item, "from_bus_id", path),
+        to_bus_id=_id_at(item, "to_bus_id", path),
+        susceptance=_number_at(item, "susceptance", float, path),
+        capacity_mw=_number_at(item, "capacity_mw", float, path),
+        availability_factor=_optional_number_at(item, "availability_factor", float, 1.0, path),
+        availability_factor_key=(
+            _input_key_at(item, "availability_factor_key", path)
+            if "availability_factor_key" in item
+            else None
+        ),
+        ac_resistance_pu=_optional_number_at(item, "ac_resistance_pu", float, 0.0, path),
+        ac_reactance_pu=(
+            _number_at(item, "ac_reactance_pu", float, path) if "ac_reactance_pu" in item else None
+        ),
+        ac_line_charging_pu=_optional_number_at(
+            item,
+            "ac_line_charging_pu",
+            float,
+            0.0,
+            path,
+        ),
+        ac_rating_mva=(
+            _number_at(item, "ac_rating_mva", float, path) if "ac_rating_mva" in item else None
+        ),
+        transformer_tap_ratio=_optional_number_at(
+            item,
+            "transformer_tap_ratio",
+            float,
+            1.0,
+            path,
+        ),
+    )
+
+
 def _parse_renewable_generator(
     item: Mapping[str, Any],
     path: str,
@@ -2016,6 +2126,16 @@ def _parse_renewable_generator(
             if "electrical_loss_key" in item
             else None
         ),
+        reactive_power_min_mvar=(
+            _number_at(item, "reactive_power_min_mvar", float, path)
+            if "reactive_power_min_mvar" in item
+            else None
+        ),
+        reactive_power_max_mvar=(
+            _number_at(item, "reactive_power_max_mvar", float, path)
+            if "reactive_power_max_mvar" in item
+            else None
+        ),
     )
 
 
@@ -2140,6 +2260,16 @@ def _parse_thermal_generator(item: Mapping[str, Any], path: str) -> ThermalGener
             float,
             30.0,
             path,
+        ),
+        reactive_power_min_mvar=(
+            _number_at(item, "reactive_power_min_mvar", float, path)
+            if "reactive_power_min_mvar" in item
+            else None
+        ),
+        reactive_power_max_mvar=(
+            _number_at(item, "reactive_power_max_mvar", float, path)
+            if "reactive_power_max_mvar" in item
+            else None
         ),
     )
 
@@ -2431,6 +2561,16 @@ def _parse_hydro_unit(item: Mapping[str, Any], path: str) -> HydroUnitConfig:
             30.0,
             path,
         ),
+        reactive_power_min_mvar=(
+            _number_at(item, "reactive_power_min_mvar", float, path)
+            if "reactive_power_min_mvar" in item
+            else None
+        ),
+        reactive_power_max_mvar=(
+            _number_at(item, "reactive_power_max_mvar", float, path)
+            if "reactive_power_max_mvar" in item
+            else None
+        ),
     )
 
 
@@ -2541,6 +2681,13 @@ def _parse_demand(item: Mapping[str, Any], path: str) -> DemandConfig:
         cooling_sensitivity_mw_per_c=_optional_number_at(
             item,
             "cooling_sensitivity_mw_per_c",
+            float,
+            0.0,
+            path,
+        ),
+        reactive_demand_mvar_per_mw=_optional_number_at(
+            item,
+            "reactive_demand_mvar_per_mw",
             float,
             0.0,
             path,
@@ -3205,6 +3352,11 @@ def _check_fraction_at(name: str, value: float, *, allow_one: bool = True) -> No
         raise ConfigurationError(f"{name} must be in {operator}")
 
 
+def _validate_reactive_limits(path: str, minimum: float | None, maximum: float | None) -> None:
+    if minimum is not None and maximum is not None and minimum > maximum:
+        raise ConfigurationError(f"{path}.reactive_power_min_mvar exceeds reactive_power_max_mvar")
+
+
 def _required_float(value: float | None, path: str) -> float:
     if value is None:
         raise ConfigurationError(f"{path} is missing a required numeric renewable parameter")
@@ -3303,7 +3455,7 @@ def _schema_v2_mapping_from_config(
         },
         "zones": [{"id": zone.id} for zone in portfolio.zones],
         "fuels": [_fuel_mapping(fuel) for fuel in portfolio.fuels],
-        "buses": [{"id": bus.id, "zone_id": bus.zone_id} for bus in portfolio.buses],
+        "buses": [_bus_mapping(bus) for bus in portfolio.buses],
         "lines": [_line_mapping(line) for line in portfolio.lines],
         "aggregate_network": _network_mapping(config.network),
         "rolling_horizon": _rolling_horizon_mapping(config.rolling_horizon),
@@ -3351,6 +3503,31 @@ def _line_mapping(line: TransmissionLineConfig) -> dict[str, Any]:
         item["availability_factor"] = line.availability_factor
     if line.availability_factor_key is not None:
         item["availability_factor_key"] = line.availability_factor_key
+    if line.ac_resistance_pu != 0.0:
+        item["ac_resistance_pu"] = line.ac_resistance_pu
+    if line.ac_reactance_pu is not None:
+        item["ac_reactance_pu"] = line.ac_reactance_pu
+    if line.ac_line_charging_pu != 0.0:
+        item["ac_line_charging_pu"] = line.ac_line_charging_pu
+    if line.ac_rating_mva is not None:
+        item["ac_rating_mva"] = line.ac_rating_mva
+    if line.transformer_tap_ratio != 1.0:
+        item["transformer_tap_ratio"] = line.transformer_tap_ratio
+    return item
+
+
+def _bus_mapping(bus: BusConfig) -> dict[str, Any]:
+    item: dict[str, Any] = {"id": bus.id, "zone_id": bus.zone_id}
+    if bus.voltage_min_pu != 0.95:
+        item["voltage_min_pu"] = bus.voltage_min_pu
+    if bus.voltage_max_pu != 1.05:
+        item["voltage_max_pu"] = bus.voltage_max_pu
+    if bus.voltage_initial_pu != 1.0:
+        item["voltage_initial_pu"] = bus.voltage_initial_pu
+    if bus.voltage_angle_initial_deg != 0.0:
+        item["voltage_angle_initial_deg"] = bus.voltage_angle_initial_deg
+    if bus.shunt_mvar != 0.0:
+        item["shunt_mvar"] = bus.shunt_mvar
     return item
 
 
@@ -3362,6 +3539,8 @@ def _network_mapping(network: NetworkConfig) -> dict[str, Any]:
     }
     if network.slack_bus_id is not None:
         item["slack_bus_id"] = network.slack_bus_id
+    if network.ac_base_mva != 100.0:
+        item["ac_base_mva"] = network.ac_base_mva
     return item
 
 
@@ -3542,6 +3721,10 @@ def _renewable_generator_mapping(generator: RenewableGeneratorConfig) -> dict[st
         )
         if generator.electrical_loss_key is not None:
             item["electrical_loss_key"] = generator.electrical_loss_key
+    if generator.reactive_power_min_mvar is not None:
+        item["reactive_power_min_mvar"] = generator.reactive_power_min_mvar
+    if generator.reactive_power_max_mvar is not None:
+        item["reactive_power_max_mvar"] = generator.reactive_power_max_mvar
     return item
 
 
@@ -3611,6 +3794,10 @@ def _thermal_generator_mapping(generator: ThermalGeneratorConfig) -> dict[str, A
         item["primary_response_mw"] = generator.primary_response_mw
     if generator.primary_response_time_seconds != 30.0:
         item["primary_response_time_seconds"] = generator.primary_response_time_seconds
+    if generator.reactive_power_min_mvar is not None:
+        item["reactive_power_min_mvar"] = generator.reactive_power_min_mvar
+    if generator.reactive_power_max_mvar is not None:
+        item["reactive_power_max_mvar"] = generator.reactive_power_max_mvar
     return item
 
 
@@ -3696,6 +3883,10 @@ def _hydro_unit_mapping(unit: HydroUnitConfig) -> dict[str, Any]:
         item["primary_response_mw"] = unit.primary_response_mw
     if unit.primary_response_time_seconds != 30.0:
         item["primary_response_time_seconds"] = unit.primary_response_time_seconds
+    if unit.reactive_power_min_mvar is not None:
+        item["reactive_power_min_mvar"] = unit.reactive_power_min_mvar
+    if unit.reactive_power_max_mvar is not None:
+        item["reactive_power_max_mvar"] = unit.reactive_power_max_mvar
     return item
 
 
@@ -3900,6 +4091,8 @@ def validate_config(config: ModelConfig) -> None:
     _check_fraction("network.loss_fraction", config.network.loss_fraction, allow_one=False)
     if config.network.transfer_capacity_mw <= 0.0:
         raise ConfigurationError("network.transfer_capacity_mw must be positive")
+    if config.network.ac_base_mva <= 0.0:
+        raise ConfigurationError("network.ac_base_mva must be positive")
     if config.network.network_mode not in {"aggregate", "nodal"}:
         raise ConfigurationError("network.network_mode must be one of aggregate, nodal")
     if config.network.slack_bus_id is not None and config.network.slack_bus_id not in {
@@ -3908,6 +4101,24 @@ def validate_config(config: ModelConfig) -> None:
         raise ConfigurationError("network.slack_bus_id references unknown bus")
     if config.network.network_mode == "nodal":
         _validate_nodal_network(config)
+    for bus in config.portfolio.buses:
+        if bus.voltage_min_pu <= 0.0:
+            raise ConfigurationError(f"buses[{bus.id}].voltage_min_pu must be positive")
+        if bus.voltage_max_pu <= bus.voltage_min_pu:
+            raise ConfigurationError(f"buses[{bus.id}].voltage_max_pu must exceed voltage_min_pu")
+        if bus.voltage_initial_pu <= 0.0:
+            raise ConfigurationError(f"buses[{bus.id}].voltage_initial_pu must be positive")
+    for line in config.portfolio.lines:
+        if line.ac_resistance_pu < 0.0:
+            raise ConfigurationError(f"lines[{line.id}].ac_resistance_pu must be non-negative")
+        if line.ac_reactance_pu is not None and line.ac_reactance_pu <= 0.0:
+            raise ConfigurationError(f"lines[{line.id}].ac_reactance_pu must be positive")
+        if line.ac_line_charging_pu < 0.0:
+            raise ConfigurationError(f"lines[{line.id}].ac_line_charging_pu must be non-negative")
+        if line.ac_rating_mva is not None and line.ac_rating_mva <= 0.0:
+            raise ConfigurationError(f"lines[{line.id}].ac_rating_mva must be positive")
+        if line.transformer_tap_ratio <= 0.0:
+            raise ConfigurationError(f"lines[{line.id}].transformer_tap_ratio must be positive")
 
     reserves = config.reserves
     for name, value in (
@@ -4006,6 +4217,11 @@ def validate_config(config: ModelConfig) -> None:
             raise ConfigurationError(
                 f"thermal_generators[{generator.id}].primary_response_time_seconds must be positive"
             )
+        _validate_reactive_limits(
+            f"thermal_generators[{generator.id}]",
+            generator.reactive_power_min_mvar,
+            generator.reactive_power_max_mvar,
+        )
     for hydro_unit in config.portfolio.hydro_units:
         for name, value in (
             ("synchronous_inertia_mw_s", hydro_unit.synchronous_inertia_mw_s),
@@ -4016,6 +4232,17 @@ def validate_config(config: ModelConfig) -> None:
             raise ConfigurationError(
                 f"hydro_units[{hydro_unit.id}].primary_response_time_seconds must be positive"
             )
+        _validate_reactive_limits(
+            f"hydro_units[{hydro_unit.id}]",
+            hydro_unit.reactive_power_min_mvar,
+            hydro_unit.reactive_power_max_mvar,
+        )
+    for renewable in config.portfolio.renewable_generators:
+        _validate_reactive_limits(
+            f"renewable_generators[{renewable.id}]",
+            renewable.reactive_power_min_mvar,
+            renewable.reactive_power_max_mvar,
+        )
     for storage_unit in config.portfolio.storage_units:
         for name, value in (
             ("fast_frequency_response_mw", storage_unit.fast_frequency_response_mw),
@@ -4040,6 +4267,11 @@ def validate_config(config: ModelConfig) -> None:
                 "storage_units"
                 f"[{storage_unit.id}].fast_frequency_response_time_seconds must be positive"
             )
+    for demand in config.portfolio.demand:
+        _check_nonnegative(
+            f"demand[{demand.id}].reactive_demand_mvar_per_mw",
+            demand.reactive_demand_mvar_per_mw,
+        )
 
     for name, value in (
         ("imports.maximum_power_mw", config.imports.maximum_power_mw),

@@ -13,6 +13,7 @@ and this project follows semantic versioning.
   separate contingency diagnostics and LODF validation helpers.
 - Post-dispatch frequency adequacy proxies for inertia, RoCoF, primary
   response, fast frequency response, and synthetic inertia diagnostics.
+- Optional AC power-flow validation bridge for selected nodal dispatch periods.
 
 ## [1.0.0] - 2026-08-03
 

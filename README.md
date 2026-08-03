@@ -29,6 +29,7 @@ The model is designed for research, teaching, and policy experiments. It uses ex
 - Sequential Monte Carlo reliability studies with seeded outage trajectories.
 - Explicit post-contingency N-1 security checks for nodal dispatch.
 - Frequency adequacy proxies for inertia, RoCoF, and response scarcity.
+- Optional AC power-flow validation for selected nodal dispatch periods.
 - Scenario-based stochastic dispatch with value-of-information benchmarks.
 - Optional post-dispatch market prices and settlements from fixed-commitment LP duals.
 - Single-year capacity-expansion planning with representative-period weights.
@@ -84,7 +85,8 @@ commands are documented in `docs/research-experiments.md`. Public-data adapters
 and provenance manifests are documented in `docs/public-data-adapters.md`.
 N-1 post-contingency security checks are documented in
 `docs/security-constrained-dispatch.md`. Frequency adequacy proxy checks are
-documented in `docs/frequency-adequacy.md`.
+documented in `docs/frequency-adequacy.md`. AC validation is documented in
+`docs/ac-validation.md`.
 
 ## Requirements
 
@@ -139,6 +141,12 @@ Run the low-inertia frequency adequacy example:
 
 ```bash
 poetry run energy-sim frequency-check --config configs/frequency_low_inertia.yaml --output outputs/frequency --overwrite
+```
+
+Validate selected nodal dispatch periods against AC power flow:
+
+```bash
+poetry run energy-sim ac-validate --config configs/portfolio_nodal_three_bus.yaml --output outputs/ac-validation --overwrite
 ```
 
 Equivalent module invocation:

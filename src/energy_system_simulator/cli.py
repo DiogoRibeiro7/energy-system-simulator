@@ -11,6 +11,7 @@ from typing import Any, cast
 
 import yaml
 
+from energy_system_simulator.ac_validation import ACValidationOptions, validate_ac_power_flow
 from energy_system_simulator.api import (
     build_model,
     ensure_writable_output_directory,
@@ -204,6 +205,22 @@ def build_parser() -> argparse.ArgumentParser:
     frequency.add_argument("--output", type=Path, required=True)
     frequency.add_argument("--overwrite", action="store_true")
 
+    ac = subparsers.add_parser(
+        "ac-validate",
+        help="Validate selected nodal dispatch periods with AC power flow",
+    )
+    _add_config_argument(ac)
+    ac.add_argument("--output", type=Path, required=True)
+    ac.add_argument("--overwrite", action="store_true")
+    ac.add_argument(
+        "--policy",
+        action="append",
+        choices=("peak_demand", "peak_renewable", "congestion"),
+        help="Period-selection policy; may be supplied multiple times",
+    )
+    ac.add_argument("--period", action="append", type=int, default=[])
+    ac.add_argument("--timestamp", action="append", default=[])
+
     planning = subparsers.add_parser("capacity-planning", help="Run a capacity-planning YAML")
     planning.add_argument("--problem", type=Path, required=True)
     planning.add_argument("--output", type=Path)
@@ -332,6 +349,9 @@ def _dispatch(args: argparse.Namespace) -> ExitCode:
 
     if args.command == "frequency-check":
         return _run_frequency_check(args)
+
+    if args.command == "ac-validate":
+        return _run_ac_validation(args)
 
     if args.command in {"validate", "validate-config", "validate-data"}:
         return _validate(args)
@@ -492,6 +512,32 @@ def _run_frequency_check(args: argparse.Namespace) -> ExitCode:
     print(f"Frequency diagnostics written: {output}")
     print(f"Adequate: {evaluation.adequate}")
     print(f"Scarcity periods: {int(cast(int, evaluation.summary['scarcity_periods']))}")
+    return ExitCode.SUCCESS
+
+
+def _run_ac_validation(args: argparse.Namespace) -> ExitCode:
+    config = load_model_config(args.config)
+    output = ensure_writable_output_directory(
+        args.output,
+        overwrite=args.overwrite,
+        resume=False,
+    )
+    result = solve(config)
+    validation = validate_ac_power_flow(
+        config,
+        result,
+        options=ACValidationOptions(
+            policies=tuple(args.policy)
+            if args.policy
+            else ("peak_demand", "peak_renewable", "congestion"),
+            periods=tuple(args.period),
+            timestamps=tuple(args.timestamp),
+        ),
+    )
+    validation.write(output)
+    print(f"AC validation diagnostics written: {output}")
+    print(f"Valid: {validation.valid}")
+    print(f"Validated periods: {validation.summary['validated_periods']}")
     return ExitCode.SUCCESS
 
 
@@ -677,6 +723,7 @@ def _capabilities() -> dict[str, Any]:
             "reliability-study",
             "security-check",
             "frequency-check",
+            "ac-validate",
             "capacity-planning",
             "compare-outputs",
             "export-model",

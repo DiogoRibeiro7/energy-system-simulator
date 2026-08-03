@@ -214,6 +214,18 @@ Network dispatch may run in two modes:
   and time-varying line outage multipliers. The effective rating is
   `capacity_mw * availability_factor * availability_factor_key`.
 
+Optional AC validation metadata is ignored by the DC dispatch optimiser and used
+only by `energy-sim ac-validate`:
+
+- `buses[].voltage_min_pu`, `voltage_max_pu`, `voltage_initial_pu`,
+  `voltage_angle_initial_deg`, and `shunt_mvar`.
+- `lines[].ac_resistance_pu`, `ac_reactance_pu`, `ac_line_charging_pu`,
+  `ac_rating_mva`, and `transformer_tap_ratio`.
+- `aggregate_network.ac_base_mva`.
+- `demand[].reactive_demand_mvar_per_mw`.
+- `reactive_power_min_mvar` and `reactive_power_max_mvar` on thermal, hydro,
+  and renewable generators.
+
 Operating reserves are configured in the optional `reserves` section. When the
 section is omitted, reserve requirements are zero and the dispatch formulation
 is unchanged. Reserve requirement terms are additive:

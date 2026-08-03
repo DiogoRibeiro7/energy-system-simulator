@@ -21,6 +21,8 @@ The supported command-line entry point is `energy-sim`.
   post-contingency security for nodal dispatch.
 - `frequency-check --config CONFIG --output DIR`: evaluate post-dispatch
   frequency adequacy proxies.
+- `ac-validate --config CONFIG --output DIR`: validate selected nodal dispatch
+  periods with AC power flow.
 - `capacity-planning --problem PROBLEM`: run a capacity-expansion problem YAML.
 - `compare-outputs OUT1 OUT2 --output REPORT.md`: compare output directories.
 - `export-model --config CONFIG --output MODEL.lp`: export formulation LP.
@@ -100,6 +102,17 @@ config = ess.load_model_config("configs/frequency_low_inertia.yaml")
 result = ess.solve(config)
 frequency = ess.evaluate_frequency_adequacy(config, result)
 frequency.write("outputs/frequency")
+```
+
+AC validation is available for selected nodal dispatch periods:
+
+```python
+import energy_system_simulator as ess
+
+config = ess.load_model_config("configs/portfolio_nodal_three_bus.yaml")
+result = ess.solve(config)
+validation = ess.validate_ac_power_flow(config, result)
+validation.write("outputs/ac-validation")
 ```
 
 ## 1.0 Compatibility Notes

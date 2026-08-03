@@ -1,0 +1,10 @@
+{
+  "description": "Lossless two-bus AC power-flow reference with a 10 MW, 0 Mvar PQ load on a 100 MVA base and x=0.1 pu.",
+  "provenance": "Hand calculation from P = V_s V_l sin(delta) / x and Q_l = V_l^2 / x - V_s V_l cos(delta) / x with V_s=1.0 pu and Q_l=0.",
+  "base_mva": 100.0,
+  "line_reactance_pu": 0.1,
+  "load_mw": 10.0,
+  "load_mvar": 0.0,
+  "expected_sink_voltage_pu": 0.9999500037496876,
+  "expected_sink_angle_rad": -0.009999666686665238
+}

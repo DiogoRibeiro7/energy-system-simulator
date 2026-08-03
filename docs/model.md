@@ -132,6 +132,20 @@ The quasi-steady response requirement subtracts a demand-damping allowance
 \(D\Delta f\) from the largest loss. These linear checks are not dynamic
 frequency simulation and are intended only for commitment and planning studies.
 
+## AC validation
+
+The AC validation bridge maps selected nodal DC-dispatch periods to a nonlinear
+power-flow check. Active injections are fixed from reported bus net injections.
+Non-slack generator buses are represented as PV buses at their configured
+voltage set point; other non-slack buses are PQ buses with reactive demand from
+served active demand and configured Mvar/MW factors. The slack bus balances the
+remaining active and reactive mismatch.
+
+Line flows use configured per-unit impedance, shunt charging, tap ratio, and
+MVA rating on `aggregate_network.ac_base_mva`. The validator reports
+non-convergence and violations rather than adjusting dispatch to force
+feasibility.
+
 ## Power balance
 
 All dispatch variables are represented on the source side:

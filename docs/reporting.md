@@ -43,6 +43,11 @@ largest credible loss, RoCoF, primary response, fast frequency response,
 synthetic inertia, shortfalls, and scarcity periods without changing standard
 simulation cost tables.
 
+`energy-sim ac-validate` writes `ac_validation.csv` and
+`ac_validation_summary.json` for selected periods only. The tables report
+Newton-Raphson convergence, voltage-limit violations, reactive-limit violations,
+branch MVA overloads, active losses, and DC-versus-AC active-flow mismatch.
+
 When plots are enabled, the report directory includes dispatch, storage,
 thermal, hydro, network, reserve, unserved-energy, cost, emissions, and duration
 curve figures. Optional components are represented by empty plots or empty stable
