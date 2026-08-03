@@ -1,0 +1,71 @@
+schema_version: 1
+
+simulation:
+  time_step_hours: 1.0
+  solver_time_limit_seconds: 30.0
+  mip_relative_gap: 0.001
+
+solar:
+  capacity_mw: 70.0
+  performance_ratio: 0.86
+  reference_irradiance_w_m2: 1000.0
+  temperature_coefficient_per_c: -0.004
+  nominal_operating_cell_temperature_c: 45.0
+
+wind:
+  capacity_mw: 30.0
+  cut_in_speed_m_s: 3.0
+  rated_speed_m_s: 12.0
+  cut_out_speed_m_s: 25.0
+
+thermal:
+  name: Flexible gas unit
+  minimum_output_mw: 0.0
+  maximum_output_mw: 220.0
+  ramp_up_mw_per_hour: 220.0
+  ramp_down_mw_per_hour: 220.0
+  startup_ramp_mw: 220.0
+  shutdown_ramp_mw: 220.0
+  variable_cost_eur_per_mwh: 82.0
+  no_load_cost_eur_per_hour: 0.0
+  startup_cost_eur: 0.0
+  shutdown_cost_eur: 0.0
+  emission_factor_tonnes_per_mwh: 0.37
+  minimum_up_hours: 1.0
+  minimum_down_hours: 1.0
+  initial_on: true
+  initial_output_mw: 75.0
+  initial_up_time_hours: 2.0
+  initial_down_time_hours: 0.0
+  terminal_commitment_mode: carry_residual_obligations
+
+battery:
+  energy_capacity_mwh: 0.0
+  power_capacity_mw: 0.0
+  minimum_soc_mwh: 0.0
+  maximum_soc_mwh: 0.0
+  initial_soc_mwh: 0.0
+  charge_efficiency: 0.92
+  discharge_efficiency: 0.92
+  throughput_cost_eur_per_mwh: 2.0
+  minimum_final_soc_mwh: 0.0
+  terminal_soc_mode: free
+
+network:
+  loss_fraction: 0.03
+  transfer_capacity_mw: 250.0
+
+imports:
+  maximum_power_mw: 80.0
+  price_eur_per_mwh: 145.0
+  emission_factor_tonnes_per_mwh: 0.15
+
+penalties:
+  renewable_curtailment_eur_per_mwh: 1.0
+  lost_load_eur_per_mwh: 10000.0
+  carbon_price_eur_per_tonne: 80.0
+
+paths:
+  input_csv: ../data/storage_value_hourly.csv
+  output_directory: ../outputs/base
+

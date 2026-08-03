@@ -1,0 +1,6 @@
+| Scenario | Total system cost [EUR] | Total emissions [tonnes] | Renewable share [fraction] | Renewable curtailment [MWh] | Battery equivalent cycles [cycles] |
+| --- | --- | --- | --- | --- | --- |
+| high-renewables-no-storage | 125265.97 | 413.157 | 0.571 | 648.961 | 0.0 |
+| high-renewables-storage | 109306.763 | 358.693 | 0.631 | 475.048 | 1.003 |
+| low-renewables-no-storage | 237315.663 | 786.799 | 0.182 | 0.0 | 0.0 |
+| low-renewables-storage | 237315.663 | 786.799 | 0.182 | 0.0 | 0.0 |

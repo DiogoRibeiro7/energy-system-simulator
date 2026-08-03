@@ -1,4 +1,4 @@
-.PHONY: install format lint typecheck test validate simulate stress verification check-example-data benchmark scaling-benchmark baseline compare-outputs iberia-case-study validate-iberia-case-study release-metadata version-metadata package editable-smoke wheel-smoke verify clean
+.PHONY: install format lint typecheck test validate simulate stress verification check-example-data benchmark scaling-benchmark baseline compare-outputs research-experiment validate-research-experiment iberia-case-study validate-iberia-case-study release-metadata version-metadata package editable-smoke wheel-smoke verify clean
 
 install:
 	poetry install
@@ -41,6 +41,12 @@ baseline:
 
 compare-outputs:
 	poetry run python scripts/compare_outputs.py outputs/example outputs/example --output outputs/comparison.md
+
+research-experiment:
+	poetry run energy-sim run-experiment --study experiments/storage_value --overwrite --no-plots
+
+validate-research-experiment:
+	poetry run energy-sim analyze-experiment --study experiments/storage_value
 
 iberia-case-study:
 	poetry run python case_studies/iberia/scripts/build_case_study.py --run --overwrite

@@ -1,0 +1,103 @@
+id: storage_value
+title: Value of Storage Under Increasing Renewable Penetration
+research_question: >
+  How does adding a four-hour battery change operating cost, emissions,
+  renewable curtailment, and renewable share when renewable capacity increases?
+model_version: dispatch-milp-v1
+data_version: synthetic-storage-value-24h-v1
+seed: 20260803
+base_config: configs/base.yaml
+scenario_file: scenarios/storage_value.yaml
+output_directory: outputs
+
+hypotheses:
+  - Battery storage reduces total operating cost by shifting renewable output into higher net-load hours.
+  - Battery storage reduces renewable curtailment more in the high-renewable case than in the low-renewable case.
+  - Battery storage lowers emissions when it displaces thermal generation rather than only reducing curtailment.
+
+metrics:
+  - name: objective_eur
+    display_name: Total system cost
+    source_column: objective_eur
+    unit: EUR
+  - name: total_emissions_tonnes
+    display_name: Total emissions
+    source_column: total_emissions_tonnes
+    unit: tonnes
+  - name: renewable_share
+    display_name: Renewable share
+    source_column: renewable_share
+    unit: fraction
+  - name: renewable_curtailed_mwh
+    display_name: Renewable curtailment
+    source_column: renewable_curtailed_mwh
+    unit: MWh
+  - name: storage_cycles
+    display_name: Battery equivalent cycles
+    source_column: storage_cycles
+    unit: cycles
+
+comparisons:
+  - id: low_renewables_storage_value
+    baseline: low-renewables-no-storage
+    scenario: low-renewables-storage
+    metric: objective_eur
+    paired_seed: true
+  - id: high_renewables_storage_value
+    baseline: high-renewables-no-storage
+    scenario: high-renewables-storage
+    metric: objective_eur
+    paired_seed: true
+  - id: high_renewables_curtailment_reduction
+    baseline: high-renewables-no-storage
+    scenario: high-renewables-storage
+    metric: renewable_curtailed_mwh
+    paired_seed: true
+
+uncertainty_intervals:
+  - method: monte_carlo_95_percent_interval
+    applies_when: summary contains replication-level rows
+    required_columns: [replication, scenario_label]
+
+sensitivity_ranges:
+  - parameter: renewable_penetration
+    metric: objective_eur
+    scenarios:
+      - low-renewables-no-storage
+      - low-renewables-storage
+      - high-renewables-no-storage
+      - high-renewables-storage
+  - parameter: renewable_penetration
+    metric: renewable_curtailed_mwh
+    scenarios:
+      - low-renewables-no-storage
+      - low-renewables-storage
+      - high-renewables-no-storage
+      - high-renewables-storage
+
+figures:
+  - id: storage_value_objective
+    metric: objective_eur
+    filename: storage_value_objective.png
+    title: Total System Cost by Scenario
+    caption: Total operating cost from the scenario summary, generated from result files.
+  - id: storage_value_curtailment
+    metric: renewable_curtailed_mwh
+    filename: storage_value_curtailment.png
+    title: Renewable Curtailment by Scenario
+    caption: Renewable curtailment by scenario, generated from result files.
+
+model_can_identify:
+  - Dispatch cost, emissions, curtailment, and storage operation under the stated assumptions.
+  - Within-model differences between paired scenario definitions that use the same input profile and seed.
+
+model_cannot_identify:
+  - Causal effects in historical power systems without a separate identification strategy.
+  - Investment-optimal storage sizing, since capacity is fixed in this experiment.
+  - Reliability impacts outside the represented one-day deterministic operating problem.
+
+limitations:
+  - One synthetic 24-hour profile is illustrative and not a planning-grade weather year.
+  - The experiment omits unit forced outages and long-duration hydro constraints.
+  - The single-node network approximation cannot identify location-specific congestion value.
+

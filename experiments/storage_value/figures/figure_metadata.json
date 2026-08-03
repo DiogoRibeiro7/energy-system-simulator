@@ -1,0 +1,16 @@
+[
+  {
+    "caption": "Total operating cost from the scenario summary, generated from result files.",
+    "id": "storage_value_objective",
+    "metric": "objective_eur",
+    "path": "figures/storage_value_objective.png",
+    "source": "outputs/summary.csv"
+  },
+  {
+    "caption": "Renewable curtailment by scenario, generated from result files.",
+    "id": "storage_value_curtailment",
+    "metric": "renewable_curtailed_mwh",
+    "path": "figures/storage_value_curtailment.png",
+    "source": "outputs/summary.csv"
+  }
+]

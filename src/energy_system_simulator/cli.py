@@ -27,6 +27,11 @@ from energy_system_simulator.exceptions import (
     EnergySystemError,
     OptimisationError,
 )
+from energy_system_simulator.experiments import (
+    analyze_research_experiment,
+    reproduce_research_experiment,
+    run_research_experiment,
+)
 from energy_system_simulator.metadata import get_package_version
 from energy_system_simulator.planning import (
     CapacityExpansionPlanner,
@@ -125,6 +130,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_scenario_arguments(scenario_experiment)
 
+    research_experiment = subparsers.add_parser(
+        "run-experiment",
+        help="Run a registered research experiment study",
+    )
+    _add_research_experiment_arguments(research_experiment)
+
+    reproduce_experiment = subparsers.add_parser(
+        "reproduce-experiment",
+        help="Verify a research manifest and rerun the recorded experiment",
+    )
+    reproduce_experiment.add_argument("--manifest", type=Path, required=True)
+    reproduce_experiment.add_argument("--overwrite", action="store_true")
+    reproduce_experiment.add_argument(
+        "--no-plots", action="store_true", help="Skip generated experiment PNG plots"
+    )
+
+    analyze_experiment = subparsers.add_parser(
+        "analyze-experiment",
+        help="Regenerate research experiment tables, figures, and report",
+    )
+    analyze_experiment.add_argument("--study", type=Path, required=True)
+
     reliability = subparsers.add_parser("reliability-study", help="Run a reliability study")
     _add_config_argument(reliability)
     reliability.add_argument("--replications", type=int, default=1)
@@ -212,6 +239,33 @@ def _dispatch(args: argparse.Namespace) -> ExitCode:
             create_plots=not args.no_plots,
         )
         print(f"Scenario experiment complete: {len(aggregate)} scenarios")
+        return ExitCode.SUCCESS
+
+    if args.command == "run-experiment":
+        research_result = run_research_experiment(
+            args.study,
+            overwrite=args.overwrite,
+            create_plots=not args.no_plots,
+        )
+        print(f"Research experiment complete: {research_result['summary']}")
+        print(f"Research manifest written: {research_result['manifest']}")
+        print(f"Research report written: {research_result['report']}")
+        return ExitCode.SUCCESS
+
+    if args.command == "reproduce-experiment":
+        research_result = reproduce_research_experiment(
+            args.manifest,
+            overwrite=args.overwrite,
+            create_plots=not args.no_plots,
+        )
+        print(f"Research experiment reproduced: {research_result['summary']}")
+        print(f"Research manifest written: {research_result['manifest']}")
+        print(f"Research report written: {research_result['report']}")
+        return ExitCode.SUCCESS
+
+    if args.command == "analyze-experiment":
+        analysis_result = analyze_research_experiment(args.study)
+        print(f"Research report written: {analysis_result['report']}")
         return ExitCode.SUCCESS
 
     if args.command == "prepare-data":
@@ -509,6 +563,9 @@ def _capabilities() -> dict[str, Any]:
             "rolling-horizon",
             "run-scenarios",
             "scenario-experiment",
+            "run-experiment",
+            "reproduce-experiment",
+            "analyze-experiment",
             "reliability-study",
             "capacity-planning",
             "compare-outputs",
@@ -560,6 +617,14 @@ def _add_scenario_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--workers", type=int)
     parser.add_argument("--resume", action="store_true", default=None)
     parser.add_argument("--no-plots", action="store_true", help="Skip per-scenario PNG plots")
+
+
+def _add_research_experiment_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--study", type=Path, required=True)
+    parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--no-plots", action="store_true", help="Skip generated experiment PNG plots"
+    )
 
 
 def _add_export_arguments(parser: argparse.ArgumentParser) -> None:

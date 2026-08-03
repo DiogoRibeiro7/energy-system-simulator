@@ -1,0 +1,46 @@
+base_config: ../configs/base.yaml
+output_directory: ../outputs
+workers: 1
+resume: false
+
+scenarios:
+  - id: low-renewables-no-storage
+    overrides: {}
+  - id: low-renewables-storage
+    overrides:
+      battery.energy_capacity_mwh: 160.0
+      battery.power_capacity_mw: 40.0
+      battery.minimum_soc_mwh: 0.0
+      battery.maximum_soc_mwh: 160.0
+      battery.initial_soc_mwh: 80.0
+      battery.minimum_final_soc_mwh: 80.0
+      battery.terminal_soc_mode: minimum
+      portfolio.storage_units[0].config.energy_capacity_mwh: 160.0
+      portfolio.storage_units[0].config.power_capacity_mw: 40.0
+      portfolio.storage_units[0].config.minimum_soc_mwh: 0.0
+      portfolio.storage_units[0].config.maximum_soc_mwh: 160.0
+      portfolio.storage_units[0].config.initial_soc_mwh: 80.0
+      portfolio.storage_units[0].config.minimum_final_soc_mwh: 80.0
+      portfolio.storage_units[0].config.terminal_soc_mode: minimum
+  - id: high-renewables-no-storage
+    overrides:
+      portfolio.renewable_generators[0].capacity_mw: 300.0
+      portfolio.renewable_generators[1].capacity_mw: 150.0
+  - id: high-renewables-storage
+    overrides:
+      battery.energy_capacity_mwh: 160.0
+      battery.power_capacity_mw: 40.0
+      battery.minimum_soc_mwh: 0.0
+      battery.maximum_soc_mwh: 160.0
+      battery.initial_soc_mwh: 80.0
+      battery.minimum_final_soc_mwh: 80.0
+      battery.terminal_soc_mode: minimum
+      portfolio.renewable_generators[0].capacity_mw: 300.0
+      portfolio.renewable_generators[1].capacity_mw: 150.0
+      portfolio.storage_units[0].config.energy_capacity_mwh: 160.0
+      portfolio.storage_units[0].config.power_capacity_mw: 40.0
+      portfolio.storage_units[0].config.minimum_soc_mwh: 0.0
+      portfolio.storage_units[0].config.maximum_soc_mwh: 160.0
+      portfolio.storage_units[0].config.initial_soc_mwh: 80.0
+      portfolio.storage_units[0].config.minimum_final_soc_mwh: 80.0
+      portfolio.storage_units[0].config.terminal_soc_mode: minimum

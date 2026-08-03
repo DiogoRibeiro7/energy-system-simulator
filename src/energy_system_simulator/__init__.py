@@ -28,6 +28,14 @@ from energy_system_simulator.exceptions import (
     EnergySystemError,
     OptimisationError,
 )
+from energy_system_simulator.experiments import (
+    ExperimentError,
+    analyze_research_experiment,
+    load_experiment_spec,
+    reproduce_research_experiment,
+    run_research_experiment,
+    verify_experiment_manifest,
+)
 from energy_system_simulator.market import GeneratorSettlement, MarketAnalyzer, MarketSettlement
 from energy_system_simulator.metadata import get_package_version
 from energy_system_simulator.planning import (
@@ -63,6 +71,7 @@ __all__ = [
     "DataValidationReport",
     "EnergySystemError",
     "EuropeanDemandCsvAdapter",
+    "ExperimentError",
     "GenerationCandidate",
     "GeneratorSettlement",
     "InterconnectorCandidate",
@@ -83,6 +92,7 @@ __all__ = [
     "StorageCandidate",
     "TransmissionCandidate",
     "WeatherCsvAdapter",
+    "analyze_research_experiment",
     "apply_overrides",
     "build_canonical_snapshot",
     "build_model",
@@ -90,14 +100,18 @@ __all__ = [
     "finite_difference_sensitivity",
     "load_config",
     "load_data",
+    "load_experiment_spec",
     "load_model_config",
+    "reproduce_research_experiment",
     "run_data_preparation_spec",
     "run_experiment_file",
+    "run_research_experiment",
     "run_simulation",
     "solve",
     "stable_scenario_id",
     "validate_canonical_frame",
     "validate_data",
     "validate_model_config",
+    "verify_experiment_manifest",
 ]
 __version__ = get_package_version()

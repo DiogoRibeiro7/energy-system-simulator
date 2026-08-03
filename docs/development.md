@@ -31,6 +31,8 @@ make benchmark
 poetry run python scripts/benchmark_scaling.py
 make baseline
 make compare-outputs
+make research-experiment
+make validate-research-experiment
 make iberia-case-study
 make validate-iberia-case-study
 make release-metadata

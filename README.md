@@ -31,6 +31,8 @@ The model is designed for research, teaching, and policy experiments. It uses ex
 - Optional post-dispatch market prices and settlements from fixed-commitment LP duals.
 - Single-year capacity-expansion planning with representative-period weights.
 - Scenario experiments with declarative overrides, sweeps, grids, and resume manifests.
+- Research experiment directories with pre-specified metrics, reproducibility
+  manifests, generated tables, figure metadata, and limitations templates.
 - Public-data adapters that produce local canonical snapshots with provenance manifests.
 - CSV results, JSON summary metrics, and diagnostic plots.
 - A small DC power-flow module for network experiments.
@@ -74,8 +76,9 @@ Rolling-horizon configuration and state-transfer behaviour are documented in
 `docs/stochastic-dispatch.md`. Market pricing and settlement outputs are
 documented in `docs/market-model.md`. Capacity-expansion planning is documented
 in `docs/capacity-expansion.md`. Scenario experiments are documented in
-`docs/scenario-experiments.md`. Public-data adapters and provenance manifests
-are documented in `docs/public-data-adapters.md`.
+`docs/scenario-experiments.md`. Research experiment structure and reproduction
+commands are documented in `docs/research-experiments.md`. Public-data adapters
+and provenance manifests are documented in `docs/public-data-adapters.md`.
 
 ## Requirements
 
@@ -122,6 +125,12 @@ Equivalent module invocation:
 
 ```bash
 poetry run python -m energy_system_simulator simulate --config configs/example.yaml --overwrite
+```
+
+Run the complete storage-value research experiment:
+
+```bash
+poetry run energy-sim run-experiment --study experiments/storage_value --overwrite --no-plots
 ```
 
 Results are written to `outputs/example/`:
@@ -203,7 +212,7 @@ make stress
 | Network | Aggregate delivery losses and transfer-capacity shedding in dispatch |
 | Markets | Optional dual-based energy prices, nodal LMPs, congestion rent, consumer payments, generator revenue, and make-whole uplift |
 | Planning | Continuous single-year capacity expansion for generation, storage, interconnectors, and transmission with weighted representative periods |
-| Experiments | Declarative scenario sweeps and grids with manifests, resumable runs, aggregate sensitivity tables, and plotting helpers |
+| Experiments | Declarative scenario sweeps and grids plus registered research studies with hashed manifests, pre-specified comparisons, generated tables, and figure metadata |
 | Data | Local public-data adapters for demand and weather snapshots with UTC timestamps, validation reports, checksums, and provenance |
 | DC flow | Standalone fixed-injection DC power flow with overload diagnostics |
 | Outputs | Aggregate CSV time series, tidy renewable, thermal, storage, and hydro asset time series, fuel and emissions accounting, JSON summary, manifest, plots, benchmark, baseline, and stress comparison table |
