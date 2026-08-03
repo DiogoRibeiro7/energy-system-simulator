@@ -11,6 +11,8 @@ and this project follows semantic versioning.
 
 - Explicit post-contingency N-1 security checks for nodal dispatch, with
   separate contingency diagnostics and LODF validation helpers.
+- Post-dispatch frequency adequacy proxies for inertia, RoCoF, primary
+  response, fast frequency response, and synthetic inertia diagnostics.
 
 ## [1.0.0] - 2026-08-03
 

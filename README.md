@@ -28,6 +28,7 @@ The model is designed for research, teaching, and policy experiments. It uses ex
 - Rolling-horizon simulation with deterministic checkpoint resume.
 - Sequential Monte Carlo reliability studies with seeded outage trajectories.
 - Explicit post-contingency N-1 security checks for nodal dispatch.
+- Frequency adequacy proxies for inertia, RoCoF, and response scarcity.
 - Scenario-based stochastic dispatch with value-of-information benchmarks.
 - Optional post-dispatch market prices and settlements from fixed-commitment LP duals.
 - Single-year capacity-expansion planning with representative-period weights.
@@ -82,7 +83,8 @@ in `docs/capacity-expansion.md`. Scenario experiments are documented in
 commands are documented in `docs/research-experiments.md`. Public-data adapters
 and provenance manifests are documented in `docs/public-data-adapters.md`.
 N-1 post-contingency security checks are documented in
-`docs/security-constrained-dispatch.md`.
+`docs/security-constrained-dispatch.md`. Frequency adequacy proxy checks are
+documented in `docs/frequency-adequacy.md`.
 
 ## Requirements
 
@@ -131,6 +133,12 @@ Check explicit N-1 security for the same nodal example:
 
 ```bash
 poetry run energy-sim security-check --config configs/portfolio_nodal_three_bus.yaml --output outputs/security --overwrite
+```
+
+Run the low-inertia frequency adequacy example:
+
+```bash
+poetry run energy-sim frequency-check --config configs/frequency_low_inertia.yaml --output outputs/frequency --overwrite
 ```
 
 Equivalent module invocation:

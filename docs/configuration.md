@@ -238,6 +238,26 @@ is unchanged. Reserve requirement terms are additive:
 - `allow_import_reserves`: enables import upward/downward reserve. Imports are
   otherwise excluded from reserve provision.
 
+Frequency adequacy proxy settings are configured in the optional `frequency`
+section and asset metadata:
+
+- `frequency.minimum_inertia_mw_s`, `maximum_rocof_hz_per_s`, and
+  `nominal_frequency_hz`: inertia and RoCoF screening thresholds.
+- `frequency.credible_loss_mw` and
+  `credible_loss_fraction_of_largest_online_infeed`: conservative largest-loss
+  floor and endogenous online-infeed multiplier.
+- `frequency.maximum_primary_response_time_seconds` and
+  `maximum_fast_response_time_seconds`: delivery-time eligibility for sustained
+  primary response and storage fast frequency response.
+- `frequency.quasi_steady_state_frequency_deviation_hz` and
+  `demand_damping_mw_per_hz`: load-damping credit for the response balance.
+- `thermal_generators[]` and `hydro_units[]` may define
+  `synchronous_inertia_mw_s`, `primary_response_mw`, and
+  `primary_response_time_seconds`.
+- `storage_units[]` may define `fast_frequency_response_mw`,
+  `fast_frequency_response_duration_seconds`,
+  `fast_frequency_response_time_seconds`, and `synthetic_inertia_mw_s`.
+
 ## Migration
 
 Convert a legacy configuration with:
@@ -262,6 +282,9 @@ generator, one storage unit, one import resource, and one demand entry.
   residential fixed demand, industrial shiftable demand, and an EV fleet.
 - `configs/portfolio_nodal_three_bus.yaml` is a schema v2 example with a
   three-bus DC network, line-flow exports, and a time-varying line outage.
+- `configs/frequency_low_inertia.yaml` is a schema v2 example with an
+  energy-feasible high-renewables dispatch that is frequency-insecure under the
+  proxy thresholds.
 - `tests/fixtures/invalid_portfolio_missing_bus.yaml` is intentionally invalid
   and is used by the validation tests.
 

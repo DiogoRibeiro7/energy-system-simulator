@@ -19,6 +19,8 @@ The supported command-line entry point is `energy-sim`.
 - `reliability-study --config CONFIG`: run a sequential Monte Carlo reliability study.
 - `security-check --config CONFIG --output DIR`: evaluate explicit N-1
   post-contingency security for nodal dispatch.
+- `frequency-check --config CONFIG --output DIR`: evaluate post-dispatch
+  frequency adequacy proxies.
 - `capacity-planning --problem PROBLEM`: run a capacity-expansion problem YAML.
 - `compare-outputs OUT1 OUT2 --output REPORT.md`: compare output directories.
 - `export-model --config CONFIG --output MODEL.lp`: export formulation LP.
@@ -87,6 +89,17 @@ config = ess.load_model_config("configs/portfolio_nodal_three_bus.yaml")
 result = ess.solve(config)
 security = ess.evaluate_security(config, result)
 security.write("outputs/security")
+```
+
+Frequency adequacy diagnostics are similarly available:
+
+```python
+import energy_system_simulator as ess
+
+config = ess.load_model_config("configs/frequency_low_inertia.yaml")
+result = ess.solve(config)
+frequency = ess.evaluate_frequency_adequacy(config, result)
+frequency.write("outputs/frequency")
 ```
 
 ## 1.0 Compatibility Notes

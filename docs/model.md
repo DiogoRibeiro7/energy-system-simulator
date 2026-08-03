@@ -114,6 +114,24 @@ Emergency load shedding and line-rating exceedance are explicit slack variables
 with high costs unless hard security mode is requested. These contingency
 metrics are reported separately from the base-case energy objective.
 
+## Frequency adequacy proxies
+
+The frequency checker evaluates post-dispatch planning proxies. Synchronous
+thermal and hydro inertia is reported in MW*s. Storage fast frequency response
+and synthetic inertia are represented separately from sustained primary response
+and are capped by available discharge power and state of charge.
+
+For nominal frequency \(f_0\), largest credible loss \(L_t\), and total inertia
+\(I_t\), the RoCoF proxy is:
+
+\[
+\mathrm{RoCoF}_t = \frac{f_0 L_t}{2 I_t}.
+\]
+
+The quasi-steady response requirement subtracts a demand-damping allowance
+\(D\Delta f\) from the largest loss. These linear checks are not dynamic
+frequency simulation and are intended only for commitment and planning studies.
+
 ## Power balance
 
 All dispatch variables are represented on the source side:

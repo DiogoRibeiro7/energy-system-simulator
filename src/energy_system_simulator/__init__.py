@@ -10,7 +10,7 @@ from energy_system_simulator.api import (
     validate_data,
     validate_model_config,
 )
-from energy_system_simulator.config import ModelConfig, load_config
+from energy_system_simulator.config import FrequencyConfig, ModelConfig, load_config
 from energy_system_simulator.data_adapters import (
     DataProvenance,
     DataValidationReport,
@@ -35,6 +35,12 @@ from energy_system_simulator.experiments import (
     reproduce_research_experiment,
     run_research_experiment,
     verify_experiment_manifest,
+)
+from energy_system_simulator.frequency import (
+    FrequencyAdequacyError,
+    FrequencyDispatchResult,
+    FrequencyEvaluation,
+    evaluate_frequency_adequacy,
 )
 from energy_system_simulator.market import GeneratorSettlement, MarketAnalyzer, MarketSettlement
 from energy_system_simulator.metadata import get_package_version
@@ -84,6 +90,10 @@ __all__ = [
     "EnergySystemError",
     "EuropeanDemandCsvAdapter",
     "ExperimentError",
+    "FrequencyAdequacyError",
+    "FrequencyConfig",
+    "FrequencyDispatchResult",
+    "FrequencyEvaluation",
     "GenerationCandidate",
     "GeneratorSettlement",
     "InterconnectorCandidate",
@@ -114,6 +124,7 @@ __all__ = [
     "build_model",
     "default_contingencies",
     "ensure_writable_output_directory",
+    "evaluate_frequency_adequacy",
     "evaluate_security",
     "explicit_line_outage_flows",
     "finite_difference_sensitivity",

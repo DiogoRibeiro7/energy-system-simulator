@@ -15,6 +15,7 @@ Start here for the 1.0 documentation set.
 | Renewable models | [renewable-models.md](renewable-models.md) |
 | Rolling horizon | [rolling-horizon.md](rolling-horizon.md) |
 | Reliability studies | [reliability.md](reliability.md) |
+| Frequency adequacy proxies | [frequency-adequacy.md](frequency-adequacy.md) |
 | Stochastic dispatch | [stochastic-dispatch.md](stochastic-dispatch.md) |
 | Market model | [market-model.md](market-model.md) |
 | Capacity expansion | [capacity-expansion.md](capacity-expansion.md) |

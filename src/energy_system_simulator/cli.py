@@ -32,6 +32,7 @@ from energy_system_simulator.experiments import (
     reproduce_research_experiment,
     run_research_experiment,
 )
+from energy_system_simulator.frequency import evaluate_frequency_adequacy
 from energy_system_simulator.metadata import get_package_version
 from energy_system_simulator.planning import (
     CapacityExpansionPlanner,
@@ -195,6 +196,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Use ramp/headroom limits instead of procured reserve columns for redispatch bounds",
     )
 
+    frequency = subparsers.add_parser(
+        "frequency-check",
+        help="Evaluate post-dispatch frequency adequacy proxies",
+    )
+    _add_config_argument(frequency)
+    frequency.add_argument("--output", type=Path, required=True)
+    frequency.add_argument("--overwrite", action="store_true")
+
     planning = subparsers.add_parser("capacity-planning", help="Run a capacity-planning YAML")
     planning.add_argument("--problem", type=Path, required=True)
     planning.add_argument("--output", type=Path)
@@ -320,6 +329,9 @@ def _dispatch(args: argparse.Namespace) -> ExitCode:
 
     if args.command == "security-check":
         return _run_security_check(args)
+
+    if args.command == "frequency-check":
+        return _run_frequency_check(args)
 
     if args.command in {"validate", "validate-config", "validate-data"}:
         return _validate(args)
@@ -464,6 +476,22 @@ def _run_security_check(args: argparse.Namespace) -> ExitCode:
         print("Security cost: undefined for infeasible hard checks")
     else:
         print(f"Security cost: EUR {float(security_cost):,.2f}")
+    return ExitCode.SUCCESS
+
+
+def _run_frequency_check(args: argparse.Namespace) -> ExitCode:
+    config = load_model_config(args.config)
+    output = ensure_writable_output_directory(
+        args.output,
+        overwrite=args.overwrite,
+        resume=False,
+    )
+    result = solve(config)
+    evaluation = evaluate_frequency_adequacy(config, result)
+    evaluation.write(output)
+    print(f"Frequency diagnostics written: {output}")
+    print(f"Adequate: {evaluation.adequate}")
+    print(f"Scarcity periods: {int(cast(int, evaluation.summary['scarcity_periods']))}")
     return ExitCode.SUCCESS
 
 
@@ -648,6 +676,7 @@ def _capabilities() -> dict[str, Any]:
             "analyze-experiment",
             "reliability-study",
             "security-check",
+            "frequency-check",
             "capacity-planning",
             "compare-outputs",
             "export-model",

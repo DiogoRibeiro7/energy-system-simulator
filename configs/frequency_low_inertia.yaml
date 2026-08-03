@@ -1,0 +1,168 @@
+schema_version: 2
+
+scenario:
+  id: frequency-low-inertia-example
+
+simulation:
+  time_step_hours: 1.0
+
+solver:
+  solver_time_limit_seconds: 60.0
+  mip_relative_gap: 0.001
+  allow_non_optimal_solution: false
+
+fuels:
+  - id: gas
+    price_eur_per_mwh_thermal: 35.0
+    co2_factor_tonnes_per_mwh_thermal: 0.18
+
+zones:
+  - id: north
+  - id: central
+  - id: south
+
+buses:
+  - id: north
+    zone_id: north
+  - id: central
+    zone_id: central
+  - id: south
+    zone_id: south
+
+lines:
+  - id: north-central
+    from_bus_id: north
+    to_bus_id: central
+    susceptance: 12.0
+    capacity_mw: 65.0
+  - id: central-south
+    from_bus_id: central
+    to_bus_id: south
+    susceptance: 10.0
+    capacity_mw: 50.0
+    availability_factor_key: central_south_availability
+  - id: north-south
+    from_bus_id: north
+    to_bus_id: south
+    susceptance: 8.0
+    capacity_mw: 35.0
+
+aggregate_network:
+  loss_fraction: 0.0
+  transfer_capacity_mw: 500.0
+  network_mode: nodal
+  slack_bus_id: north
+
+frequency:
+  nominal_frequency_hz: 50.0
+  minimum_inertia_mw_s: 800.0
+  maximum_rocof_hz_per_s: 1.0
+  credible_loss_mw: 35.0
+  credible_loss_fraction_of_largest_online_infeed: 1.0
+  maximum_primary_response_time_seconds: 15.0
+  maximum_fast_response_time_seconds: 2.0
+  quasi_steady_state_frequency_deviation_hz: 0.8
+  demand_damping_mw_per_hz: 0.0
+
+renewable_generators:
+  - id: north-solar
+    kind: solar
+    bus_id: north
+    capacity_mw: 90.0
+    performance_ratio: 0.86
+    reference_irradiance_w_m2: 1000.0
+    temperature_coefficient_per_c: -0.004
+    nominal_operating_cell_temperature_c: 45.0
+    time_series_key: irradiance_w_m2
+    ambient_temperature_key: ambient_temperature_c
+  - id: north-wind
+    kind: wind
+    bus_id: north
+    capacity_mw: 70.0
+    cut_in_speed_m_s: 3.0
+    rated_speed_m_s: 12.0
+    cut_out_speed_m_s: 25.0
+    time_series_key: wind_speed_m_s
+
+thermal_generators:
+  - id: south-gas
+    bus_id: south
+    fuel_id: gas
+    name: South peaking gas
+    minimum_output_mw: 0.0
+    maximum_output_mw: 120.0
+    ramp_up_mw_per_hour: 120.0
+    ramp_down_mw_per_hour: 120.0
+    startup_ramp_mw: 120.0
+    shutdown_ramp_mw: 120.0
+    variable_cost_eur_per_mwh: 95.0
+    no_load_cost_eur_per_hour: 0.0
+    startup_cost_eur: 0.0
+    shutdown_cost_eur: 0.0
+    emission_factor_tonnes_per_mwh: 0.36
+    synchronous_inertia_mw_s: 1_200.0
+    primary_response_mw: 40.0
+    primary_response_time_seconds: 10.0
+    minimum_fuel_input_mwh_per_hour: 0.0
+    heat_rate_segments:
+      - id: main
+        capacity_mw: 120.0
+        heat_rate_mwh_thermal_per_mwh: 2.1
+    minimum_up_hours: 1.0
+    minimum_down_hours: 1.0
+    initial_on: false
+    initial_output_mw: 0.0
+    initial_up_time_hours: 0.0
+    initial_down_time_hours: 8.0
+    terminal_commitment_mode: forbid_incomplete_transitions
+
+storage_units:
+  - id: central-battery
+    bus_id: central
+    technology: battery
+    energy_capacity_mwh: 60.0
+    power_capacity_mw: 30.0
+    minimum_soc_mwh: 0.0
+    maximum_soc_mwh: 60.0
+    initial_soc_mwh: 15.0
+    charge_efficiency: 0.94
+    discharge_efficiency: 0.94
+    throughput_cost_eur_per_mwh: 1.0
+    minimum_final_soc_mwh: 10.0
+    terminal_soc_mode: minimum
+    fast_frequency_response_mw: 10.0
+    fast_frequency_response_duration_seconds: 10.0
+    fast_frequency_response_time_seconds: 1.0
+    synthetic_inertia_mw_s: 100.0
+
+hydro_units: []
+
+imports:
+  - id: market
+    bus_id: north
+    maximum_power_mw: 30.0
+    price_eur_per_mwh: 140.0
+    emission_factor_tonnes_per_mwh: 0.22
+
+demand:
+  - id: central-load
+    bus_id: central
+    sector: commercial
+    kind: fixed
+    time_series_key: central_load_mw
+    value_of_lost_load_eur_per_mwh: 12000.0
+  - id: south-load
+    bus_id: south
+    sector: residential
+    kind: fixed
+    time_series_key: south_load_mw
+    value_of_lost_load_eur_per_mwh: 12000.0
+
+penalties:
+  renewable_curtailment_eur_per_mwh: 1.0
+  lost_load_eur_per_mwh: 10000.0
+  carbon_price_eur_per_tonne: 85.0
+
+paths:
+  input_csv: ../data/nodal_three_bus_hourly.csv
+  output_directory: ../outputs/frequency-low-inertia

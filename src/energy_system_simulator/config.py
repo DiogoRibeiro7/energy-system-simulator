@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from difflib import get_close_matches
 from pathlib import Path
 from typing import Any, Literal, TypeVar, cast
@@ -151,6 +151,7 @@ ROOT_KEYS = {
     "lines",
     "aggregate_network",
     "rolling_horizon",
+    "frequency",
     "renewable_generators",
     "thermal_generators",
     "storage_units",
@@ -161,7 +162,13 @@ ROOT_KEYS = {
     "penalties",
     "paths",
 }
-REQUIRED_ROOT_KEYS = ROOT_KEYS - {"fuels", "hydro_units", "reserves", "rolling_horizon"}
+REQUIRED_ROOT_KEYS = ROOT_KEYS - {
+    "fuels",
+    "hydro_units",
+    "reserves",
+    "rolling_horizon",
+    "frequency",
+}
 RESERVE_KEYS = {
     "upward_fixed_mw",
     "downward_fixed_mw",
@@ -183,6 +190,17 @@ RESERVE_KEYS = {
     "import_upward_cost_eur_per_mw_hour",
     "import_downward_cost_eur_per_mw_hour",
 }
+FREQUENCY_KEYS = {
+    "nominal_frequency_hz",
+    "minimum_inertia_mw_s",
+    "maximum_rocof_hz_per_s",
+    "credible_loss_mw",
+    "credible_loss_fraction_of_largest_online_infeed",
+    "maximum_primary_response_time_seconds",
+    "maximum_fast_response_time_seconds",
+    "quasi_steady_state_frequency_deviation_hz",
+    "demand_damping_mw_per_hz",
+}
 SECTION_KEYS = {
     "scenario": {"id"},
     "simulation": {"time_step_hours"},
@@ -203,6 +221,7 @@ SECTION_KEYS = {
         "resume_from_checkpoint",
         "compare_full_horizon",
     },
+    "frequency": FREQUENCY_KEYS,
     "penalties": LEGACY_SECTION_KEYS["penalties"],
     "paths": LEGACY_SECTION_KEYS["paths"],
 }
@@ -277,6 +296,9 @@ LIST_SECTION_KEYS = {
         "minimum_fuel_input_mwh_per_hour",
         "heat_rate_segments",
         "startup_categories",
+        "synchronous_inertia_mw_s",
+        "primary_response_mw",
+        "primary_response_time_seconds",
     },
     "fuels": {
         "id",
@@ -296,6 +318,10 @@ LIST_SECTION_KEYS = {
         "availability_factor",
         "availability_factor_key",
         "degradation_bands",
+        "fast_frequency_response_mw",
+        "fast_frequency_response_duration_seconds",
+        "fast_frequency_response_time_seconds",
+        "synthetic_inertia_mw_s",
     },
     "hydro_units": {
         "id",
@@ -315,6 +341,9 @@ LIST_SECTION_KEYS = {
         "water_value_eur_per_mwh",
         "upstream_hydro_id",
         "cascade_delay_hours",
+        "synchronous_inertia_mw_s",
+        "primary_response_mw",
+        "primary_response_time_seconds",
     },
     "imports": LEGACY_SECTION_KEYS["imports"] | {"id", "bus_id"},
     "demand": {
@@ -396,6 +425,9 @@ LIST_OPTIONAL_KEYS = {
         "minimum_fuel_input_mwh_per_hour",
         "heat_rate_segments",
         "startup_categories",
+        "synchronous_inertia_mw_s",
+        "primary_response_mw",
+        "primary_response_time_seconds",
     },
     "fuels": {
         "price_time_series_key",
@@ -417,6 +449,10 @@ LIST_OPTIONAL_KEYS = {
         "availability_factor",
         "availability_factor_key",
         "degradation_bands",
+        "fast_frequency_response_mw",
+        "fast_frequency_response_duration_seconds",
+        "fast_frequency_response_time_seconds",
+        "synthetic_inertia_mw_s",
     },
     "hydro_units": {
         "kind",
@@ -431,6 +467,9 @@ LIST_OPTIONAL_KEYS = {
         "water_value_eur_per_mwh",
         "upstream_hydro_id",
         "cascade_delay_hours",
+        "synchronous_inertia_mw_s",
+        "primary_response_mw",
+        "primary_response_time_seconds",
     },
     "imports": set(),
     "lines": {"availability_factor", "availability_factor_key"},
@@ -942,6 +981,9 @@ class ThermalGeneratorConfig:
     must_run: bool = False
     availability_factor: float = 1.0
     availability_factor_key: str | None = None
+    synchronous_inertia_mw_s: float = 0.0
+    primary_response_mw: float = 0.0
+    primary_response_time_seconds: float = 30.0
 
 
 @dataclass(frozen=True)
@@ -981,6 +1023,10 @@ class StorageUnitConfig:
     id: str
     bus_id: str
     config: BatteryConfig
+    fast_frequency_response_mw: float = 0.0
+    fast_frequency_response_duration_seconds: float = 1.0
+    fast_frequency_response_time_seconds: float = 1.0
+    synthetic_inertia_mw_s: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -1002,6 +1048,9 @@ class HydroUnitConfig:
     water_value_eur_per_mwh: float = 0.0
     upstream_hydro_id: str | None = None
     cascade_delay_hours: float = 0.0
+    synchronous_inertia_mw_s: float = 0.0
+    primary_response_mw: float = 0.0
+    primary_response_time_seconds: float = 30.0
 
 
 @dataclass(frozen=True)
@@ -1033,6 +1082,19 @@ class ReserveConfig:
     allow_import_reserves: bool = False
     import_upward_cost_eur_per_mw_hour: float = 0.0
     import_downward_cost_eur_per_mw_hour: float = 0.0
+
+
+@dataclass(frozen=True)
+class FrequencyConfig:
+    nominal_frequency_hz: float = 50.0
+    minimum_inertia_mw_s: float = 0.0
+    maximum_rocof_hz_per_s: float = 1.0
+    credible_loss_mw: float = 0.0
+    credible_loss_fraction_of_largest_online_infeed: float = 1.0
+    maximum_primary_response_time_seconds: float = 30.0
+    maximum_fast_response_time_seconds: float = 2.0
+    quasi_steady_state_frequency_deviation_hz: float = 0.8
+    demand_damping_mw_per_hz: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -1134,6 +1196,7 @@ class ModelConfig:
     imports: ImportConfig
     penalties: PenaltyConfig
     paths: PathConfig
+    frequency: FrequencyConfig = field(default_factory=FrequencyConfig)
 
 
 def _schema_version(raw: Mapping[str, Any]) -> int:
@@ -1354,6 +1417,7 @@ def _load_legacy_config(
         imports=imports,
         penalties=penalties,
         paths=paths,
+        frequency=FrequencyConfig(),
     )
     validate_config(config)
     return config
@@ -1365,11 +1429,15 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
     for section_name, allowed_keys in SECTION_KEYS.items():
         section = (
             _optional_mapping_section(raw, section_name)
-            if section_name == "rolling_horizon"
+            if section_name in {"rolling_horizon", "frequency"}
             else _section(raw, section_name)
         )
         _validate_allowed_keys(section, section_name, allowed_keys)
-        required_keys = allowed_keys - OPTIONAL_SECTION_KEYS.get(section_name, set())
+        required_keys = (
+            set()
+            if section_name == "frequency"
+            else allowed_keys - OPTIONAL_SECTION_KEYS.get(section_name, set())
+        )
         _validate_required_keys(section, section_name, required_keys)
     for section_name, allowed_keys in LIST_SECTION_KEYS.items():
         items = _list_section(
@@ -1388,6 +1456,7 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
     network_raw = _section(raw, "aggregate_network")
     reserves_raw = _optional_mapping_section(raw, "reserves")
     rolling_raw = _optional_mapping_section(raw, "rolling_horizon")
+    frequency_raw = _optional_mapping_section(raw, "frequency")
     penalties_raw = _section(raw, "penalties")
     paths_raw = _section(raw, "paths")
 
@@ -1514,6 +1583,7 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
     )
     reserves = _parse_reserves(reserves_raw)
     rolling = _parse_rolling_horizon(rolling_raw, config_path.parent)
+    frequency = _parse_frequency(frequency_raw)
     import_config = imports[0].config
     penalties = PenaltyConfig(
         renewable_curtailment_eur_per_mwh=_number_at(
@@ -1546,6 +1616,7 @@ def _load_schema_v2(config_path: Path, raw: Mapping[str, Any]) -> ModelConfig:
         imports=import_config,
         penalties=penalties,
         paths=paths,
+        frequency=frequency,
     )
     _validate_schema_v2_assets(portfolio)
     validate_config(config)
@@ -1671,6 +1742,56 @@ def _parse_reserves(section: Mapping[str, Any]) -> ReserveConfig:
         ),
         import_downward_cost_eur_per_mw_hour=_optional_number_at(
             section, "import_downward_cost_eur_per_mw_hour", float, 0.0, path
+        ),
+    )
+
+
+def _parse_frequency(section: Mapping[str, Any]) -> FrequencyConfig:
+    path = "frequency"
+    _validate_allowed_keys(section, path, FREQUENCY_KEYS)
+    return FrequencyConfig(
+        nominal_frequency_hz=_optional_number_at(
+            section, "nominal_frequency_hz", float, 50.0, path
+        ),
+        minimum_inertia_mw_s=_optional_number_at(section, "minimum_inertia_mw_s", float, 0.0, path),
+        maximum_rocof_hz_per_s=_optional_number_at(
+            section, "maximum_rocof_hz_per_s", float, 1.0, path
+        ),
+        credible_loss_mw=_optional_number_at(section, "credible_loss_mw", float, 0.0, path),
+        credible_loss_fraction_of_largest_online_infeed=_optional_number_at(
+            section,
+            "credible_loss_fraction_of_largest_online_infeed",
+            float,
+            1.0,
+            path,
+        ),
+        maximum_primary_response_time_seconds=_optional_number_at(
+            section,
+            "maximum_primary_response_time_seconds",
+            float,
+            30.0,
+            path,
+        ),
+        maximum_fast_response_time_seconds=_optional_number_at(
+            section,
+            "maximum_fast_response_time_seconds",
+            float,
+            2.0,
+            path,
+        ),
+        quasi_steady_state_frequency_deviation_hz=_optional_number_at(
+            section,
+            "quasi_steady_state_frequency_deviation_hz",
+            float,
+            0.8,
+            path,
+        ),
+        demand_damping_mw_per_hz=_optional_number_at(
+            section,
+            "demand_damping_mw_per_hz",
+            float,
+            0.0,
+            path,
         ),
     )
 
@@ -2005,6 +2126,21 @@ def _parse_thermal_generator(item: Mapping[str, Any], path: str) -> ThermalGener
             if "availability_factor_key" in item
             else None
         ),
+        synchronous_inertia_mw_s=_optional_number_at(
+            item,
+            "synchronous_inertia_mw_s",
+            float,
+            0.0,
+            path,
+        ),
+        primary_response_mw=_optional_number_at(item, "primary_response_mw", float, 0.0, path),
+        primary_response_time_seconds=_optional_number_at(
+            item,
+            "primary_response_time_seconds",
+            float,
+            30.0,
+            path,
+        ),
     )
 
 
@@ -2156,6 +2292,34 @@ def _parse_storage_unit(item: Mapping[str, Any], path: str) -> StorageUnitConfig
             ),
             degradation_bands=_parse_degradation_bands(item, path),
         ),
+        fast_frequency_response_mw=_optional_number_at(
+            item,
+            "fast_frequency_response_mw",
+            float,
+            0.0,
+            path,
+        ),
+        fast_frequency_response_duration_seconds=_optional_number_at(
+            item,
+            "fast_frequency_response_duration_seconds",
+            float,
+            1.0,
+            path,
+        ),
+        fast_frequency_response_time_seconds=_optional_number_at(
+            item,
+            "fast_frequency_response_time_seconds",
+            float,
+            1.0,
+            path,
+        ),
+        synthetic_inertia_mw_s=_optional_number_at(
+            item,
+            "synthetic_inertia_mw_s",
+            float,
+            0.0,
+            path,
+        ),
     )
 
 
@@ -2252,6 +2416,21 @@ def _parse_hydro_unit(item: Mapping[str, Any], path: str) -> HydroUnitConfig:
             _id_at(item, "upstream_hydro_id", path) if "upstream_hydro_id" in item else None
         ),
         cascade_delay_hours=_optional_number_at(item, "cascade_delay_hours", float, 0.0, path),
+        synchronous_inertia_mw_s=_optional_number_at(
+            item,
+            "synchronous_inertia_mw_s",
+            float,
+            0.0,
+            path,
+        ),
+        primary_response_mw=_optional_number_at(item, "primary_response_mw", float, 0.0, path),
+        primary_response_time_seconds=_optional_number_at(
+            item,
+            "primary_response_time_seconds",
+            float,
+            30.0,
+            path,
+        ),
     )
 
 
@@ -3148,6 +3327,7 @@ def _schema_v2_mapping_from_config(
         ],
         "demand": [_demand_mapping(demand) for demand in portfolio.demand],
         "reserves": _reserve_mapping(config.reserves),
+        "frequency": _frequency_mapping(config.frequency),
         "penalties": {
             "renewable_curtailment_eur_per_mwh": (
                 config.penalties.renewable_curtailment_eur_per_mwh
@@ -3232,6 +3412,24 @@ def _reserve_mapping(reserves: ReserveConfig) -> dict[str, Any]:
         "allow_import_reserves": reserves.allow_import_reserves,
         "import_upward_cost_eur_per_mw_hour": reserves.import_upward_cost_eur_per_mw_hour,
         "import_downward_cost_eur_per_mw_hour": reserves.import_downward_cost_eur_per_mw_hour,
+    }
+
+
+def _frequency_mapping(frequency: FrequencyConfig) -> dict[str, Any]:
+    return {
+        "nominal_frequency_hz": frequency.nominal_frequency_hz,
+        "minimum_inertia_mw_s": frequency.minimum_inertia_mw_s,
+        "maximum_rocof_hz_per_s": frequency.maximum_rocof_hz_per_s,
+        "credible_loss_mw": frequency.credible_loss_mw,
+        "credible_loss_fraction_of_largest_online_infeed": (
+            frequency.credible_loss_fraction_of_largest_online_infeed
+        ),
+        "maximum_primary_response_time_seconds": (frequency.maximum_primary_response_time_seconds),
+        "maximum_fast_response_time_seconds": frequency.maximum_fast_response_time_seconds,
+        "quasi_steady_state_frequency_deviation_hz": (
+            frequency.quasi_steady_state_frequency_deviation_hz
+        ),
+        "demand_damping_mw_per_hz": frequency.demand_damping_mw_per_hz,
     }
 
 
@@ -3407,6 +3605,12 @@ def _thermal_generator_mapping(generator: ThermalGeneratorConfig) -> dict[str, A
         item["availability_factor"] = generator.availability_factor
     if generator.availability_factor_key is not None:
         item["availability_factor_key"] = generator.availability_factor_key
+    if generator.synchronous_inertia_mw_s != 0.0:
+        item["synchronous_inertia_mw_s"] = generator.synchronous_inertia_mw_s
+    if generator.primary_response_mw != 0.0:
+        item["primary_response_mw"] = generator.primary_response_mw
+    if generator.primary_response_time_seconds != 30.0:
+        item["primary_response_time_seconds"] = generator.primary_response_time_seconds
     return item
 
 
@@ -3451,6 +3655,16 @@ def _storage_unit_mapping(unit: StorageUnitConfig) -> dict[str, Any]:
             }
             for band in battery.degradation_bands
         ]
+    if unit.fast_frequency_response_mw != 0.0:
+        item["fast_frequency_response_mw"] = unit.fast_frequency_response_mw
+    if unit.fast_frequency_response_duration_seconds != 1.0:
+        item["fast_frequency_response_duration_seconds"] = (
+            unit.fast_frequency_response_duration_seconds
+        )
+    if unit.fast_frequency_response_time_seconds != 1.0:
+        item["fast_frequency_response_time_seconds"] = unit.fast_frequency_response_time_seconds
+    if unit.synthetic_inertia_mw_s != 0.0:
+        item["synthetic_inertia_mw_s"] = unit.synthetic_inertia_mw_s
     return item
 
 
@@ -3476,6 +3690,12 @@ def _hydro_unit_mapping(unit: HydroUnitConfig) -> dict[str, Any]:
     if unit.upstream_hydro_id is not None:
         item["upstream_hydro_id"] = unit.upstream_hydro_id
         item["cascade_delay_hours"] = unit.cascade_delay_hours
+    if unit.synchronous_inertia_mw_s != 0.0:
+        item["synchronous_inertia_mw_s"] = unit.synchronous_inertia_mw_s
+    if unit.primary_response_mw != 0.0:
+        item["primary_response_mw"] = unit.primary_response_mw
+    if unit.primary_response_time_seconds != 30.0:
+        item["primary_response_time_seconds"] = unit.primary_response_time_seconds
     return item
 
 
@@ -3746,6 +3966,80 @@ def validate_config(config: ModelConfig) -> None:
         ("reserves.demand_response_upward_fraction", reserves.demand_response_upward_fraction),
     ):
         _check_fraction(name, value)
+
+    frequency = config.frequency
+    for name, value in (
+        ("frequency.nominal_frequency_hz", frequency.nominal_frequency_hz),
+        ("frequency.maximum_rocof_hz_per_s", frequency.maximum_rocof_hz_per_s),
+        (
+            "frequency.maximum_primary_response_time_seconds",
+            frequency.maximum_primary_response_time_seconds,
+        ),
+        (
+            "frequency.maximum_fast_response_time_seconds",
+            frequency.maximum_fast_response_time_seconds,
+        ),
+        (
+            "frequency.quasi_steady_state_frequency_deviation_hz",
+            frequency.quasi_steady_state_frequency_deviation_hz,
+        ),
+    ):
+        if value <= 0.0:
+            raise ConfigurationError(f"{name} must be positive")
+    for name, value in (
+        ("frequency.minimum_inertia_mw_s", frequency.minimum_inertia_mw_s),
+        ("frequency.credible_loss_mw", frequency.credible_loss_mw),
+        ("frequency.demand_damping_mw_per_hz", frequency.demand_damping_mw_per_hz),
+    ):
+        _check_nonnegative(name, value)
+    _check_fraction(
+        "frequency.credible_loss_fraction_of_largest_online_infeed",
+        frequency.credible_loss_fraction_of_largest_online_infeed,
+    )
+    for generator in config.portfolio.thermal_generators:
+        for name, value in (
+            ("synchronous_inertia_mw_s", generator.synchronous_inertia_mw_s),
+            ("primary_response_mw", generator.primary_response_mw),
+        ):
+            _check_nonnegative(f"thermal_generators[{generator.id}].{name}", value)
+        if generator.primary_response_time_seconds <= 0.0:
+            raise ConfigurationError(
+                f"thermal_generators[{generator.id}].primary_response_time_seconds must be positive"
+            )
+    for hydro_unit in config.portfolio.hydro_units:
+        for name, value in (
+            ("synchronous_inertia_mw_s", hydro_unit.synchronous_inertia_mw_s),
+            ("primary_response_mw", hydro_unit.primary_response_mw),
+        ):
+            _check_nonnegative(f"hydro_units[{hydro_unit.id}].{name}", value)
+        if hydro_unit.primary_response_time_seconds <= 0.0:
+            raise ConfigurationError(
+                f"hydro_units[{hydro_unit.id}].primary_response_time_seconds must be positive"
+            )
+    for storage_unit in config.portfolio.storage_units:
+        for name, value in (
+            ("fast_frequency_response_mw", storage_unit.fast_frequency_response_mw),
+            (
+                "fast_frequency_response_duration_seconds",
+                storage_unit.fast_frequency_response_duration_seconds,
+            ),
+            (
+                "fast_frequency_response_time_seconds",
+                storage_unit.fast_frequency_response_time_seconds,
+            ),
+            ("synthetic_inertia_mw_s", storage_unit.synthetic_inertia_mw_s),
+        ):
+            _check_nonnegative(f"storage_units[{storage_unit.id}].{name}", value)
+        if storage_unit.fast_frequency_response_duration_seconds <= 0.0:
+            raise ConfigurationError(
+                "storage_units"
+                f"[{storage_unit.id}].fast_frequency_response_duration_seconds must be positive"
+            )
+        if storage_unit.fast_frequency_response_time_seconds <= 0.0:
+            raise ConfigurationError(
+                "storage_units"
+                f"[{storage_unit.id}].fast_frequency_response_time_seconds must be positive"
+            )
 
     for name, value in (
         ("imports.maximum_power_mw", config.imports.maximum_power_mw),
