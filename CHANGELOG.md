@@ -7,6 +7,10 @@ and this project follows semantic versioning.
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [1.0.0] - 2026-08-03
+
 ### Added
 
 - Typed portfolio configuration schema, legacy config migration, canonical
@@ -28,6 +32,76 @@ and this project follows semantic versioning.
   shiftable, deferrable, and EV-charging entities, entity-specific lost-load
   costs, temperature-sensitive demand preprocessing, task completion penalties,
   and a demand-response portfolio example.
+- Integrated nodal DC dispatch with bus balances, line-flow limits, slack-bus
+  handling, and overload diagnostics.
+- Operating reserve requirements, reserve shortfall accounting, and reserve
+  diagnostics in versioned output tables.
+- Detailed renewable model extensions for solar derating, wind power curves,
+  availability factors, soiling, snow, wake, and electrical losses.
+- Rolling-horizon simulation with deterministic state transfer, checkpointing,
+  resume support, and full-horizon comparisons for small cases.
+- Sequential Monte Carlo reliability studies with seeded outage trajectories,
+  adequacy metrics, and confidence intervals.
+- Scenario-based uncertainty and stochastic dispatch utilities with
+  value-of-information benchmarks.
+- Fixed-commitment market pricing and settlement outputs.
+- Single-year capacity-expansion planning with representative-period weights.
+- Scenario experiments with declarative overrides, sweeps, grids, manifests,
+  resumable runs, and aggregate sensitivity tables.
+- Public-data adapters that produce canonical local input snapshots with
+  checksums and provenance manifests.
+- Mathematical verification benchmarks, scaling benchmarks, solver backend
+  abstraction, LP export, and benchmark reporting.
+- Versioned reporting tables, data dictionaries, diagnostics, comparison
+  reports, and generated plots.
+- Hardened CLI and public Python API with capabilities reporting, validated
+  overrides, dry-run support, and package install smoke tests.
+- Reproducible Iberian approximation case study.
+- Research experiment framework with pre-specified metrics, reproducibility
+  manifests, generated Markdown and LaTeX tables, figure metadata, and an
+  example storage-value study.
+- 1.0 release documentation index, compatibility matrix, release checklist,
+  and release-validation report.
+
+### Changed
+
+- The public release surface is now versioned as `1.0.0`.
+- Configuration parsing is strict: unknown fields, duplicate YAML keys,
+  unsupported schema versions, and invalid references fail clearly.
+- Supported configuration schemas are frozen at aggregate schema 1 and typed
+  portfolio schema 2 for the 1.0 line. Output tables remain frozen at output
+  schema version 1.
+
+### Deprecated
+
+- `scenario-experiment` remains as an alias for `run-scenarios`.
+- `export-formulation` remains as an alias for `export-model`.
+- Legacy aggregate output files remain for compatibility; versioned `*_v1.csv`
+  tables are the preferred audit interface.
+
+### Breaking Changes From 0.1.0
+
+- Misspelled and unknown YAML keys are rejected instead of silently ignored.
+- Output directories and report files are not overwritten unless `--overwrite`
+  or `--resume` is supplied.
+- Solver failures, infeasible models, and partial feasible incumbents are mapped
+  to explicit domain statuses and CLI exit codes.
+- Legacy aggregate configurations are still supported, but resolved runs are
+  internally represented as typed portfolios.
+
+### Model Scope
+
+- The simulator is intended for transparent research, teaching, policy
+  experiments, and reproducible optimisation case studies.
+- It is not a production grid-operations tool and does not model AC power flow,
+  frequency dynamics, protection systems, transient stability, or detailed
+  distribution-network operation.
+
+### Validation
+
+- `make verify` passed locally on Windows with Python 3.13.5.
+- Package source distribution and wheel build and install cleanly in a fresh
+  smoke environment.
 
 ## [0.1.1] - 2026-07-31
 

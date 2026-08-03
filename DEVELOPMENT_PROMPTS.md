@@ -127,7 +127,7 @@ Require this response format after every major prompt:
 | CORE-09 | Operating reserves | `feat/operating-reserves` | Sequential by dependency | Complete |
 | CORE-10 | Renewable model extensions | `feat/renewable-model-extensions` | Sequential by dependency | Complete |
 | CORE-11 | Rolling-horizon simulation | `feat/rolling-horizon` | Sequential by dependency | Complete |
-| CORE-12–CORE-24 | Research-grade electricity-system roadmap | See each prompt | Sequential by dependency | Not started |
+| CORE-12–CORE-24 | Research-grade electricity-system roadmap | See each prompt | Sequential by dependency | Complete |
 | ADV-01–ADV-15 | Optional post-core model families | See each prompt | Select by research question | Not started |
 
 ---

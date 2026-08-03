@@ -24,6 +24,10 @@ optimizes all configured thermal generators as a generator-indexed unit
 commitment fleet, and dispatches indexed storage, hydro, and demand-response
 portfolios. Imports are still represented as a single aggregate resource.
 
+For the 1.0 line, schema 1 and schema 2 are the supported and frozen
+configuration schemas. Unknown future schema versions fail clearly instead of
+being interpreted as one of the supported formats.
+
 ## Validation Approach
 
 The project stays with frozen dataclasses plus explicit parsing and validation.

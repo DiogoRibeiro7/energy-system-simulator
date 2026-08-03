@@ -1,24 +1,22 @@
 # Model Status
 
-Current corrected baseline: `0.1.1`.
+Current stable release: `1.0.0`.
 
-The `0.1.1` release is a correction release for the single-system simulator. It
-keeps the current aggregate optimisation formulation while fixing packaging
-metadata, finite-horizon commitment semantics, solver-status reporting,
-transition-ramp validation, configuration strictness, numerical policy, and DC
-power-flow diagnostics. The `Unreleased` line adds typed portfolio
-configuration, asset-level renewable availability reporting,
-generator-indexed thermal unit commitment, typed fuels, piecewise heat-rate
-segments, startup categories, richer thermal emissions accounting, and indexed
-storage portfolio, hydro dispatch, and demand-response dispatch.
+The `1.0.0` release is the stable research and teaching release for the current
+roadmap scope. It includes typed portfolio configuration, asset-level renewable
+availability reporting, generator-indexed thermal unit commitment, typed fuels,
+piecewise heat-rate segments, startup categories, richer emissions accounting,
+indexed storage, hydro dispatch, demand response, nodal DC dispatch, reserves,
+rolling horizon, reliability, stochastic dispatch, market settlement, capacity
+expansion, scenario experiments, public-data provenance, reporting diagnostics,
+the Iberian case study, and research experiment manifests.
 
 ## Release Decision
 
-The release remains in the `0.1.x` line because the core single-system modelling
-surface is unchanged and the `schema_version: 1` field remains optional for
-existing valid configurations. Strict rejection of unknown configuration fields
-is treated as a correctness fix because previously misspelled fields could be
-silently ignored.
+The 1.0 line freezes supported configuration schemas 1 and 2 and output schema
+version 1. Strict rejection of unknown configuration fields is part of the
+public contract because misspelled fields otherwise create non-reproducible
+studies.
 
 ## Stress Coverage
 
@@ -42,17 +40,11 @@ The stress suite writes `outputs/stress/summary.csv` and checks:
 
 ## Current Limitations
 
-- Thermal dispatch supports multiple committed generators, and storage dispatch
-  supports multiple batteries or pumped-storage assets. Hydro dispatch supports
-  reservoir and run-of-river units. Demand dispatch supports fixed,
-  curtailable, shiftable, deferrable, and EV-charging entities. Imports are
-  still represented as a single aggregate resource.
-- Solar and wind availability can be evaluated for multiple configured assets,
-  with aggregate renewable dispatch allocated back to assets for reporting.
-- The dispatch network is an aggregate transfer-and-loss representation, not a
-  nodal OPF.
+- Imports are still represented as a single aggregate resource in the main
+  dispatch path.
+- Nodal dispatch uses a linear lossless DC approximation, not AC power flow.
 - The standalone DC power-flow utility solves fixed injections and reports
-  overloads; it does not redispatch or enforce line limits.
+  overloads; redispatch belongs to the integrated nodal dispatch mode.
 - Multi-period startup/shutdown trajectories beyond category-specific startup
-  accounting, reserves, indexed imports, hydro cascade coupling, and stochastic scenarios are
-  reserved for later roadmap work.
+  accounting, security-constrained unit commitment, hydro cascade coupling, and
+  detailed distribution-network modelling are reserved for later roadmap work.

@@ -1,10 +1,13 @@
-.PHONY: install format lint typecheck test validate simulate stress verification check-example-data benchmark scaling-benchmark baseline compare-outputs research-experiment validate-research-experiment iberia-case-study validate-iberia-case-study release-metadata version-metadata package editable-smoke wheel-smoke verify clean
+.PHONY: install format lint typecheck test core-coverage validate simulate stress verification check-example-data validate-examples benchmark scaling-benchmark baseline compare-outputs research-experiment validate-research-experiment iberia-case-study validate-iberia-case-study release-metadata version-metadata release-readiness package editable-smoke wheel-smoke verify clean
 
 install:
 	poetry install
 
 test:
 	poetry run pytest --cov=energy_system_simulator --cov-report=term-missing
+
+core-coverage:
+	poetry run coverage report --include="src/energy_system_simulator/dispatch/*" --fail-under=90
 
 format:
 	poetry run ruff format --check .
@@ -29,6 +32,9 @@ verification:
 
 check-example-data:
 	poetry run python scripts/check_example_data.py
+
+validate-examples:
+	poetry run python scripts/validate_examples.py
 
 benchmark:
 	poetry run python scripts/benchmark_example.py
@@ -60,6 +66,9 @@ release-metadata:
 version-metadata:
 	poetry run python scripts/validate_version.py
 
+release-readiness:
+	poetry run python scripts/validate_release_readiness.py
+
 package:
 	poetry build
 
@@ -69,7 +78,7 @@ editable-smoke:
 wheel-smoke: package
 	poetry run python scripts/smoke_wheel_install.py
 
-verify: format lint typecheck check-example-data test validate simulate compare-outputs stress verification benchmark baseline release-metadata version-metadata editable-smoke wheel-smoke
+verify: format lint typecheck check-example-data validate-examples test core-coverage validate simulate compare-outputs stress verification benchmark baseline release-metadata version-metadata release-readiness editable-smoke wheel-smoke
 
 clean:
 	rm -rf outputs .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage

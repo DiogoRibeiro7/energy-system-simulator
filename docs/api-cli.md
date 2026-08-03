@@ -12,6 +12,10 @@ The supported command-line entry point is `energy-sim`.
 - `rolling-horizon --config CONFIG`: run with `rolling_horizon.enabled=true`.
 - `run-scenarios --experiment EXPERIMENT`: run a scenario experiment.
 - `scenario-experiment --experiment EXPERIMENT`: alias for scenario experiments.
+- `run-experiment --study STUDY`: run a registered research experiment study.
+- `reproduce-experiment --manifest MANIFEST`: verify hashes and rerun a recorded
+  research experiment.
+- `analyze-experiment --study STUDY`: regenerate research tables, figures, and report.
 - `reliability-study --config CONFIG`: run a sequential Monte Carlo reliability study.
 - `capacity-planning --problem PROBLEM`: run a capacity-expansion problem YAML.
 - `compare-outputs OUT1 OUT2 --output REPORT.md`: compare output directories.
@@ -71,3 +75,10 @@ result = ess.run_simulation(
 Public exceptions inherit from `EnergySystemError`; configuration, data, and
 optimisation failures use `ConfigurationError`, `DataValidationError`, and
 `OptimisationError`.
+
+## 1.0 Compatibility Notes
+
+`scenario-experiment` and `export-formulation` are compatibility aliases. New
+automation should prefer `run-scenarios` and `export-model`. Legacy aggregate
+output files remain supported, but the versioned `*_v1.csv` files are the stable
+audit surface for the 1.0 line.

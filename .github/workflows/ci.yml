@@ -32,8 +32,12 @@ jobs:
         run: poetry run python scripts/validate_version.py
       - name: Example data reproducibility
         run: poetry run python scripts/check_example_data.py
+      - name: Example dry-run validation
+        run: poetry run python scripts/validate_examples.py
       - name: Test
         run: poetry run pytest --cov=energy_system_simulator --cov-report=term-missing
+      - name: Core coverage
+        run: poetry run coverage report --include="src/energy_system_simulator/dispatch/*" --fail-under=90
       - name: Example validation
         run: poetry run energy-sim validate --config configs/example.yaml
       - name: Example simulation
@@ -42,6 +46,8 @@ jobs:
         run: poetry run python scripts/benchmark_example.py
       - name: Baseline comparison
         run: poetry run python scripts/compare_baseline.py
+      - name: Release readiness
+        run: poetry run python scripts/validate_release_readiness.py
       - name: Editable install smoke
         run: poetry run python scripts/smoke_editable_install.py
       - name: Build package

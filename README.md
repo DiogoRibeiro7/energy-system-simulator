@@ -68,6 +68,7 @@ energy-system-simulator/
 └── tests/                    Unit and integration tests
 ```
 
+The full documentation index is in [`docs/index.md`](docs/index.md).
 Renewable model details, validation rules, and example figure generation are
 documented in `docs/renewable-models.md`.
 Rolling-horizon configuration and state-transfer behaviour are documented in
@@ -94,6 +95,8 @@ poetry install
 ```
 
 ## Run the example
+
+Quick start:
 
 ```bash
 poetry run energy-sim validate --config configs/example.yaml
@@ -142,6 +145,15 @@ Results are written to `outputs/example/`:
 - `dispatch.png`
 - `battery_soc.png`
 
+## Model selection
+
+Use the deterministic dispatch model for operational scenario analysis,
+teaching examples, and transparent policy experiments. Use rolling horizon for
+longer horizons where full-horizon MILPs are too large. Use reliability studies
+when the question concerns outage-driven adequacy risk. Use stochastic dispatch
+when the question concerns forecast uncertainty or value of information. Use
+capacity expansion for fixed representative-period planning studies.
+
 ## Input data contract
 
 The hourly CSV must contain:
@@ -173,7 +185,10 @@ poetry run pytest
 poetry run ruff check .
 poetry run mypy src
 poetry run python scripts/validate_licensing.py
+poetry run python scripts/validate_version.py
+poetry run python scripts/validate_release_readiness.py
 poetry run python scripts/check_example_data.py
+poetry run python scripts/validate_examples.py
 poetry run python scripts/run_verification_benchmarks.py
 poetry run python scripts/benchmark_example.py
 poetry run python scripts/benchmark_scaling.py
@@ -188,6 +203,8 @@ Versioned output tables, diagnostics, reports, and output comparison are documen
 [`docs/reporting.md`](docs/reporting.md).
 CLI commands, exit codes, dry-run behavior, and the public Python API are documented in
 [`docs/api-cli.md`](docs/api-cli.md).
+Python and solver compatibility are documented in
+[`docs/compatibility.md`](docs/compatibility.md).
 The reproducible Portugal-Spain approximation case study lives in
 [`case_studies/iberia`](case_studies/iberia).
 
@@ -221,8 +238,8 @@ make stress
 
 The default simulation uses a single aggregated distribution network. This is appropriate for system planning and policy analysis. The repository also contains a DC power-flow solver that can be integrated into zonal or nodal studies. Detailed low-voltage AC analysis, frequency dynamics, protection systems, and transient stability are outside the current scope.
 
-See [docs/model-status.md](docs/model-status.md) for current corrected-baseline
-status and limitations.
+See [docs/model-status.md](docs/model-status.md) for current release status and
+limitations.
 
 ## Citation
 

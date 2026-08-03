@@ -14,22 +14,20 @@ def get_package_version(
     project_root: Path | None = None,
     prefer_installed: bool = True,
 ) -> str:
-    """Return the installed package version or a deterministic source-tree fallback."""
+    """Return the source-tree version or installed package metadata fallback."""
+    if project_root is None:
+        pyproject_path = _find_pyproject(Path(__file__).resolve())
+    else:
+        pyproject_path = _pyproject_at_root(project_root)
+    if pyproject_path is not None:
+        return _version_from_pyproject(pyproject_path)
+
     if prefer_installed:
         try:
             return version(distribution_name)
         except PackageNotFoundError:
             pass
-
-    if project_root is None:
-        pyproject_path = _find_pyproject(Path(__file__).resolve())
-    else:
-        pyproject_path = _pyproject_at_root(project_root)
-    if pyproject_path is None:
-        return UNKNOWN_VERSION
-    pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
-    raw_version = pyproject.get("tool", {}).get("poetry", {}).get("version")
-    return raw_version if isinstance(raw_version, str) and raw_version else UNKNOWN_VERSION
+    return UNKNOWN_VERSION
 
 
 def _pyproject_at_root(root: Path) -> Path | None:
@@ -44,3 +42,9 @@ def _find_pyproject(start: Path) -> Path | None:
         if candidate.is_file():
             return candidate
     return None
+
+
+def _version_from_pyproject(path: Path) -> str:
+    pyproject = tomllib.loads(path.read_text(encoding="utf-8"))
+    raw_version = pyproject.get("tool", {}).get("poetry", {}).get("version")
+    return raw_version if isinstance(raw_version, str) and raw_version else UNKNOWN_VERSION

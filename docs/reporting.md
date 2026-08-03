@@ -4,6 +4,10 @@ Simulation outputs include the legacy files `timeseries.csv`,
 `asset_timeseries.csv`, `summary.json`, and `manifest.json`, plus versioned
 auditable tables:
 
+For the 1.0 line, versioned reporting tables use output schema version 1. New
+columns may be added only through explicit versioned-table policy; existing
+columns retain their meaning, units, and aggregation semantics.
+
 | Table | Purpose |
 |---|---|
 | `system_timeseries_v1.csv` | System-level dispatch, demand, residuals, emissions, reserves, and network quantities by period. |

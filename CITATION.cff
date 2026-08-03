@@ -7,7 +7,7 @@ authors:
     family-names: "Ribeiro"
     email: "diogo_dj@hotmail.com"
     orcid: "https://orcid.org/0009-0001-2022-7072"
-version: 0.1.1
-date-released: 2026-07-31
+version: 1.0.0
+date-released: 2026-08-03
 license: BUSL-1.1
 repository-code: "https://github.com/DiogoRibeiro7/energy-system-simulator"
