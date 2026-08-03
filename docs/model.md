@@ -101,6 +101,19 @@ The retained implementation segments are concatenated in timestamp order. The
 solution can differ from the full-horizon optimum because each subproblem only
 observes its configured look-ahead horizon.
 
+## Post-contingency security
+
+For nodal dispatch results, the security checker keeps base-case commitment
+variables fixed and evaluates each selected N-1 outage with a separate
+post-contingency DC redispatch LP. Line, generator, and import outages set the
+failed component's contribution to zero. Redispatch bounds are taken from
+committed upward/downward reserves by default, with an option to use physical
+ramp/headroom bounds directly.
+
+Emergency load shedding and line-rating exceedance are explicit slack variables
+with high costs unless hard security mode is requested. These contingency
+metrics are reported separately from the base-case energy objective.
+
 ## Power balance
 
 All dispatch variables are represented on the source side:

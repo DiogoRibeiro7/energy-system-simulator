@@ -31,6 +31,12 @@ violations, solver status, missing timestamps, and asset availability.
 objective value, unserved energy, balance diagnostics, table files, diagnostics,
 and plot references.
 
+`energy-sim security-check` writes separate security diagnostics instead of
+changing the standard simulation tables. Its `security_contingencies.csv` and
+`security_summary.json` files report post-contingency feasibility, emergency
+actions, redispatch, binding overloaded elements, and security cost while
+preserving the base-case objective and cost accounting.
+
 When plots are enabled, the report directory includes dispatch, storage,
 thermal, hydro, network, reserve, unserved-energy, cost, emissions, and duration
 curve figures. Optional components are represented by empty plots or empty stable

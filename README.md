@@ -27,6 +27,7 @@ The model is designed for research, teaching, and policy experiments. It uses ex
 - Mixed-integer optimisation using `scipy.optimize.milp`.
 - Rolling-horizon simulation with deterministic checkpoint resume.
 - Sequential Monte Carlo reliability studies with seeded outage trajectories.
+- Explicit post-contingency N-1 security checks for nodal dispatch.
 - Scenario-based stochastic dispatch with value-of-information benchmarks.
 - Optional post-dispatch market prices and settlements from fixed-commitment LP duals.
 - Single-year capacity-expansion planning with representative-period weights.
@@ -80,6 +81,8 @@ in `docs/capacity-expansion.md`. Scenario experiments are documented in
 `docs/scenario-experiments.md`. Research experiment structure and reproduction
 commands are documented in `docs/research-experiments.md`. Public-data adapters
 and provenance manifests are documented in `docs/public-data-adapters.md`.
+N-1 post-contingency security checks are documented in
+`docs/security-constrained-dispatch.md`.
 
 ## Requirements
 
@@ -122,6 +125,12 @@ Run the nodal DC network example:
 ```bash
 poetry run energy-sim validate --config configs/portfolio_nodal_three_bus.yaml
 poetry run energy-sim simulate --config configs/portfolio_nodal_three_bus.yaml --overwrite
+```
+
+Check explicit N-1 security for the same nodal example:
+
+```bash
+poetry run energy-sim security-check --config configs/portfolio_nodal_three_bus.yaml --output outputs/security --overwrite
 ```
 
 Equivalent module invocation:

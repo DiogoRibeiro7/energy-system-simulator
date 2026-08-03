@@ -7,7 +7,10 @@ and this project follows semantic versioning.
 
 ## [Unreleased]
 
-No unreleased changes.
+### Added
+
+- Explicit post-contingency N-1 security checks for nodal dispatch, with
+  separate contingency diagnostics and LODF validation helpers.
 
 ## [1.0.0] - 2026-08-03
 

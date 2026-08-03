@@ -59,6 +59,17 @@ from energy_system_simulator.scenarios import (
     run_experiment_file,
     stable_scenario_id,
 )
+from energy_system_simulator.security import (
+    Contingency,
+    SecurityDispatchResult,
+    SecurityError,
+    SecurityEvaluation,
+    SecurityOptions,
+    default_contingencies,
+    evaluate_security,
+    explicit_line_outage_flows,
+    lodf_line_outage_flows,
+)
 from energy_system_simulator.simulation.engine import SimulationEngine, SimulationResult
 
 __all__ = [
@@ -66,6 +77,7 @@ __all__ = [
     "CapacityExpansionProblem",
     "CapacityExpansionResult",
     "ConfigurationError",
+    "Contingency",
     "DataProvenance",
     "DataValidationError",
     "DataValidationReport",
@@ -86,6 +98,10 @@ __all__ = [
     "ScenarioExperiment",
     "ScenarioExperimentError",
     "ScenarioRunner",
+    "SecurityDispatchResult",
+    "SecurityError",
+    "SecurityEvaluation",
+    "SecurityOptions",
     "SimulationEngine",
     "SimulationResult",
     "SnapshotResult",
@@ -96,12 +112,16 @@ __all__ = [
     "apply_overrides",
     "build_canonical_snapshot",
     "build_model",
+    "default_contingencies",
     "ensure_writable_output_directory",
+    "evaluate_security",
+    "explicit_line_outage_flows",
     "finite_difference_sensitivity",
     "load_config",
     "load_data",
     "load_experiment_spec",
     "load_model_config",
+    "lodf_line_outage_flows",
     "reproduce_research_experiment",
     "run_data_preparation_spec",
     "run_experiment_file",

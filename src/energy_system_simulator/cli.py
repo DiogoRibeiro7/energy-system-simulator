@@ -45,6 +45,11 @@ from energy_system_simulator.planning import (
 )
 from energy_system_simulator.reporting import compare_output_directories, write_outputs
 from energy_system_simulator.scenarios import apply_overrides, run_experiment_file
+from energy_system_simulator.security import (
+    SecurityOptions,
+    default_contingencies,
+    evaluate_security,
+)
 from energy_system_simulator.simulation import OutageModel, ReliabilityStudy, ReliabilityStudyConfig
 from energy_system_simulator.simulation.reliability import OutageAssetType
 
@@ -166,6 +171,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     reliability.add_argument("--output", type=Path)
     reliability.add_argument("--overwrite", action="store_true")
+
+    security = subparsers.add_parser(
+        "security-check",
+        help="Evaluate explicit post-contingency N-1 security for nodal dispatch",
+    )
+    _add_config_argument(security)
+    security.add_argument("--output", type=Path, required=True)
+    security.add_argument("--overwrite", action="store_true")
+    security.add_argument(
+        "--contingencies",
+        default="lines,generators",
+        help="Comma-separated outage classes: lines,generators,imports",
+    )
+    security.add_argument(
+        "--hard",
+        action="store_true",
+        help="Disable emergency load shedding and overload slack in contingency checks",
+    )
+    security.add_argument(
+        "--no-committed-reserve-limit",
+        action="store_true",
+        help="Use ramp/headroom limits instead of procured reserve columns for redispatch bounds",
+    )
 
     planning = subparsers.add_parser("capacity-planning", help="Run a capacity-planning YAML")
     planning.add_argument("--problem", type=Path, required=True)
@@ -290,6 +318,9 @@ def _dispatch(args: argparse.Namespace) -> ExitCode:
     if args.command == "reliability-study":
         return _run_reliability_study(args)
 
+    if args.command == "security-check":
+        return _run_security_check(args)
+
     if args.command in {"validate", "validate-config", "validate-data"}:
         return _validate(args)
 
@@ -398,6 +429,55 @@ def _run_reliability_study(args: argparse.Namespace) -> ExitCode:
     else:
         print(json.dumps(payload, indent=2, sort_keys=True))
     return ExitCode.SUCCESS
+
+
+def _run_security_check(args: argparse.Namespace) -> ExitCode:
+    config = load_model_config(args.config)
+    include_lines, include_generators, include_imports = _parse_security_contingencies(
+        args.contingencies
+    )
+    output = ensure_writable_output_directory(
+        args.output,
+        overwrite=args.overwrite,
+        resume=False,
+    )
+    result = solve(config)
+    evaluation = evaluate_security(
+        config,
+        result,
+        contingencies=default_contingencies(
+            config,
+            include_lines=include_lines,
+            include_generators=include_generators,
+            include_imports=include_imports,
+        ),
+        options=SecurityOptions(
+            allow_emergency_actions=not args.hard,
+            require_committed_reserves=not args.no_committed_reserve_limit,
+        ),
+    )
+    evaluation.write(output)
+    print(f"Security diagnostics written: {output}")
+    print(f"Secure: {evaluation.secure}")
+    security_cost = cast(float | None, evaluation.summary["total_security_cost_eur"])
+    if security_cost is None:
+        print("Security cost: undefined for infeasible hard checks")
+    else:
+        print(f"Security cost: EUR {float(security_cost):,.2f}")
+    return ExitCode.SUCCESS
+
+
+def _parse_security_contingencies(raw: str) -> tuple[bool, bool, bool]:
+    selected = {item.strip().lower() for item in raw.split(",") if item.strip()}
+    supported = {"lines", "generators", "imports"}
+    unknown = selected - supported
+    if unknown:
+        raise ConfigurationError(
+            "Unsupported security contingency classes: " + ", ".join(sorted(unknown))
+        )
+    if not selected:
+        raise ConfigurationError("At least one security contingency class is required")
+    return "lines" in selected, "generators" in selected, "imports" in selected
 
 
 def _run_capacity_planning(args: argparse.Namespace) -> ExitCode:
@@ -567,6 +647,7 @@ def _capabilities() -> dict[str, Any]:
             "reproduce-experiment",
             "analyze-experiment",
             "reliability-study",
+            "security-check",
             "capacity-planning",
             "compare-outputs",
             "export-model",

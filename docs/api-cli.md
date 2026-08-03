@@ -17,6 +17,8 @@ The supported command-line entry point is `energy-sim`.
   research experiment.
 - `analyze-experiment --study STUDY`: regenerate research tables, figures, and report.
 - `reliability-study --config CONFIG`: run a sequential Monte Carlo reliability study.
+- `security-check --config CONFIG --output DIR`: evaluate explicit N-1
+  post-contingency security for nodal dispatch.
 - `capacity-planning --problem PROBLEM`: run a capacity-expansion problem YAML.
 - `compare-outputs OUT1 OUT2 --output REPORT.md`: compare output directories.
 - `export-model --config CONFIG --output MODEL.lp`: export formulation LP.
@@ -75,6 +77,17 @@ result = ess.run_simulation(
 Public exceptions inherit from `EnergySystemError`; configuration, data, and
 optimisation failures use `ConfigurationError`, `DataValidationError`, and
 `OptimisationError`.
+
+Nodal security diagnostics are available through `evaluate_security`:
+
+```python
+import energy_system_simulator as ess
+
+config = ess.load_model_config("configs/portfolio_nodal_three_bus.yaml")
+result = ess.solve(config)
+security = ess.evaluate_security(config, result)
+security.write("outputs/security")
+```
 
 ## 1.0 Compatibility Notes
 

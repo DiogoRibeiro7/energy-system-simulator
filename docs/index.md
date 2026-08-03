@@ -18,6 +18,7 @@ Start here for the 1.0 documentation set.
 | Stochastic dispatch | [stochastic-dispatch.md](stochastic-dispatch.md) |
 | Market model | [market-model.md](market-model.md) |
 | Capacity expansion | [capacity-expansion.md](capacity-expansion.md) |
+| Security-constrained dispatch checks | [security-constrained-dispatch.md](security-constrained-dispatch.md) |
 | Scenario experiments | [scenario-experiments.md](scenario-experiments.md) |
 | Research experiments | [research-experiments.md](research-experiments.md) |
 | Public-data adapters | [public-data-adapters.md](public-data-adapters.md) |
