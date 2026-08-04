@@ -174,6 +174,39 @@ optimised balance terms. Hosting-capacity mode maximises additional rooftop PV
 capacity subject to the same voltage and thermal limits and an explicit
 curtailment-fraction policy.
 
+## Hydrogen subsystem
+
+Standalone hydrogen studies model an explicit lossy carrier in `MWh_LHV`.
+Electrolyser electrical input \(p^{el}_t\) produces hydrogen according to:
+
+\[
+h^{prod}_t=\eta^{el}p^{el}_t\Delta t.
+\]
+
+Carrier balance lets hydrogen from current production or storage discharge serve
+exogenous demand, reconversion, storage charging, or curtailment:
+
+\[
+h^{prod}_t+h^{dis}_t
+=h^{store}_t+h^{del}_t+h^{rec}_t+h^{curt}_t.
+\]
+
+Inventory evolves with standing losses:
+
+\[
+s_t=(1-\lambda)^{\Delta t}s_{t-1}+h^{store}_t-h^{dis}_t.
+\]
+
+Reconversion is explicitly inefficient:
+
+\[
+p^{rec}_t=\eta^{rec}h^{rec}_t/\Delta t.
+\]
+
+The study reports shortage slacks for both hydrogen demand and electricity
+deficits, conversion losses, configured reconversion emissions, and balance
+residuals. Efficiencies above one are rejected.
+
 ## Power balance
 
 All dispatch variables are represented on the source side:

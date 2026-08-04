@@ -62,6 +62,13 @@ loading, post-solve losses, PV curtailment, substation import/export, reverse
 flow, flexible-load reduction, and customer-side versus grid-side battery
 throughput.
 
+`energy-sim hydrogen-study` writes `hydrogen_timeseries.csv` and
+`hydrogen_summary.json`. Hydrogen outputs use `MWh_LHV` as the canonical
+carrier unit and report electrolyser electricity consumption, hydrogen
+production, inventory, storage charge/discharge, curtailment, delivered demand,
+shortage, reconversion, conversion losses, process emissions, balance residuals,
+round-trip efficiency, and a marginal-value proxy.
+
 When plots are enabled, the report directory includes dispatch, storage,
 thermal, hydro, network, reserve, unserved-energy, cost, emissions, and duration
 curve figures. Optional components are represented by empty plots or empty stable

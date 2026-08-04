@@ -19,6 +19,9 @@ and this project follows semantic versioning.
 - Flexible electrification demand services for EV fleets with V2G and heat
   pumps with thermal storage, COP profiles, backup heat, comfort penalties, and
   service-level reporting.
+- Standalone hydrogen subsystem studies with electrolyser production, lossy
+  storage inventory, exogenous demand, reconversion, explicit emissions
+  assumptions, and `MWh_LHV` balance reporting.
 
 ## [1.0.0] - 2026-08-03
 

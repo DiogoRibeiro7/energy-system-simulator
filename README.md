@@ -34,6 +34,9 @@ The model is designed for research, teaching, and policy experiments. It uses ex
 - Optional AC power-flow validation for selected nodal dispatch periods.
 - Standalone radial distribution-feeder studies with rooftop PV, behind-the-meter
   batteries, flexible load, voltage limits, branch ratings, and hosting capacity.
+- Standalone hydrogen subsystem studies with electrolyser production,
+  `MWh_LHV` storage, exogenous demand, reconversion, losses, and emissions
+  assumptions.
 - Scenario-based stochastic dispatch with value-of-information benchmarks.
 - Optional post-dispatch market prices and settlements from fixed-commitment LP duals.
 - Single-year capacity-expansion planning with representative-period weights.
@@ -91,7 +94,8 @@ N-1 post-contingency security checks are documented in
 `docs/security-constrained-dispatch.md`. Frequency adequacy proxy checks are
 documented in `docs/frequency-adequacy.md`. AC validation is documented in
 `docs/ac-validation.md`. Distribution feeder studies are documented in
-`docs/distribution-feeder.md`.
+`docs/distribution-feeder.md`. Hydrogen subsystem studies are documented in
+`docs/hydrogen.md`.
 
 ## Requirements
 
@@ -166,6 +170,12 @@ Run the radial distribution feeder example and a hosting-capacity study:
 ```bash
 poetry run energy-sim distribution-study --problem configs/distribution_radial_feeder.yaml --output outputs/distribution --overwrite
 poetry run energy-sim distribution-study --problem configs/distribution_radial_feeder.yaml --output outputs/hosting --mode hosting-capacity --overwrite
+```
+
+Run the hydrogen subsystem example:
+
+```bash
+poetry run energy-sim hydrogen-study --problem configs/hydrogen_system.yaml --output outputs/hydrogen --overwrite
 ```
 
 Equivalent module invocation:

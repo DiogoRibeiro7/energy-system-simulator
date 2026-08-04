@@ -22,6 +22,7 @@ Start here for the 1.0 documentation set.
 | Security-constrained dispatch checks | [security-constrained-dispatch.md](security-constrained-dispatch.md) |
 | AC validation bridge | [ac-validation.md](ac-validation.md) |
 | Distribution feeder studies | [distribution-feeder.md](distribution-feeder.md) |
+| Hydrogen subsystem | [hydrogen.md](hydrogen.md) |
 | Scenario experiments | [scenario-experiments.md](scenario-experiments.md) |
 | Research experiments | [research-experiments.md](research-experiments.md) |
 | Public-data adapters | [public-data-adapters.md](public-data-adapters.md) |

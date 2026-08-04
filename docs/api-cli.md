@@ -25,6 +25,8 @@ The supported command-line entry point is `energy-sim`.
   periods with AC power flow.
 - `distribution-study --problem PROBLEM --output DIR`: run a standalone radial
   distribution-feeder dispatch or hosting-capacity study.
+- `hydrogen-study --problem PROBLEM --output DIR`: run a standalone hydrogen
+  production, storage, demand, and reconversion study.
 - `capacity-planning --problem PROBLEM`: run a capacity-expansion problem YAML.
 - `compare-outputs OUT1 OUT2 --output REPORT.md`: compare output directories.
 - `export-model --config CONFIG --output MODEL.lp`: export formulation LP.
@@ -125,6 +127,16 @@ import energy_system_simulator as ess
 problem = ess.load_distribution_problem("configs/distribution_radial_feeder.yaml")
 result = ess.run_distribution_study(problem, mode="hosting_capacity")
 result.write("outputs/hosting")
+```
+
+Hydrogen subsystem studies also use a separate problem object:
+
+```python
+import energy_system_simulator as ess
+
+problem = ess.load_hydrogen_problem("configs/hydrogen_system.yaml")
+result = ess.run_hydrogen_study(problem)
+result.write("outputs/hydrogen")
 ```
 
 ## 1.0 Compatibility Notes
