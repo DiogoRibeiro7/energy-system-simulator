@@ -22,7 +22,7 @@ Commercial terms may include:
 - Hosted-service licences.
 - Support and maintenance agreements.
 
-Commercial licensing enquiries: diogo_dj@hotmail.com
+Commercial licensing enquiries: dfr@esmad.ipp.pt
 
 This file is informational. Where a signed commercial agreement applies, the
 signed commercial agreement controls.

@@ -5,7 +5,8 @@ type: software
 authors:
   - given-names: "Diogo"
     family-names: "Ribeiro"
-    email: "diogo_dj@hotmail.com"
+    email: "dfr@esmad.ipp.pt"
+    affiliation: "ESMAD, Politécnico do Porto"
     orcid: "https://orcid.org/0009-0001-2022-7072"
 version: 1.0.0
 date-released: 2026-08-03
