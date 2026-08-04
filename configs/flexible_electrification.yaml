@@ -1,0 +1,138 @@
+schema_version: 2
+scenario:
+  id: flexible-electrification-example
+simulation:
+  time_step_hours: 1.0
+solver:
+  solver_time_limit_seconds: 60
+  mip_relative_gap: 0.0
+  allow_non_optimal_solution: false
+penalties:
+  renewable_curtailment_eur_per_mwh: 1.0
+  lost_load_eur_per_mwh: 10000.0
+  carbon_price_eur_per_tonne: 0.0
+aggregate_network:
+  loss_fraction: 0.0
+  transfer_capacity_mw: 50.0
+  network_mode: aggregate
+zones:
+  - id: system
+buses:
+  - id: system
+    zone_id: system
+lines: []
+renewable_generators:
+  - id: solar
+    bus_id: system
+    kind: solar
+    time_series_key: solar_mw
+    capacity_mw: 6.0
+    availability_model: simple
+    performance_ratio: 1.0
+    reference_irradiance_w_m2: 1000.0
+    temperature_coefficient_per_c: -0.004
+    nominal_operating_cell_temperature_c: 45.0
+    ambient_temperature_key: ambient_temperature_c
+  - id: wind
+    bus_id: system
+    kind: wind
+    time_series_key: wind_mw
+    capacity_mw: 1.0
+    availability_model: simple
+thermal_generators:
+  - id: backup
+    bus_id: system
+    fuel_id: gas
+    name: Backup gas unit
+    minimum_output_mw: 0.0
+    maximum_output_mw: 10.0
+    variable_cost_eur_per_mwh: 120.0
+    emission_factor_tonnes_per_mwh: 0.35
+    ramp_up_mw_per_hour: 10.0
+    ramp_down_mw_per_hour: 10.0
+    startup_ramp_mw: 10.0
+    shutdown_ramp_mw: 10.0
+    minimum_up_hours: 1.0
+    minimum_down_hours: 1.0
+    initial_on: false
+    initial_output_mw: 0.0
+    initial_up_time_hours: 0.0
+    initial_down_time_hours: 10.0
+    startup_cost_eur: 0.0
+    shutdown_cost_eur: 0.0
+    no_load_cost_eur_per_hour: 0.0
+    minimum_fuel_input_mwh_per_hour: 0.0
+    terminal_commitment_mode: forbid_incomplete_transitions
+fuels:
+  - id: gas
+    price_eur_per_mwh_thermal: 0.0
+    co2_factor_tonnes_per_mwh_thermal: 0.0
+storage_units:
+  - id: battery
+    bus_id: system
+    technology: battery
+    energy_capacity_mwh: 0.0
+    power_capacity_mw: 0.0
+    minimum_soc_mwh: 0.0
+    maximum_soc_mwh: 0.0
+    initial_soc_mwh: 0.0
+    charge_efficiency: 0.95
+    discharge_efficiency: 0.95
+    throughput_cost_eur_per_mwh: 0.0
+    minimum_final_soc_mwh: 0.0
+    terminal_soc_mode: free
+hydro_units: []
+imports:
+  - id: imports
+    bus_id: system
+    maximum_power_mw: 0.0
+    price_eur_per_mwh: 200.0
+    emission_factor_tonnes_per_mwh: 0.3
+demand:
+  - id: base-load
+    bus_id: system
+    time_series_key: demand_mw
+  - id: ev-fleet
+    bus_id: system
+    time_series_key: ev_mw
+    kind: ev_charging
+    task_power_capacity_mw: 4.0
+    task_required_energy_mwh: 8.0
+    task_start_period: 1
+    task_end_period: 5
+    task_unserved_penalty_eur_per_mwh: 20000.0
+    ev_initial_energy_mwh: 1.0
+    ev_energy_capacity_mwh: 10.0
+    ev_required_departure_energy_mwh: 8.0
+    ev_arrival_period: 1
+    ev_departure_period: 5
+    ev_availability_fraction: 1.0
+    ev_v2g_power_capacity_mw: 2.0
+    ev_v2g_efficiency: 0.9
+    ev_degradation_cost_eur_per_mwh: 20.0
+  - id: heat-pumps
+    bus_id: system
+    time_series_key: heat_mw
+    kind: heat_pump
+    task_power_capacity_mw: 4.0
+    temperature_time_series_key: temperature_c
+    heat_pump_cop_base: 2.2
+    heat_pump_cop_temperature_coefficient_per_c: 0.04
+    heat_pump_cop_min: 1.4
+    heat_pump_thermal_storage_capacity_mwh: 8.0
+    heat_pump_initial_thermal_storage_mwh: 2.0
+    heat_pump_comfort_min_mwh: 0.0
+    heat_pump_comfort_max_mwh: 8.0
+    heat_pump_thermal_loss_fraction_per_hour: 0.02
+    heat_pump_backup_heat_capacity_mw: 3.0
+    heat_pump_backup_heat_cost_eur_per_mwh: 180.0
+    heat_pump_backup_heat_emission_tonnes_per_mwh: 0.25
+    heat_pump_comfort_violation_penalty_eur_per_mwh: 50000.0
+reserves:
+  upward_fixed_mw: 0.0
+  downward_fixed_mw: 0.0
+frequency:
+  nominal_frequency_hz: 50.0
+paths:
+  input_csv: ../data/flexible_electrification_hourly.csv
+  output_directory: ../outputs/flexible-electrification

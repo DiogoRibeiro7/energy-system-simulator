@@ -31,6 +31,12 @@ violations, solver status, missing timestamps, and asset availability.
 objective value, unserved energy, balance diagnostics, table files, diagnostics,
 and plot references.
 
+Flexible-electrification demand assets add EV and heat-pump columns to standard
+simulation outputs. EV outputs include vehicle energy, delivered mobility energy,
+V2G discharge, unmet task/departure energy, and V2G degradation cost. Heat-pump
+outputs include COP, thermal heat demand, electrical input, thermal storage,
+backup heat, comfort violations, backup heat cost, and backup heat emissions.
+
 `energy-sim security-check` writes separate security diagnostics instead of
 changing the standard simulation tables. Its `security_contingencies.csv` and
 `security_summary.json` files report post-contingency feasibility, emergency

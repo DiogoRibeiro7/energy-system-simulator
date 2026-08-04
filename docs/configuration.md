@@ -181,8 +181,8 @@ Hydro units may set:
 
 Demand entities may set:
 
-- `kind`: `fixed`, `curtailable`, `shiftable`, `deferrable`, or `ev_charging`.
-  Existing fixed demand remains the default.
+- `kind`: `fixed`, `curtailable`, `shiftable`, `deferrable`, `ev_charging`, or
+  `heat_pump`. Existing fixed demand remains the default.
 - `sector`: optional reporting label, for example residential, industrial, or
   transport. The schema does not hard-code sector names.
 - `value_of_lost_load_eur_per_mwh`: optional entity-specific involuntary
@@ -197,6 +197,23 @@ Demand entities may set:
 - `task_power_capacity_mw`, `task_required_energy_mwh`, `task_start_period`,
   `task_end_period`, and `task_unserved_penalty_eur_per_mwh`: deferrable task
   or EV-charging requirements. `task_end_period` is exclusive.
+- `ev_initial_energy_mwh`, `ev_energy_capacity_mwh`,
+  `ev_required_departure_energy_mwh`, `ev_arrival_period`,
+  `ev_departure_period`, `ev_availability_fraction`,
+  `ev_v2g_power_capacity_mw`, `ev_v2g_efficiency`, and
+  `ev_degradation_cost_eur_per_mwh`: optional EV fleet state, availability,
+  departure, and vehicle-to-grid parameters. Availability scales both charging
+  and vehicle energy capacity.
+- `heat_pump_cop_base`, `heat_pump_cop_temperature_coefficient_per_c`,
+  `heat_pump_cop_min`, `heat_pump_thermal_storage_capacity_mwh`,
+  `heat_pump_initial_thermal_storage_mwh`, `heat_pump_comfort_min_mwh`,
+  `heat_pump_comfort_max_mwh`, `heat_pump_thermal_loss_fraction_per_hour`,
+  `heat_pump_backup_heat_capacity_mw`,
+  `heat_pump_backup_heat_cost_eur_per_mwh`,
+  `heat_pump_backup_heat_emission_tonnes_per_mwh`, and
+  `heat_pump_comfort_violation_penalty_eur_per_mwh`: deterministic heat-pump
+  service parameters. The demand `time_series_key` is interpreted as thermal
+  heat demand for `heat_pump` assets.
 - `temperature_time_series_key`, `heating_base_temperature_c`,
   `cooling_base_temperature_c`, `heating_sensitivity_mw_per_c`, and
   `cooling_sensitivity_mw_per_c`: deterministic heating- and cooling-degree
@@ -292,6 +309,9 @@ generator, one storage unit, one import resource, and one demand entry.
   a run-of-river unit, and synthetic seasonal hydro inflows.
 - `configs/portfolio_demand_response.yaml` is a schema v2 example with
   residential fixed demand, industrial shiftable demand, and an EV fleet.
+- `configs/flexible_electrification.yaml` is a schema v2 example with an
+  advanced EV fleet, vehicle-to-grid capability, heat pumps, COP variation, and
+  backup heat.
 - `configs/portfolio_nodal_three_bus.yaml` is a schema v2 example with a
   three-bus DC network, line-flow exports, and a time-varying line outage.
 - `configs/frequency_low_inertia.yaml` is a schema v2 example with an

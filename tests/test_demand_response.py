@@ -129,6 +129,63 @@ def test_task_reports_unserved_energy_when_window_is_physically_insufficient() -
     assert result.frame["demand_task_unserved_mwh__ev"].sum() == pytest.approx(10.0)
 
 
+def test_ev_fleet_availability_limits_charging_and_reports_unmet_departure_energy() -> None:
+    demand = _demand(
+        "ev",
+        kind="ev_charging",
+        task_power_capacity_mw=10.0,
+        task_required_energy_mwh=10.0,
+        task_start_period=0,
+        task_end_period=1,
+        task_unserved_penalty_eur_per_mwh=20_000.0,
+        ev_energy_capacity_mwh=20.0,
+        ev_initial_energy_mwh=0.0,
+        ev_required_departure_energy_mwh=10.0,
+        ev_arrival_period=0,
+        ev_departure_period=1,
+        ev_availability_fraction=0.5,
+    )
+
+    result = UnitCommitment(_config(demand)).solve(
+        renewable_available_mw=np.array([10.0]),
+        gross_demand_mw=np.zeros(1),
+        demand_profiles_mw={"ev": np.zeros(1)},
+    )
+
+    assert result.frame["demand_task_charge_mw__ev"].iloc[0] == pytest.approx(5.0)
+    assert result.frame["ev_energy_mwh__ev"].iloc[0] == pytest.approx(4.75)
+    assert result.frame["demand_task_unserved_mwh__ev"].sum() == pytest.approx(5.0)
+
+
+def test_ev_v2g_exports_only_when_vehicle_is_available() -> None:
+    fixed = _demand("load")
+    ev = _demand(
+        "ev",
+        kind="ev_charging",
+        task_power_capacity_mw=5.0,
+        task_required_energy_mwh=1.0,
+        task_start_period=0,
+        task_end_period=1,
+        task_unserved_penalty_eur_per_mwh=1.0,
+        ev_energy_capacity_mwh=10.0,
+        ev_initial_energy_mwh=5.0,
+        ev_required_departure_energy_mwh=0.0,
+        ev_v2g_power_capacity_mw=5.0,
+        ev_v2g_efficiency=1.0,
+        ev_degradation_cost_eur_per_mwh=1.0,
+    )
+
+    result = UnitCommitment(_config(fixed, ev)).solve(
+        renewable_available_mw=np.zeros(1),
+        gross_demand_mw=np.array([5.0]),
+        demand_profiles_mw={"load": np.array([5.0]), "ev": np.zeros(1)},
+    )
+
+    assert result.frame["ev_v2g_discharge_mw__ev"].iloc[0] == pytest.approx(5.0)
+    assert result.frame["demand_involuntary_shed_mw__load"].iloc[0] == pytest.approx(0.0)
+    assert result.cost_components_eur["ev_v2g_degradation_cost_eur"] == pytest.approx(5.0)
+
+
 def test_sector_specific_lost_load_cost_prioritises_scarce_supply() -> None:
     residential = _demand("residential", value_of_lost_load_eur_per_mwh=1_000.0)
     hospital = _demand("hospital", value_of_lost_load_eur_per_mwh=20_000.0)
@@ -187,6 +244,65 @@ def test_temperature_sensitive_demand_uses_degree_terms() -> None:
     )
 
     assert asset.demand_mw(data).tolist() == pytest.approx([16.0, 19.0])
+
+
+def test_heat_pump_uses_temperature_dependent_cop_and_thermal_storage() -> None:
+    heat = _demand(
+        "heat",
+        kind="heat_pump",
+        task_power_capacity_mw=10.0,
+        heat_pump_cop_base=2.0,
+        heat_pump_cop_temperature_coefficient_per_c=0.1,
+        heat_pump_cop_min=1.0,
+        heat_pump_thermal_storage_capacity_mwh=10.0,
+        heat_pump_initial_thermal_storage_mwh=0.0,
+        heat_pump_comfort_min_mwh=0.0,
+        heat_pump_comfort_max_mwh=10.0,
+        heat_pump_backup_heat_capacity_mw=0.0,
+        heat_pump_comfort_violation_penalty_eur_per_mwh=1_000.0,
+        temperature_time_series_key="temperature_c",
+    )
+    config = _config(heat)
+    data = pd.DataFrame({"heat_mw": [6.0], "temperature_c": [10.0]})
+    asset = DemandAsset.from_config(heat)
+
+    result = UnitCommitment(config).solve(
+        renewable_available_mw=np.array([10.0]),
+        gross_demand_mw=np.zeros(1),
+        demand_profiles_mw={"heat": asset.demand_mw(data)},
+        heat_pump_cop_profiles={"heat": asset.heat_pump_cop(data)},
+    )
+
+    assert asset.heat_pump_cop(data).tolist() == pytest.approx([3.0])
+    assert result.frame["heat_pump_electric_mw__heat"].iloc[0] == pytest.approx(2.0)
+    assert result.frame["heat_pump_comfort_violation_mwh__heat"].iloc[0] == pytest.approx(0.0)
+
+
+def test_heat_pump_backup_heat_reports_cost_and_emissions_when_electric_supply_is_scarce() -> None:
+    heat = _demand(
+        "heat",
+        kind="heat_pump",
+        task_power_capacity_mw=0.0,
+        heat_pump_cop_base=3.0,
+        heat_pump_thermal_storage_capacity_mwh=10.0,
+        heat_pump_initial_thermal_storage_mwh=0.0,
+        heat_pump_comfort_min_mwh=0.0,
+        heat_pump_comfort_max_mwh=10.0,
+        heat_pump_backup_heat_capacity_mw=6.0,
+        heat_pump_backup_heat_cost_eur_per_mwh=50.0,
+        heat_pump_backup_heat_emission_tonnes_per_mwh=0.2,
+        heat_pump_comfort_violation_penalty_eur_per_mwh=1_000.0,
+    )
+
+    result = UnitCommitment(_config(heat)).solve(
+        renewable_available_mw=np.zeros(1),
+        gross_demand_mw=np.zeros(1),
+        demand_profiles_mw={"heat": np.array([6.0])},
+    )
+
+    assert result.frame["heat_pump_backup_heat_mw__heat"].iloc[0] == pytest.approx(6.0)
+    assert result.frame["heat_pump_backup_heat_cost_eur"].iloc[0] == pytest.approx(300.0)
+    assert result.frame["heat_pump_backup_heat_emissions_tonnes"].iloc[0] == pytest.approx(1.2)
 
 
 def test_demand_response_portfolio_example_runs_end_to_end() -> None:

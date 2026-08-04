@@ -391,6 +391,27 @@ LIST_SECTION_KEYS = {
         "task_start_period",
         "task_end_period",
         "task_unserved_penalty_eur_per_mwh",
+        "ev_initial_energy_mwh",
+        "ev_energy_capacity_mwh",
+        "ev_required_departure_energy_mwh",
+        "ev_arrival_period",
+        "ev_departure_period",
+        "ev_availability_fraction",
+        "ev_v2g_power_capacity_mw",
+        "ev_v2g_efficiency",
+        "ev_degradation_cost_eur_per_mwh",
+        "heat_pump_cop_base",
+        "heat_pump_cop_temperature_coefficient_per_c",
+        "heat_pump_cop_min",
+        "heat_pump_thermal_storage_capacity_mwh",
+        "heat_pump_initial_thermal_storage_mwh",
+        "heat_pump_comfort_min_mwh",
+        "heat_pump_comfort_max_mwh",
+        "heat_pump_thermal_loss_fraction_per_hour",
+        "heat_pump_backup_heat_capacity_mw",
+        "heat_pump_backup_heat_cost_eur_per_mwh",
+        "heat_pump_backup_heat_emission_tonnes_per_mwh",
+        "heat_pump_comfort_violation_penalty_eur_per_mwh",
         "temperature_time_series_key",
         "heating_base_temperature_c",
         "cooling_base_temperature_c",
@@ -537,6 +558,27 @@ LIST_OPTIONAL_KEYS = {
         "task_start_period",
         "task_end_period",
         "task_unserved_penalty_eur_per_mwh",
+        "ev_initial_energy_mwh",
+        "ev_energy_capacity_mwh",
+        "ev_required_departure_energy_mwh",
+        "ev_arrival_period",
+        "ev_departure_period",
+        "ev_availability_fraction",
+        "ev_v2g_power_capacity_mw",
+        "ev_v2g_efficiency",
+        "ev_degradation_cost_eur_per_mwh",
+        "heat_pump_cop_base",
+        "heat_pump_cop_temperature_coefficient_per_c",
+        "heat_pump_cop_min",
+        "heat_pump_thermal_storage_capacity_mwh",
+        "heat_pump_initial_thermal_storage_mwh",
+        "heat_pump_comfort_min_mwh",
+        "heat_pump_comfort_max_mwh",
+        "heat_pump_thermal_loss_fraction_per_hour",
+        "heat_pump_backup_heat_capacity_mw",
+        "heat_pump_backup_heat_cost_eur_per_mwh",
+        "heat_pump_backup_heat_emission_tonnes_per_mwh",
+        "heat_pump_comfort_violation_penalty_eur_per_mwh",
         "temperature_time_series_key",
         "heating_base_temperature_c",
         "cooling_base_temperature_c",
@@ -1181,7 +1223,14 @@ class DemandConfig:
     id: str
     bus_id: str
     time_series_key: str
-    kind: Literal["fixed", "curtailable", "shiftable", "deferrable", "ev_charging"] = "fixed"
+    kind: Literal[
+        "fixed",
+        "curtailable",
+        "shiftable",
+        "deferrable",
+        "ev_charging",
+        "heat_pump",
+    ] = "fixed"
     sector: str | None = None
     value_of_lost_load_eur_per_mwh: float | None = None
     voluntary_curtailment_cost_eur_per_mwh: float = 0.0
@@ -1197,6 +1246,27 @@ class DemandConfig:
     task_start_period: int = 0
     task_end_period: int | None = None
     task_unserved_penalty_eur_per_mwh: float = 0.0
+    ev_initial_energy_mwh: float = 0.0
+    ev_energy_capacity_mwh: float = 0.0
+    ev_required_departure_energy_mwh: float = 0.0
+    ev_arrival_period: int | None = None
+    ev_departure_period: int | None = None
+    ev_availability_fraction: float = 1.0
+    ev_v2g_power_capacity_mw: float = 0.0
+    ev_v2g_efficiency: float = 0.95
+    ev_degradation_cost_eur_per_mwh: float = 0.0
+    heat_pump_cop_base: float = 3.0
+    heat_pump_cop_temperature_coefficient_per_c: float = 0.0
+    heat_pump_cop_min: float = 1.0
+    heat_pump_thermal_storage_capacity_mwh: float = 0.0
+    heat_pump_initial_thermal_storage_mwh: float = 0.0
+    heat_pump_comfort_min_mwh: float = 0.0
+    heat_pump_comfort_max_mwh: float = 0.0
+    heat_pump_thermal_loss_fraction_per_hour: float = 0.0
+    heat_pump_backup_heat_capacity_mw: float = 0.0
+    heat_pump_backup_heat_cost_eur_per_mwh: float = 0.0
+    heat_pump_backup_heat_emission_tonnes_per_mwh: float = 0.0
+    heat_pump_comfort_violation_penalty_eur_per_mwh: float = 0.0
     temperature_time_series_key: str | None = None
     heating_base_temperature_c: float | None = None
     cooling_base_temperature_c: float | None = None
@@ -2576,9 +2646,18 @@ def _parse_hydro_unit(item: Mapping[str, Any], path: str) -> HydroUnitConfig:
 
 def _parse_demand(item: Mapping[str, Any], path: str) -> DemandConfig:
     kind = _optional_string_at(item, "kind", "fixed", path)
-    if kind not in {"fixed", "curtailable", "shiftable", "deferrable", "ev_charging"}:
+    demand_kinds = {
+        "fixed",
+        "curtailable",
+        "shiftable",
+        "deferrable",
+        "ev_charging",
+        "heat_pump",
+    }
+    if kind not in demand_kinds:
         raise ConfigurationError(
-            f"{path}.kind must be one of: fixed, curtailable, shiftable, deferrable, ev_charging"
+            f"{path}.kind must be one of: fixed, curtailable, shiftable, "
+            "deferrable, ev_charging, heat_pump"
         )
     task_end_period = (
         _integer_at(item, "task_end_period", path) if "task_end_period" in item else None
@@ -2588,7 +2667,14 @@ def _parse_demand(item: Mapping[str, Any], path: str) -> DemandConfig:
         bus_id=_id_at(item, "bus_id", path),
         time_series_key=_input_key_at(item, "time_series_key", path),
         kind=cast(
-            Literal["fixed", "curtailable", "shiftable", "deferrable", "ev_charging"],
+            Literal[
+                "fixed",
+                "curtailable",
+                "shiftable",
+                "deferrable",
+                "ev_charging",
+                "heat_pump",
+            ],
             kind,
         ),
         sector=_string_at(item, "sector", path) if "sector" in item else None,
@@ -2652,6 +2738,115 @@ def _parse_demand(item: Mapping[str, Any], path: str) -> DemandConfig:
         task_unserved_penalty_eur_per_mwh=_optional_number_at(
             item,
             "task_unserved_penalty_eur_per_mwh",
+            float,
+            0.0,
+            path,
+        ),
+        ev_initial_energy_mwh=_optional_number_at(item, "ev_initial_energy_mwh", float, 0.0, path),
+        ev_energy_capacity_mwh=_optional_number_at(
+            item, "ev_energy_capacity_mwh", float, 0.0, path
+        ),
+        ev_required_departure_energy_mwh=_optional_number_at(
+            item,
+            "ev_required_departure_energy_mwh",
+            float,
+            0.0,
+            path,
+        ),
+        ev_arrival_period=(
+            _integer_at(item, "ev_arrival_period", path) if "ev_arrival_period" in item else None
+        ),
+        ev_departure_period=(
+            _integer_at(item, "ev_departure_period", path)
+            if "ev_departure_period" in item
+            else None
+        ),
+        ev_availability_fraction=_optional_number_at(
+            item,
+            "ev_availability_fraction",
+            float,
+            1.0,
+            path,
+        ),
+        ev_v2g_power_capacity_mw=_optional_number_at(
+            item, "ev_v2g_power_capacity_mw", float, 0.0, path
+        ),
+        ev_v2g_efficiency=_optional_number_at(item, "ev_v2g_efficiency", float, 0.95, path),
+        ev_degradation_cost_eur_per_mwh=_optional_number_at(
+            item,
+            "ev_degradation_cost_eur_per_mwh",
+            float,
+            0.0,
+            path,
+        ),
+        heat_pump_cop_base=_optional_number_at(item, "heat_pump_cop_base", float, 3.0, path),
+        heat_pump_cop_temperature_coefficient_per_c=_optional_number_at(
+            item,
+            "heat_pump_cop_temperature_coefficient_per_c",
+            float,
+            0.0,
+            path,
+        ),
+        heat_pump_cop_min=_optional_number_at(item, "heat_pump_cop_min", float, 1.0, path),
+        heat_pump_thermal_storage_capacity_mwh=_optional_number_at(
+            item,
+            "heat_pump_thermal_storage_capacity_mwh",
+            float,
+            0.0,
+            path,
+        ),
+        heat_pump_initial_thermal_storage_mwh=_optional_number_at(
+            item,
+            "heat_pump_initial_thermal_storage_mwh",
+            float,
+            0.0,
+            path,
+        ),
+        heat_pump_comfort_min_mwh=_optional_number_at(
+            item,
+            "heat_pump_comfort_min_mwh",
+            float,
+            0.0,
+            path,
+        ),
+        heat_pump_comfort_max_mwh=_optional_number_at(
+            item,
+            "heat_pump_comfort_max_mwh",
+            float,
+            0.0,
+            path,
+        ),
+        heat_pump_thermal_loss_fraction_per_hour=_optional_number_at(
+            item,
+            "heat_pump_thermal_loss_fraction_per_hour",
+            float,
+            0.0,
+            path,
+        ),
+        heat_pump_backup_heat_capacity_mw=_optional_number_at(
+            item,
+            "heat_pump_backup_heat_capacity_mw",
+            float,
+            0.0,
+            path,
+        ),
+        heat_pump_backup_heat_cost_eur_per_mwh=_optional_number_at(
+            item,
+            "heat_pump_backup_heat_cost_eur_per_mwh",
+            float,
+            0.0,
+            path,
+        ),
+        heat_pump_backup_heat_emission_tonnes_per_mwh=_optional_number_at(
+            item,
+            "heat_pump_backup_heat_emission_tonnes_per_mwh",
+            float,
+            0.0,
+            path,
+        ),
+        heat_pump_comfort_violation_penalty_eur_per_mwh=_optional_number_at(
+            item,
+            "heat_pump_comfort_violation_penalty_eur_per_mwh",
             float,
             0.0,
             path,
@@ -3278,7 +3473,14 @@ def _validate_hydro_unit_at(hydro: HydroUnitConfig, path: str) -> None:
 
 
 def _validate_demand_at(demand: DemandConfig, path: str) -> None:
-    if demand.kind not in {"fixed", "curtailable", "shiftable", "deferrable", "ev_charging"}:
+    if demand.kind not in {
+        "fixed",
+        "curtailable",
+        "shiftable",
+        "deferrable",
+        "ev_charging",
+        "heat_pump",
+    }:
         raise ConfigurationError(f"{path}.kind has an unsupported value")
     for name, value in (
         ("voluntary_curtailment_cost_eur_per_mwh", demand.voluntary_curtailment_cost_eur_per_mwh),
@@ -3291,10 +3493,46 @@ def _validate_demand_at(demand: DemandConfig, path: str) -> None:
         ("task_power_capacity_mw", demand.task_power_capacity_mw),
         ("task_required_energy_mwh", demand.task_required_energy_mwh),
         ("task_unserved_penalty_eur_per_mwh", demand.task_unserved_penalty_eur_per_mwh),
+        ("ev_initial_energy_mwh", demand.ev_initial_energy_mwh),
+        ("ev_energy_capacity_mwh", demand.ev_energy_capacity_mwh),
+        ("ev_required_departure_energy_mwh", demand.ev_required_departure_energy_mwh),
+        ("ev_v2g_power_capacity_mw", demand.ev_v2g_power_capacity_mw),
+        ("ev_degradation_cost_eur_per_mwh", demand.ev_degradation_cost_eur_per_mwh),
+        (
+            "heat_pump_cop_temperature_coefficient_per_c",
+            demand.heat_pump_cop_temperature_coefficient_per_c,
+        ),
+        ("heat_pump_thermal_storage_capacity_mwh", demand.heat_pump_thermal_storage_capacity_mwh),
+        ("heat_pump_initial_thermal_storage_mwh", demand.heat_pump_initial_thermal_storage_mwh),
+        ("heat_pump_comfort_min_mwh", demand.heat_pump_comfort_min_mwh),
+        ("heat_pump_comfort_max_mwh", demand.heat_pump_comfort_max_mwh),
+        ("heat_pump_backup_heat_capacity_mw", demand.heat_pump_backup_heat_capacity_mw),
+        ("heat_pump_backup_heat_cost_eur_per_mwh", demand.heat_pump_backup_heat_cost_eur_per_mwh),
+        (
+            "heat_pump_backup_heat_emission_tonnes_per_mwh",
+            demand.heat_pump_backup_heat_emission_tonnes_per_mwh,
+        ),
+        (
+            "heat_pump_comfort_violation_penalty_eur_per_mwh",
+            demand.heat_pump_comfort_violation_penalty_eur_per_mwh,
+        ),
         ("heating_sensitivity_mw_per_c", demand.heating_sensitivity_mw_per_c),
         ("cooling_sensitivity_mw_per_c", demand.cooling_sensitivity_mw_per_c),
     ):
         _check_nonnegative_at(f"{path}.{name}", value)
+    for name, value in (
+        ("ev_availability_fraction", demand.ev_availability_fraction),
+        ("ev_v2g_efficiency", demand.ev_v2g_efficiency),
+        (
+            "heat_pump_thermal_loss_fraction_per_hour",
+            demand.heat_pump_thermal_loss_fraction_per_hour,
+        ),
+    ):
+        _check_fraction_at(f"{path}.{name}", value)
+    if demand.heat_pump_cop_base <= 0.0:
+        raise ConfigurationError(f"{path}.heat_pump_cop_base must be positive")
+    if demand.heat_pump_cop_min <= 0.0:
+        raise ConfigurationError(f"{path}.heat_pump_cop_min must be positive")
     if demand.value_of_lost_load_eur_per_mwh is not None:
         _check_nonnegative_at(
             f"{path}.value_of_lost_load_eur_per_mwh",
@@ -3308,6 +3546,13 @@ def _validate_demand_at(demand: DemandConfig, path: str) -> None:
         raise ConfigurationError(f"{path}.task_start_period must be non-negative")
     if demand.task_end_period is not None and demand.task_end_period <= demand.task_start_period:
         raise ConfigurationError(f"{path}.task_end_period must exceed task_start_period")
+    if demand.ev_arrival_period is not None and demand.ev_arrival_period < 0:
+        raise ConfigurationError(f"{path}.ev_arrival_period must be non-negative")
+    if demand.ev_departure_period is not None and (
+        demand.ev_arrival_period is not None
+        and demand.ev_departure_period <= demand.ev_arrival_period
+    ):
+        raise ConfigurationError(f"{path}.ev_departure_period must exceed ev_arrival_period")
     if demand.kind == "fixed" and any(
         value > 0.0
         for value in (
@@ -3316,6 +3561,8 @@ def _validate_demand_at(demand: DemandConfig, path: str) -> None:
             demand.shift_down_capacity_mw,
             demand.task_power_capacity_mw,
             demand.task_required_energy_mwh,
+            demand.ev_energy_capacity_mwh,
+            demand.heat_pump_thermal_storage_capacity_mwh,
         )
     ):
         raise ConfigurationError(f"{path} fixed demand cannot define flexibility quantities")
@@ -3331,6 +3578,30 @@ def _validate_demand_at(demand: DemandConfig, path: str) -> None:
         demand.task_power_capacity_mw == 0.0 or demand.task_required_energy_mwh == 0.0
     ):
         raise ConfigurationError(f"{path} task demand requires power capacity and required energy")
+    if demand.kind == "ev_charging":
+        if demand.ev_energy_capacity_mwh > 0.0:
+            if demand.ev_initial_energy_mwh > demand.ev_energy_capacity_mwh:
+                raise ConfigurationError(f"{path}.ev_initial_energy_mwh exceeds capacity")
+            if demand.ev_required_departure_energy_mwh > demand.ev_energy_capacity_mwh:
+                raise ConfigurationError(
+                    f"{path}.ev_required_departure_energy_mwh exceeds capacity"
+                )
+        if demand.ev_departure_period is not None and demand.task_end_period is None:
+            raise ConfigurationError(f"{path}.task_end_period is required with ev_departure_period")
+    if demand.kind == "heat_pump":
+        if demand.heat_pump_thermal_storage_capacity_mwh == 0.0:
+            raise ConfigurationError(f"{path} heat_pump requires thermal storage capacity")
+        if (
+            demand.heat_pump_initial_thermal_storage_mwh
+            > demand.heat_pump_thermal_storage_capacity_mwh
+        ):
+            raise ConfigurationError(
+                f"{path}.heat_pump_initial_thermal_storage_mwh exceeds storage capacity"
+            )
+        if demand.heat_pump_comfort_max_mwh == 0.0:
+            raise ConfigurationError(f"{path}.heat_pump_comfort_max_mwh is required")
+        if demand.heat_pump_comfort_min_mwh > demand.heat_pump_comfort_max_mwh:
+            raise ConfigurationError(f"{path} heat-pump comfort bounds are not ordered")
     if demand.temperature_time_series_key is None and (
         demand.heating_base_temperature_c is not None
         or demand.cooling_base_temperature_c is not None

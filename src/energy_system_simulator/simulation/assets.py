@@ -567,6 +567,26 @@ class DemandAsset:
             )
         return baseline + adjustment
 
+    def heat_pump_cop(self, data: pd.DataFrame) -> FloatArray:
+        """Return deterministic heat-pump COP profile for this demand asset."""
+        baseline = _column(data, self.time_series_key, self.asset_id, nonnegative=True)
+        if self.config.kind != "heat_pump":
+            return np.ones_like(baseline, dtype=np.float64)
+        if self.config.temperature_time_series_key is None:
+            temperature = np.zeros_like(baseline, dtype=np.float64)
+        else:
+            temperature = _column(
+                data,
+                self.config.temperature_time_series_key,
+                self.asset_id,
+                nonnegative=False,
+            )
+        cop = (
+            self.config.heat_pump_cop_base
+            + self.config.heat_pump_cop_temperature_coefficient_per_c * temperature
+        )
+        return np.maximum(cop, self.config.heat_pump_cop_min)
+
 
 @dataclass(frozen=True)
 class NetworkComponent:
@@ -700,10 +720,31 @@ class AssetRegistry:
         )
 
     def demand_mw(self, data: pd.DataFrame) -> FloatArray:
-        return _sum_arrays(self.demand_profiles_mw(data))
+        all_profiles = self.demand_profiles_mw(data)
+        profiles = {
+            asset_id: profile
+            for asset_id, profile in all_profiles.items()
+            if self._demand_asset(asset_id).config.kind != "heat_pump"
+        }
+        if not profiles and all_profiles:
+            return np.zeros(len(next(iter(all_profiles.values()))), dtype=np.float64)
+        return _sum_arrays(profiles)
 
     def demand_profiles_mw(self, data: pd.DataFrame) -> dict[str, FloatArray]:
         return {asset.asset_id: asset.demand_mw(data) for asset in self.demand_assets}
+
+    def heat_pump_cop_profiles(self, data: pd.DataFrame) -> dict[str, FloatArray]:
+        return {
+            asset.asset_id: asset.heat_pump_cop(data)
+            for asset in self.demand_assets
+            if asset.config.kind == "heat_pump"
+        }
+
+    def _demand_asset(self, asset_id: str) -> DemandAsset:
+        for asset in self.demand_assets:
+            if asset.asset_id == asset_id:
+                return asset
+        raise KeyError(asset_id)
 
     def thermal_availability_factors(self, data: pd.DataFrame) -> dict[str, FloatArray]:
         factors: dict[str, FloatArray] = {}

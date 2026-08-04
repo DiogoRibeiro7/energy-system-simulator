@@ -101,6 +101,7 @@ class SimulationEngine:
             renewable,
             distribution.gross_demand_mw,
             self._source_side_demand_profiles(registry, frame, demand, distribution),
+            registry.heat_pump_cop_profiles(frame),
         )
 
     def _run_full_horizon_data(self, data: pd.DataFrame) -> SimulationResult:
@@ -117,6 +118,7 @@ class SimulationEngine:
             renewable,
             distribution.gross_demand_mw,
             self._source_side_demand_profiles(registry, data, demand, distribution),
+            registry.heat_pump_cop_profiles(data),
         )
         frame = self._assemble_timeseries(data, renewable, distribution, dispatch)
         asset_timeseries = self._asset_timeseries(data, renewable, frame)
@@ -132,6 +134,8 @@ class SimulationEngine:
         frame["demand_shifted_out_end_user_mw"] = efficiency * frame["demand_shift_down_mw"]
         frame["demand_shifted_in_end_user_mw"] = efficiency * frame["demand_shift_up_mw"]
         frame["demand_task_charge_end_user_mw"] = efficiency * frame["demand_task_charge_mw"]
+        frame["ev_v2g_discharge_end_user_mw"] = efficiency * frame["ev_v2g_discharge_mw"]
+        frame["heat_pump_electric_end_user_mw"] = efficiency * frame["heat_pump_electric_mw"]
         frame["adjusted_end_user_demand_mw"] = (
             frame["end_user_demand_mw"]
             - frame["network_capacity_shed_mw"]
@@ -139,6 +143,8 @@ class SimulationEngine:
             - frame["demand_shifted_out_end_user_mw"]
             + frame["demand_shifted_in_end_user_mw"]
             + frame["demand_task_charge_end_user_mw"]
+            + frame["heat_pump_electric_end_user_mw"]
+            - frame["ev_v2g_discharge_end_user_mw"]
         )
         frame["served_demand_mw"] = (
             frame["adjusted_end_user_demand_mw"] - frame["dispatch_load_shed_mw"]
@@ -160,6 +166,8 @@ class SimulationEngine:
             * self.config.imports.emission_factor_tonnes_per_mwh
             * self.config.simulation.time_step_hours
         )
+        if "heat_pump_backup_heat_emissions_tonnes" not in frame:
+            frame["heat_pump_backup_heat_emissions_tonnes"] = 0.0
         self._add_energy_reconciliation(frame)
 
         fixed_network_shedding_cost = (
@@ -831,6 +839,7 @@ class SimulationEngine:
         renewable: RenewableAvailability,
         gross_demand_mw: FloatArray,
         demand_profiles_mw: dict[str, FloatArray] | None,
+        heat_pump_cop_profiles: dict[str, FloatArray] | None,
     ) -> DispatchResult:
         problem = self._build_dispatch_problem(
             registry,
@@ -838,6 +847,7 @@ class SimulationEngine:
             renewable,
             gross_demand_mw,
             demand_profiles_mw,
+            heat_pump_cop_profiles,
         )
         return UnitCommitment(self.config).solve_formulation(problem)
 
@@ -848,6 +858,7 @@ class SimulationEngine:
         renewable: RenewableAvailability,
         gross_demand_mw: FloatArray,
         demand_profiles_mw: dict[str, FloatArray] | None,
+        heat_pump_cop_profiles: dict[str, FloatArray] | None,
     ) -> FormulationProblem:
         thermal_factors = self._merge_availability_overrides(
             registry.thermal_availability_factors(data),
@@ -869,6 +880,7 @@ class SimulationEngine:
             storage_availability_factors=storage_factors,
             hydro_inflows_mw=registry.hydro_inflows_mw(data),
             demand_profiles_mw=demand_profiles_mw,
+            heat_pump_cop_profiles=heat_pump_cop_profiles,
             renewable_availability_by_asset_mw=renewable.by_asset_mw,
             line_availability_factors=line_factors,
             import_availability_factors=(
@@ -926,7 +938,11 @@ class SimulationEngine:
             out=np.zeros_like(distribution.gross_demand_mw, dtype=np.float64),
             where=end_user_demand_mw > 0.0,
         )
-        return {asset_id: values * scale for asset_id, values in profiles.items()}
+        demand_by_id = {demand.id: demand for demand in self.config.portfolio.demand}
+        return {
+            asset_id: (values if demand_by_id[asset_id].kind == "heat_pump" else values * scale)
+            for asset_id, values in profiles.items()
+        }
 
     def _line_availability_factors(self, data: pd.DataFrame) -> dict[str, FloatArray]:
         factors: dict[str, FloatArray] = {}
@@ -1196,6 +1212,16 @@ class SimulationEngine:
             "demand_shift_up_mw": ("shifted_in_mw_source", "MW-source"),
             "demand_task_charge_mw": ("task_charge_mw_source", "MW-source"),
             "demand_task_unserved_mwh": ("task_unserved_mwh", "MWh"),
+            "ev_energy_mwh": ("ev_energy_mwh", "MWh"),
+            "ev_v2g_discharge_mw": ("ev_v2g_discharge_mw_source", "MW-source"),
+            "ev_delivered_mobility_mwh": ("ev_delivered_mobility_mwh", "MWh"),
+            "heat_pump_cop": ("heat_pump_cop", "ratio"),
+            "heat_pump_heat_demand_mw": ("heat_demand_mw_thermal", "MW-thermal"),
+            "heat_pump_electric_mw": ("heat_pump_electric_mw_source", "MW-source"),
+            "heat_pump_backup_heat_mw": ("backup_heat_mw_thermal", "MW-thermal"),
+            "heat_pump_thermal_storage_mwh": ("thermal_storage_mwh", "MWh-thermal"),
+            "heat_pump_comfort_violation_mwh": ("comfort_violation_mwh", "MWh-thermal"),
+            "heat_pump_backup_heat_emissions_tonnes": ("backup_heat_emissions_tonnes", "tCO2e"),
         }
         for demand in self.config.portfolio.demand:
             for prefix, (variable, unit) in variable_map.items():
@@ -1340,8 +1366,20 @@ class SimulationEngine:
             "network": self._network_summary(frame),
             "thermal_emissions_tonnes": float(frame["thermal_emissions_tonnes"].sum()),
             "import_emissions_tonnes": float(frame["import_emissions_tonnes"].sum()),
+            "heat_pump_backup_heat_emissions_tonnes": float(
+                frame["heat_pump_backup_heat_emissions_tonnes"].sum()
+            ),
             "total_emissions_tonnes": float(
-                frame["thermal_emissions_tonnes"].sum() + frame["import_emissions_tonnes"].sum()
+                frame["thermal_emissions_tonnes"].sum()
+                + frame["import_emissions_tonnes"].sum()
+                + frame["heat_pump_backup_heat_emissions_tonnes"].sum()
+            ),
+            "ev_delivered_mobility_mwh": float(frame["ev_delivered_mobility_mwh"].sum()),
+            "ev_v2g_discharge_mwh": energy("ev_v2g_discharge_mw"),
+            "heat_pump_electricity_mwh": energy("heat_pump_electric_mw"),
+            "heat_pump_backup_heat_mwh": energy("heat_pump_backup_heat_mw"),
+            "heat_pump_comfort_violation_mwh": float(
+                frame["heat_pump_comfort_violation_mwh"].sum()
             ),
             "peak_demand_mw": float(frame["end_user_demand_mw"].max()),
             "peak_thermal_output_mw": float(frame["thermal_output_mw"].max()),
@@ -1703,6 +1741,8 @@ class SimulationEngine:
             + frame["demand_shifted_out_end_user_mw"]
             - frame["demand_shifted_in_end_user_mw"]
             - frame["demand_task_charge_end_user_mw"]
+            - frame["heat_pump_electric_end_user_mw"]
+            + frame["ev_v2g_discharge_end_user_mw"]
             - frame["end_user_demand_mw"]
         )
         storage_units = self._storage_units_for_reporting()

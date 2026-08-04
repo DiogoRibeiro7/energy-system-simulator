@@ -77,6 +77,12 @@ THERMAL_DOWNWARD_RESERVE_BLOCK = "thermal_downward_reserve_mw"
 STORAGE_UPWARD_RESERVE_BLOCK = "storage_upward_reserve_mw"
 STORAGE_DOWNWARD_RESERVE_BLOCK = "storage_downward_reserve_mw"
 DEMAND_UPWARD_RESERVE_BLOCK = "demand_upward_reserve_mw"
+EV_ENERGY_BLOCK = "ev_energy_mwh"
+EV_V2G_DISCHARGE_BLOCK = "ev_v2g_discharge_mw"
+HEAT_PUMP_ELECTRIC_BLOCK = "heat_pump_electric_mw"
+HEAT_PUMP_BACKUP_HEAT_BLOCK = "heat_pump_backup_heat_mw"
+HEAT_PUMP_THERMAL_STORAGE_BLOCK = "heat_pump_thermal_storage_mwh"
+HEAT_PUMP_COMFORT_VIOLATION_BLOCK = "heat_pump_comfort_violation_mwh"
 IMPORT_UPWARD_RESERVE_BLOCK = "import_upward_reserve_mw"
 IMPORT_DOWNWARD_RESERVE_BLOCK = "import_downward_reserve_mw"
 RESERVE_UPWARD_SHORTFALL_BLOCK = "reserve_upward_shortfall_mw"
@@ -220,6 +226,7 @@ class FormulationProblem:
     renewable_units: tuple[RenewableUnit, ...]
     renewable_available_by_asset_mw: dict[str, FloatArray]
     demand_profiles_mw: dict[str, FloatArray]
+    heat_pump_cop: dict[str, FloatArray]
     thermal_capacity_available_mw: dict[str, FloatArray]
     storage_availability_factor: dict[str, FloatArray]
     hydro_inflow_mw: dict[str, FloatArray]
@@ -341,6 +348,7 @@ class UnitCommitment:
         storage_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
         hydro_inflows_mw: Mapping[str, npt.ArrayLike] | None = None,
         demand_profiles_mw: Mapping[str, npt.ArrayLike] | None = None,
+        heat_pump_cop_profiles: Mapping[str, npt.ArrayLike] | None = None,
         renewable_availability_by_asset_mw: Mapping[str, npt.ArrayLike] | None = None,
         line_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
         import_availability_factors: npt.ArrayLike | None = None,
@@ -374,6 +382,11 @@ class UnitCommitment:
 
         phase_started = perf_counter()
         demand_profiles = self._demand_profiles(demand_units, demand, demand_profiles_mw or {})
+        heat_pump_cop = self._heat_pump_cop_profiles(
+            demand_units,
+            periods,
+            heat_pump_cop_profiles or {},
+        )
         network = self._nodal_network(periods, line_availability_factors or {})
         if network.enabled and not demand_units:
             raise ValueError("Nodal network mode requires demand profiles for each demand asset")
@@ -460,6 +473,7 @@ class UnitCommitment:
             hydro_units,
             demand_units,
             demand_profiles,
+            heat_pump_cop,
             thermal_capacity,
             hydro_inflow,
             renewable_units,
@@ -498,6 +512,7 @@ class UnitCommitment:
             renewable_units=renewable_units,
             renewable_available_by_asset_mw=renewable_by_asset,
             demand_profiles_mw=demand_profiles,
+            heat_pump_cop=heat_pump_cop,
             thermal_capacity_available_mw=thermal_capacity,
             storage_availability_factor=storage_availability,
             hydro_inflow_mw=hydro_inflow,
@@ -519,6 +534,7 @@ class UnitCommitment:
         storage_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
         hydro_inflows_mw: Mapping[str, npt.ArrayLike] | None = None,
         demand_profiles_mw: Mapping[str, npt.ArrayLike] | None = None,
+        heat_pump_cop_profiles: Mapping[str, npt.ArrayLike] | None = None,
         renewable_availability_by_asset_mw: Mapping[str, npt.ArrayLike] | None = None,
         line_availability_factors: Mapping[str, npt.ArrayLike] | None = None,
         import_availability_factors: npt.ArrayLike | None = None,
@@ -534,6 +550,7 @@ class UnitCommitment:
             storage_availability_factors,
             hydro_inflows_mw,
             demand_profiles_mw,
+            heat_pump_cop_profiles,
             renewable_availability_by_asset_mw,
             line_availability_factors,
             import_availability_factors,
@@ -705,8 +722,15 @@ class UnitCommitment:
                 raise ValueError(f"Demand profile for {unit.id} must be finite and non-negative")
             result[unit.id] = values
         if result:
+            electric_profiles = [
+                result[unit.id] for unit in units if unit.config.kind != "heat_pump"
+            ]
             aggregate = np.asarray(
-                np.sum(np.vstack(list(result.values())), axis=0, dtype=np.float64),
+                (
+                    np.sum(np.vstack(electric_profiles), axis=0, dtype=np.float64)
+                    if electric_profiles
+                    else np.zeros_like(aggregate_demand, dtype=np.float64)
+                ),
                 dtype=np.float64,
             )
             if not np.allclose(
@@ -716,6 +740,29 @@ class UnitCommitment:
                 rtol=0.0,
             ):
                 raise ValueError("Demand profiles must sum to aggregate gross demand")
+        return result
+
+    def _heat_pump_cop_profiles(
+        self,
+        units: tuple[DemandUnit, ...],
+        periods: int,
+        profiles: Mapping[str, npt.ArrayLike],
+    ) -> dict[str, FloatArray]:
+        result: dict[str, FloatArray] = {}
+        for unit in units:
+            if unit.config.kind != "heat_pump":
+                continue
+            if unit.id in profiles:
+                values = np.asarray(profiles[unit.id], dtype=np.float64)
+            else:
+                values = np.full(periods, unit.config.heat_pump_cop_base, dtype=np.float64)
+            if values.shape != (periods,):
+                raise ValueError(f"Heat-pump COP profile for {unit.id} has wrong shape")
+            if np.any(~np.isfinite(values)) or np.any(values < unit.config.heat_pump_cop_min):
+                raise ValueError(
+                    f"Heat-pump COP profile for {unit.id} must be finite and above cop_min"
+                )
+            result[unit.id] = values
         return result
 
     def _renewable_units(self) -> tuple[RenewableUnit, ...]:
@@ -1020,6 +1067,15 @@ class UnitCommitment:
             if demand.config.kind in {"deferrable", "ev_charging"}:
                 registry.add("demand_task_charge_mw", periods, asset_id=demand.id)
                 registry.add("demand_task_unserved_mwh", periods, asset_id=demand.id)
+            if demand.config.kind == "ev_charging" and demand.config.ev_energy_capacity_mwh > 0.0:
+                registry.add(EV_ENERGY_BLOCK, periods, asset_id=demand.id)
+                if demand.config.ev_v2g_power_capacity_mw > 0.0:
+                    registry.add(EV_V2G_DISCHARGE_BLOCK, periods, asset_id=demand.id)
+            if demand.config.kind == "heat_pump":
+                registry.add(HEAT_PUMP_ELECTRIC_BLOCK, periods, asset_id=demand.id)
+                registry.add(HEAT_PUMP_BACKUP_HEAT_BLOCK, periods, asset_id=demand.id)
+                registry.add(HEAT_PUMP_THERMAL_STORAGE_BLOCK, periods, asset_id=demand.id)
+                registry.add(HEAT_PUMP_COMFORT_VIOLATION_BLOCK, periods, asset_id=demand.id)
             if reserves.enabled and demand.config.kind in {"curtailable", "shiftable"}:
                 registry.add(DEMAND_UPWARD_RESERVE_BLOCK, periods, asset_id=demand.id)
         for thermal_unit in thermal_units:
@@ -1154,6 +1210,23 @@ class UnitCommitment:
                     coefficients[registry.at("demand_task_unserved_mwh", t, asset_id=demand.id)] = (
                         demand_config.task_unserved_penalty_eur_per_mwh
                     )
+                if (
+                    demand_config.kind == "ev_charging"
+                    and demand_config.ev_v2g_power_capacity_mw > 0.0
+                ):
+                    coefficients[registry.at(EV_V2G_DISCHARGE_BLOCK, t, asset_id=demand.id)] = (
+                        demand_config.ev_degradation_cost_eur_per_mwh * dt
+                    )
+                if demand_config.kind == "heat_pump":
+                    coefficients[registry.at(HEAT_PUMP_ELECTRIC_BLOCK, t, asset_id=demand.id)] = (
+                        1e-6 * dt
+                    )
+                    coefficients[
+                        registry.at(HEAT_PUMP_BACKUP_HEAT_BLOCK, t, asset_id=demand.id)
+                    ] = demand_config.heat_pump_backup_heat_cost_eur_per_mwh * dt
+                    coefficients[
+                        registry.at(HEAT_PUMP_COMFORT_VIOLATION_BLOCK, t, asset_id=demand.id)
+                    ] = demand_config.heat_pump_comfort_violation_penalty_eur_per_mwh
             for unit in thermal_units:
                 thermal = unit.config
                 fuel = fuels[unit.fuel_id]
@@ -1266,6 +1339,10 @@ class UnitCommitment:
                     + demand_config.shift_up_capacity_mw
                     + demand_config.task_power_capacity_mw
                 )
+                if demand_config.kind == "heat_pump":
+                    upper[registry.at("demand_involuntary_shed_mw", t, asset_id=demand_unit.id)] = (
+                        0.0
+                    )
                 if demand_config.kind in {"curtailable", "shiftable"}:
                     curtailment_limit = baseline * demand_config.maximum_curtailment_fraction
                     if demand_config.maximum_curtailment_mw is not None:
@@ -1291,12 +1368,54 @@ class UnitCommitment:
                     in_window = t >= demand_config.task_start_period and (
                         demand_config.task_end_period is None or t < demand_config.task_end_period
                     )
+                    task_capacity = demand_config.task_power_capacity_mw
+                    if demand_config.kind == "ev_charging":
+                        task_capacity *= demand_config.ev_availability_fraction
                     upper[registry.at("demand_task_charge_mw", t, asset_id=demand_unit.id)] = (
-                        demand_config.task_power_capacity_mw if in_window else 0.0
+                        task_capacity if in_window else 0.0
                     )
                     upper[registry.at("demand_task_unserved_mwh", t, asset_id=demand_unit.id)] = (
                         demand_config.task_required_energy_mwh
                     )
+                if (
+                    demand_config.kind == "ev_charging"
+                    and demand_config.ev_energy_capacity_mwh > 0.0
+                ):
+                    lower[registry.at(EV_ENERGY_BLOCK, t, asset_id=demand_unit.id)] = 0.0
+                    upper[registry.at(EV_ENERGY_BLOCK, t, asset_id=demand_unit.id)] = (
+                        demand_config.ev_energy_capacity_mwh
+                        * demand_config.ev_availability_fraction
+                    )
+                    if demand_config.ev_v2g_power_capacity_mw > 0.0:
+                        in_window = t >= demand_config.task_start_period and (
+                            demand_config.task_end_period is None
+                            or t < demand_config.task_end_period
+                        )
+                        upper[registry.at(EV_V2G_DISCHARGE_BLOCK, t, asset_id=demand_unit.id)] = (
+                            demand_config.ev_v2g_power_capacity_mw
+                            * demand_config.ev_availability_fraction
+                            if in_window
+                            else 0.0
+                        )
+                if demand_config.kind == "heat_pump":
+                    heat_pump_capacity = demand_config.task_power_capacity_mw
+                    if heat_pump_capacity > 0.0:
+                        upper[registry.at(HEAT_PUMP_ELECTRIC_BLOCK, t, asset_id=demand_unit.id)] = (
+                            heat_pump_capacity
+                        )
+                    upper[registry.at(HEAT_PUMP_BACKUP_HEAT_BLOCK, t, asset_id=demand_unit.id)] = (
+                        demand_config.heat_pump_backup_heat_capacity_mw
+                    )
+                    upper[
+                        registry.at(HEAT_PUMP_THERMAL_STORAGE_BLOCK, t, asset_id=demand_unit.id)
+                    ] = demand_config.heat_pump_thermal_storage_capacity_mwh
+                    upper[
+                        registry.at(
+                            HEAT_PUMP_COMFORT_VIOLATION_BLOCK,
+                            t,
+                            asset_id=demand_unit.id,
+                        )
+                    ] = demand_config.heat_pump_thermal_storage_capacity_mwh
             for storage in storage_units:
                 battery = storage.config
                 availability = storage_availability[storage.id][t]
@@ -1380,6 +1499,7 @@ class UnitCommitment:
         hydro_units: tuple[HydroUnit, ...],
         demand_units: tuple[DemandUnit, ...],
         demand_profiles: dict[str, FloatArray],
+        heat_pump_cop: dict[str, FloatArray],
         thermal_capacity_available: dict[str, FloatArray],
         hydro_inflow: dict[str, FloatArray],
         renewable_units: tuple[RenewableUnit, ...],
@@ -1428,7 +1548,13 @@ class UnitCommitment:
         )
         self._add_hydro_constraints(builder, registry, demand.size, hydro_units, hydro_inflow)
         self._add_storage_constraints(builder, registry, demand.size, storage_units)
-        self._add_demand_constraints(builder, registry, demand_units, demand_profiles)
+        self._add_demand_constraints(
+            builder,
+            registry,
+            demand_units,
+            demand_profiles,
+            heat_pump_cop,
+        )
         if reserves.enabled:
             self._add_reserve_constraints(
                 builder,
@@ -1527,7 +1653,8 @@ class UnitCommitment:
                 for demand_unit in demand_units:
                     if demand_bus[demand_unit.id] != bus_id:
                         continue
-                    rhs += demand_profiles[demand_unit.id][t]
+                    if demand_unit.config.kind != "heat_pump":
+                        rhs += demand_profiles[demand_unit.id][t]
                     coefficients[
                         registry.at(
                             "demand_involuntary_shed_mw",
@@ -1553,6 +1680,17 @@ class UnitCommitment:
                     if demand_unit.config.kind in {"deferrable", "ev_charging"}:
                         coefficients[
                             registry.at("demand_task_charge_mw", t, asset_id=demand_unit.id)
+                        ] = -1.0
+                    if (
+                        demand_unit.config.kind == "ev_charging"
+                        and demand_unit.config.ev_v2g_power_capacity_mw > 0.0
+                    ):
+                        coefficients[
+                            registry.at(EV_V2G_DISCHARGE_BLOCK, t, asset_id=demand_unit.id)
+                        ] = 1.0
+                    if demand_unit.config.kind == "heat_pump":
+                        coefficients[
+                            registry.at(HEAT_PUMP_ELECTRIC_BLOCK, t, asset_id=demand_unit.id)
                         ] = -1.0
                 for line in network.lines:
                     if line.from_bus_id == bus_id:
@@ -1757,7 +1895,8 @@ class UnitCommitment:
                 value = 0.0
                 for demand_unit in demand_units:
                     baseline = demand_profiles[demand_unit.id][t]
-                    value += baseline
+                    if demand_unit.config.kind != "heat_pump":
+                        value += baseline
                     coefficients[
                         registry.at(
                             "demand_involuntary_shed_mw",
@@ -1783,6 +1922,17 @@ class UnitCommitment:
                     if demand_unit.config.kind in {"deferrable", "ev_charging"}:
                         coefficients[
                             registry.at("demand_task_charge_mw", t, asset_id=demand_unit.id)
+                        ] = -1.0
+                    if (
+                        demand_unit.config.kind == "ev_charging"
+                        and demand_unit.config.ev_v2g_power_capacity_mw > 0.0
+                    ):
+                        coefficients[
+                            registry.at(EV_V2G_DISCHARGE_BLOCK, t, asset_id=demand_unit.id)
+                        ] = 1.0
+                    if demand_unit.config.kind == "heat_pump":
+                        coefficients[
+                            registry.at(HEAT_PUMP_ELECTRIC_BLOCK, t, asset_id=demand_unit.id)
                         ] = -1.0
             builder.add(coefficients, value, value, component="balance")
 
@@ -1828,6 +1978,7 @@ class UnitCommitment:
         registry: VariableRegistry,
         units: tuple[DemandUnit, ...],
         demand_profiles: dict[str, FloatArray],
+        heat_pump_cop: dict[str, FloatArray],
     ) -> None:
         for unit in units:
             config = unit.config
@@ -1853,6 +2004,16 @@ class UnitCommitment:
                 self._add_shift_conservation_constraints(builder, registry, unit, baseline.size)
             if config.kind in {"deferrable", "ev_charging"}:
                 self._add_task_completion_constraint(builder, registry, unit, baseline.size)
+            if config.kind == "ev_charging" and config.ev_energy_capacity_mwh > 0.0:
+                self._add_ev_energy_constraints(builder, registry, unit, baseline.size)
+            if config.kind == "heat_pump":
+                self._add_heat_pump_constraints(
+                    builder,
+                    registry,
+                    unit,
+                    baseline,
+                    heat_pump_cop[unit.id],
+                )
 
     def _add_shift_conservation_constraints(
         self,
@@ -1898,6 +2059,81 @@ class UnitCommitment:
             config.task_required_energy_mwh,
             component="demand_task_completion",
         )
+
+    def _add_ev_energy_constraints(
+        self,
+        builder: _ConstraintBuilder,
+        registry: VariableRegistry,
+        unit: DemandUnit,
+        periods: int,
+    ) -> None:
+        dt = self.config.simulation.time_step_hours
+        config = unit.config
+        for t in range(periods):
+            coefficients = {
+                registry.at(EV_ENERGY_BLOCK, t, asset_id=unit.id): 1.0,
+                registry.at("demand_task_charge_mw", t, asset_id=unit.id): (
+                    -config.ev_v2g_efficiency * dt
+                ),
+            }
+            if config.ev_v2g_power_capacity_mw > 0.0:
+                coefficients[registry.at(EV_V2G_DISCHARGE_BLOCK, t, asset_id=unit.id)] = (
+                    dt / config.ev_v2g_efficiency
+                )
+            if t == 0:
+                rhs = config.ev_initial_energy_mwh * config.ev_availability_fraction
+            else:
+                coefficients[registry.at(EV_ENERGY_BLOCK, t - 1, asset_id=unit.id)] = -1.0
+                rhs = 0.0
+            builder.add(coefficients, rhs, rhs, component="ev_energy_state")
+
+        departure = config.ev_departure_period or config.task_end_period
+        if departure is None or config.ev_required_departure_energy_mwh == 0.0:
+            return
+        departure_period = min(max(0, departure - 1), periods - 1)
+        coefficients = {
+            registry.at(EV_ENERGY_BLOCK, departure_period, asset_id=unit.id): 1.0,
+        }
+        for t in range(periods):
+            coefficients[registry.at("demand_task_unserved_mwh", t, asset_id=unit.id)] = 1.0
+        required = config.ev_required_departure_energy_mwh * config.ev_availability_fraction
+        builder.add(coefficients, required, np.inf, component="ev_departure_energy")
+
+    def _add_heat_pump_constraints(
+        self,
+        builder: _ConstraintBuilder,
+        registry: VariableRegistry,
+        unit: DemandUnit,
+        heat_demand_mw: FloatArray,
+        cop: FloatArray,
+    ) -> None:
+        dt = self.config.simulation.time_step_hours
+        config = unit.config
+        retention = (1.0 - config.heat_pump_thermal_loss_fraction_per_hour) ** dt
+        for t, heat_demand in enumerate(heat_demand_mw):
+            coefficients = {
+                registry.at(HEAT_PUMP_THERMAL_STORAGE_BLOCK, t, asset_id=unit.id): 1.0,
+                registry.at(HEAT_PUMP_ELECTRIC_BLOCK, t, asset_id=unit.id): -cop[t] * dt,
+                registry.at(HEAT_PUMP_BACKUP_HEAT_BLOCK, t, asset_id=unit.id): -dt,
+                registry.at(HEAT_PUMP_COMFORT_VIOLATION_BLOCK, t, asset_id=unit.id): -1.0,
+            }
+            if t == 0:
+                rhs = retention * config.heat_pump_initial_thermal_storage_mwh - heat_demand * dt
+            else:
+                coefficients[
+                    registry.at(HEAT_PUMP_THERMAL_STORAGE_BLOCK, t - 1, asset_id=unit.id)
+                ] = -retention
+                rhs = -heat_demand * dt
+            builder.add(coefficients, rhs, rhs, component="heat_pump_thermal_state")
+            builder.add(
+                {
+                    registry.at(HEAT_PUMP_THERMAL_STORAGE_BLOCK, t, asset_id=unit.id): 1.0,
+                    registry.at(HEAT_PUMP_COMFORT_VIOLATION_BLOCK, t, asset_id=unit.id): 1.0,
+                },
+                config.heat_pump_comfort_min_mwh,
+                config.heat_pump_comfort_max_mwh,
+                component="heat_pump_comfort",
+            )
 
     def _add_thermal_bounds(
         self,
@@ -2594,6 +2830,40 @@ class UnitCommitment:
                     "demand_task_unserved_mwh",
                     asset_id=demand.id,
                 )
+            if demand.config.kind == "ev_charging" and demand.config.ev_energy_capacity_mwh > 0.0:
+                data[f"ev_energy_mwh__{demand.id}"] = registry.values(
+                    solution,
+                    EV_ENERGY_BLOCK,
+                    asset_id=demand.id,
+                )
+                if demand.config.ev_v2g_power_capacity_mw > 0.0:
+                    data[f"ev_v2g_discharge_mw__{demand.id}"] = registry.values(
+                        solution,
+                        EV_V2G_DISCHARGE_BLOCK,
+                        asset_id=demand.id,
+                    )
+            if demand.config.kind == "heat_pump":
+                data[f"heat_pump_cop__{demand.id}"] = problem.heat_pump_cop[demand.id]
+                data[f"heat_pump_electric_mw__{demand.id}"] = registry.values(
+                    solution,
+                    HEAT_PUMP_ELECTRIC_BLOCK,
+                    asset_id=demand.id,
+                )
+                data[f"heat_pump_backup_heat_mw__{demand.id}"] = registry.values(
+                    solution,
+                    HEAT_PUMP_BACKUP_HEAT_BLOCK,
+                    asset_id=demand.id,
+                )
+                data[f"heat_pump_thermal_storage_mwh__{demand.id}"] = registry.values(
+                    solution,
+                    HEAT_PUMP_THERMAL_STORAGE_BLOCK,
+                    asset_id=demand.id,
+                )
+                data[f"heat_pump_comfort_violation_mwh__{demand.id}"] = registry.values(
+                    solution,
+                    HEAT_PUMP_COMFORT_VIOLATION_BLOCK,
+                    asset_id=demand.id,
+                )
             if problem.reserves.enabled and demand.config.kind in {"curtailable", "shiftable"}:
                 data[f"{DEMAND_UPWARD_RESERVE_BLOCK}__{demand.id}"] = registry.values(
                     solution,
@@ -3052,6 +3322,11 @@ class UnitCommitment:
                 values += frame[f"demand_shift_up_mw__{demand.id}"].to_numpy(dtype=np.float64)
             if demand.config.kind in {"deferrable", "ev_charging"}:
                 values += frame[f"demand_task_charge_mw__{demand.id}"].to_numpy(dtype=np.float64)
+            if demand.config.kind == "ev_charging" and demand.config.ev_v2g_power_capacity_mw > 0.0:
+                values -= frame[f"ev_v2g_discharge_mw__{demand.id}"].to_numpy(dtype=np.float64)
+            if demand.config.kind == "heat_pump":
+                values -= frame[f"demand_baseline_mw__{demand.id}"].to_numpy(dtype=np.float64)
+                values += frame[f"heat_pump_electric_mw__{demand.id}"].to_numpy(dtype=np.float64)
         return values
 
     def _add_demand_accounting_columns(
@@ -3074,6 +3349,36 @@ class UnitCommitment:
             shift_up = frame.get(shift_up_column, 0.0)
             task_charge = frame.get(task_charge_column, 0.0)
             adjusted = baseline - voluntary - shift_down + shift_up + task_charge
+            if config.kind == "ev_charging":
+                v2g_column = f"ev_v2g_discharge_mw__{unit.id}"
+                v2g = frame.get(v2g_column, 0.0)
+                adjusted = adjusted - v2g
+                frame[f"ev_v2g_discharge_mw__{unit.id}"] = v2g
+                frame[f"ev_delivered_mobility_mwh__{unit.id}"] = (
+                    task_charge * config.ev_v2g_efficiency * dt
+                    - v2g * dt / config.ev_v2g_efficiency
+                )
+                frame[f"ev_v2g_degradation_cost_eur__{unit.id}"] = (
+                    v2g * config.ev_degradation_cost_eur_per_mwh * dt
+                )
+            if config.kind == "heat_pump":
+                electric = frame[f"heat_pump_electric_mw__{unit.id}"]
+                backup = frame[f"heat_pump_backup_heat_mw__{unit.id}"]
+                comfort = frame[f"heat_pump_comfort_violation_mwh__{unit.id}"]
+                adjusted = electric
+                frame[f"heat_pump_heat_demand_mw__{unit.id}"] = baseline
+                frame[f"heat_pump_delivered_heat_mwh__{unit.id}"] = (
+                    electric * frame[f"heat_pump_cop__{unit.id}"] + backup
+                ) * dt
+                frame[f"heat_pump_backup_heat_cost_eur__{unit.id}"] = (
+                    backup * config.heat_pump_backup_heat_cost_eur_per_mwh * dt
+                )
+                frame[f"heat_pump_backup_heat_emissions_tonnes__{unit.id}"] = (
+                    backup * config.heat_pump_backup_heat_emission_tonnes_per_mwh * dt
+                )
+                frame[f"heat_pump_comfort_violation_cost_eur__{unit.id}"] = (
+                    comfort * config.heat_pump_comfort_violation_penalty_eur_per_mwh
+                )
             frame[f"demand_adjusted_mw__{unit.id}"] = adjusted
             frame[f"demand_served_mw__{unit.id}"] = adjusted - shed
             lost_load_cost = (
@@ -3106,12 +3411,27 @@ class UnitCommitment:
                 frame["demand_baseline_mw"].to_numpy(dtype=np.float64),
             )
             frame["source_load_shed_mw"] = frame["demand_involuntary_shed_mw"]
+        frame["ev_v2g_discharge_mw"] = self._sum_prefixed_frame_columns(
+            frame,
+            "ev_v2g_discharge_mw__",
+        )
+        frame["heat_pump_electric_mw"] = self._sum_prefixed_frame_columns(
+            frame,
+            "heat_pump_electric_mw__",
+        )
+        frame["heat_pump_heat_demand_mw"] = self._sum_prefixed_frame_columns(
+            frame,
+            "heat_pump_heat_demand_mw__",
+        )
         frame["demand_adjusted_mw"] = (
             frame["demand_baseline_mw"]
+            - frame["heat_pump_heat_demand_mw"]
             - frame["demand_voluntary_curtailment_mw"]
             - frame["demand_shift_down_mw"]
             + frame["demand_shift_up_mw"]
             + frame["demand_task_charge_mw"]
+            + frame["heat_pump_electric_mw"]
+            - frame["ev_v2g_discharge_mw"]
         )
         frame["demand_response_delta_mw"] = (
             frame["demand_adjusted_mw"] - frame["demand_baseline_mw"]
@@ -3134,6 +3454,34 @@ class UnitCommitment:
         frame["demand_task_unserved_cost_eur"] = self._sum_prefixed_frame_columns(
             frame,
             "demand_task_unserved_cost_eur__",
+        )
+        frame["ev_delivered_mobility_mwh"] = self._sum_prefixed_frame_columns(
+            frame,
+            "ev_delivered_mobility_mwh__",
+        )
+        frame["ev_v2g_degradation_cost_eur"] = self._sum_prefixed_frame_columns(
+            frame,
+            "ev_v2g_degradation_cost_eur__",
+        )
+        frame["heat_pump_backup_heat_mw"] = self._sum_prefixed_frame_columns(
+            frame,
+            "heat_pump_backup_heat_mw__",
+        )
+        frame["heat_pump_comfort_violation_mwh"] = self._sum_prefixed_frame_columns(
+            frame,
+            "heat_pump_comfort_violation_mwh__",
+        )
+        frame["heat_pump_backup_heat_cost_eur"] = self._sum_prefixed_frame_columns(
+            frame,
+            "heat_pump_backup_heat_cost_eur__",
+        )
+        frame["heat_pump_backup_heat_emissions_tonnes"] = self._sum_prefixed_frame_columns(
+            frame,
+            "heat_pump_backup_heat_emissions_tonnes__",
+        )
+        frame["heat_pump_comfort_violation_cost_eur"] = self._sum_prefixed_frame_columns(
+            frame,
+            "heat_pump_comfort_violation_cost_eur__",
         )
 
     def _add_reserve_accounting_columns(
@@ -3344,6 +3692,12 @@ class UnitCommitment:
                     "demand_shift_up_mw",
                     "demand_task_charge_mw",
                     "demand_task_unserved_mwh",
+                    "ev_energy_mwh",
+                    "ev_v2g_discharge_mw",
+                    "heat_pump_electric_mw",
+                    "heat_pump_backup_heat_mw",
+                    "heat_pump_thermal_storage_mwh",
+                    "heat_pump_comfort_violation_mwh",
                 ):
                     column = f"{block}__{demand.id}"
                     if column in frame:
@@ -3443,6 +3797,11 @@ class UnitCommitment:
             ),
             "demand_shift_cost_eur": float(frame["demand_shift_cost_eur"].sum()),
             "demand_task_unserved_cost_eur": float(frame["demand_task_unserved_cost_eur"].sum()),
+            "ev_v2g_degradation_cost_eur": float(frame["ev_v2g_degradation_cost_eur"].sum()),
+            "heat_pump_backup_heat_cost_eur": float(frame["heat_pump_backup_heat_cost_eur"].sum()),
+            "heat_pump_comfort_violation_cost_eur": float(
+                frame["heat_pump_comfort_violation_cost_eur"].sum()
+            ),
             "thermal_carbon_cost_eur": float(
                 sum(frame[f"thermal_carbon_cost_eur__{unit.id}"].sum() for unit in thermal_units)
             ),

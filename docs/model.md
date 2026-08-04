@@ -468,6 +468,40 @@ Task completion is:
 where \(R_j\) is required task energy and \(m_j\) is unmet task energy. This
 prevents generic load shedding from counting as completed charging.
 
+Advanced EV fleets may also track vehicle energy \(s^{ev}_{j,t}\), arrival and
+departure windows, fleet availability \(a_j\), and optional vehicle-to-grid
+discharge \(g^{v2g}_{j,t}\):
+
+\[
+s^{ev}_{j,t}=s^{ev}_{j,t-1}+\eta^{ch}_j e_{j,t}\Delta t
+-g^{v2g}_{j,t}\Delta t/\eta^{v2g}_j.
+\]
+
+Charging, V2G discharge, and vehicle energy capacity are all scaled by fleet
+availability. At the departure period, configured required energy must be
+present or explicitly reported as unmet departure energy.
+
+Heat-pump demand interprets the demand profile as useful heat demand \(h_{j,t}\),
+not fixed electrical demand. Electrical input \(p^{hp}_{j,t}\), backup heat
+\(b^{hp}_{j,t}\), thermal storage \(s^{hp}_{j,t}\), deterministic COP
+\(\mathrm{COP}_{j,t}\), thermal standing losses, and comfort violation
+\(c^{hp}_{j,t}\) satisfy:
+
+\[
+s^{hp}_{j,t}=\rho_j s^{hp}_{j,t-1}
++\mathrm{COP}_{j,t}p^{hp}_{j,t}\Delta t
++b^{hp}_{j,t}\Delta t-h_{j,t}\Delta t+c^{hp}_{j,t}.
+\]
+
+Comfort bounds are enforced on thermal storage with explicit violation slack:
+
+\[
+S_j^{min}\le s^{hp}_{j,t}+c^{hp}_{j,t}\le S_j^{max}.
+\]
+
+Backup heat has explicit cost and emissions. Comfort violations are not silent;
+they appear in dispatch outputs and are penalised by the configured value.
+
 For every demand entity and period, involuntary shedding cannot exceed adjusted
 demand:
 

@@ -16,6 +16,9 @@ and this project follows semantic versioning.
 - Optional AC power-flow validation bridge for selected nodal dispatch periods.
 - Standalone radial distribution-feeder studies with DER dispatch, voltage and
   thermal constraints, battery-side accounting, and hosting-capacity outputs.
+- Flexible electrification demand services for EV fleets with V2G and heat
+  pumps with thermal storage, COP profiles, backup heat, comfort penalties, and
+  service-level reporting.
 
 ## [1.0.0] - 2026-08-03
 

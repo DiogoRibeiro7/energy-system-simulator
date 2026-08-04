@@ -21,6 +21,8 @@ The model is designed for research, teaching, and policy experiments. It uses ex
 - Sector demand portfolios with fixed, curtailable, shiftable, deferrable, and
   EV-charging demand, including sector-specific lost-load costs and explicit
   demand-response accounting.
+- Flexible electrification services for EV fleets with availability and V2G,
+  plus heat pumps with COP, thermal storage, backup heat, and comfort bounds.
 - Aggregated distribution losses and transfer-capacity constraints.
 - Optional electricity imports.
 - Renewable curtailment and involuntary load shedding.
@@ -125,6 +127,13 @@ Run the demand-response portfolio example:
 ```bash
 poetry run energy-sim validate --config configs/portfolio_demand_response.yaml
 poetry run energy-sim simulate --config configs/portfolio_demand_response.yaml --overwrite
+```
+
+Run the flexible-electrification example:
+
+```bash
+poetry run energy-sim validate --config configs/flexible_electrification.yaml
+poetry run energy-sim simulate --config configs/flexible_electrification.yaml --overwrite
 ```
 
 Run the nodal DC network example:
