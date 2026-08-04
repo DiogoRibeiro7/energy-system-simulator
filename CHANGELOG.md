@@ -7,6 +7,8 @@ and this project follows semantic versioning.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-04
+
 ### Added
 
 - Explicit post-contingency N-1 security checks for nodal dispatch, with
@@ -25,11 +27,6 @@ and this project follows semantic versioning.
 - Standalone district-heat and CHP subsystem studies with heat-only boilers,
   electric boilers, heat pumps, thermal storage, convex CHP operating regions,
   heat-network losses, fuel/emissions reconciliation, and coupling outputs.
-
-## [1.0.0] - 2026-08-03
-
-### Added
-
 - Typed portfolio configuration schema, legacy config migration, canonical
   resolved configuration serialization, and portfolio validation fixtures.
 - Multi-asset renewable availability orchestration with tidy asset time-series
