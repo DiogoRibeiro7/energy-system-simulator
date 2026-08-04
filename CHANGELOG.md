@@ -14,6 +14,8 @@ and this project follows semantic versioning.
 - Post-dispatch frequency adequacy proxies for inertia, RoCoF, primary
   response, fast frequency response, and synthetic inertia diagnostics.
 - Optional AC power-flow validation bridge for selected nodal dispatch periods.
+- Standalone radial distribution-feeder studies with DER dispatch, voltage and
+  thermal constraints, battery-side accounting, and hosting-capacity outputs.
 
 ## [1.0.0] - 2026-08-03
 

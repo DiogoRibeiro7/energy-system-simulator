@@ -1,0 +1,71 @@
+schema_version: 1
+base_power_mva: 10.0
+time_step_hours: 1.0
+substation_bus_id: substation
+substation_import_limit_mw: 15.0
+substation_export_limit_mw: 15.0
+import_cost_eur_per_mwh: 70.0
+export_value_eur_per_mwh: 0.0
+periods:
+  - noon
+  - evening
+hosting:
+  max_curtailment_fraction: 0.0
+buses:
+  - id: substation
+    fixed_load_mw: [0.0, 0.0]
+    fixed_reactive_load_mvar: [0.0, 0.0]
+    voltage_min_pu: 0.98
+    voltage_max_pu: 1.02
+  - id: feeder_mid
+    fixed_load_mw: [0.2, 0.9]
+    fixed_reactive_load_mvar: [0.03, 0.12]
+    voltage_min_pu: 0.98
+    voltage_max_pu: 1.02
+  - id: feeder_end
+    fixed_load_mw: [0.1, 0.7]
+    fixed_reactive_load_mvar: [0.02, 0.10]
+    voltage_min_pu: 0.98
+    voltage_max_pu: 1.02
+branches:
+  - id: sub_mid
+    from_bus_id: substation
+    to_bus_id: feeder_mid
+    resistance_pu: 0.020
+    reactance_pu: 0.040
+    rating_mva: 3.0
+  - id: mid_end
+    from_bus_id: feeder_mid
+    to_bus_id: feeder_end
+    resistance_pu: 0.018
+    reactance_pu: 0.035
+    rating_mva: 1.4
+rooftop_pv:
+  - id: end_rooftop
+    bus_id: feeder_end
+    capacity_mw: 0.8
+    availability_profile: [1.0, 0.0]
+    curtailment_cost_eur_per_mwh: 1000.0
+    hosting_capacity_max_mw: 8.0
+batteries:
+  - id: customer_battery
+    bus_id: feeder_end
+    side: customer_side
+    power_capacity_mw: 0.3
+    energy_capacity_mwh: 0.6
+    initial_soc_mwh: 0.3
+    charge_efficiency: 0.95
+    discharge_efficiency: 0.95
+  - id: grid_battery
+    bus_id: feeder_mid
+    side: grid_side
+    power_capacity_mw: 0.4
+    energy_capacity_mwh: 0.8
+    initial_soc_mwh: 0.4
+    charge_efficiency: 0.95
+    discharge_efficiency: 0.95
+flexible_loads:
+  - id: evening_flex
+    bus_id: feeder_end
+    max_reduction_mw: [0.0, 0.2]
+    cost_eur_per_mwh: 300.0

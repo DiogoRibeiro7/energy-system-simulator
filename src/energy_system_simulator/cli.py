@@ -22,6 +22,11 @@ from energy_system_simulator.api import (
 )
 from energy_system_simulator.config import ModelConfig, migrate_legacy_config, validate_config
 from energy_system_simulator.dispatch.solver import export_problem_lp
+from energy_system_simulator.distribution_feeder import (
+    DistributionMode,
+    load_distribution_problem,
+    run_distribution_study,
+)
 from energy_system_simulator.exceptions import (
     ConfigurationError,
     DataValidationError,
@@ -221,6 +226,20 @@ def build_parser() -> argparse.ArgumentParser:
     ac.add_argument("--period", action="append", type=int, default=[])
     ac.add_argument("--timestamp", action="append", default=[])
 
+    distribution = subparsers.add_parser(
+        "distribution-study",
+        help="Run a standalone radial distribution-feeder study",
+    )
+    distribution.add_argument("--problem", type=Path, required=True)
+    distribution.add_argument("--output", type=Path, required=True)
+    distribution.add_argument("--overwrite", action="store_true")
+    distribution.add_argument(
+        "--mode",
+        choices=("operational", "hosting-capacity"),
+        default="operational",
+        help="Run ordinary DER dispatch or maximise incremental DER hosting capacity",
+    )
+
     planning = subparsers.add_parser("capacity-planning", help="Run a capacity-planning YAML")
     planning.add_argument("--problem", type=Path, required=True)
     planning.add_argument("--output", type=Path)
@@ -352,6 +371,9 @@ def _dispatch(args: argparse.Namespace) -> ExitCode:
 
     if args.command == "ac-validate":
         return _run_ac_validation(args)
+
+    if args.command == "distribution-study":
+        return _run_distribution_study(args)
 
     if args.command in {"validate", "validate-config", "validate-data"}:
         return _validate(args)
@@ -541,6 +563,24 @@ def _run_ac_validation(args: argparse.Namespace) -> ExitCode:
     return ExitCode.SUCCESS
 
 
+def _run_distribution_study(args: argparse.Namespace) -> ExitCode:
+    output = ensure_writable_output_directory(
+        args.output,
+        overwrite=args.overwrite,
+        resume=False,
+    )
+    problem = load_distribution_problem(args.problem)
+    mode: DistributionMode = (
+        "hosting_capacity" if args.mode == "hosting-capacity" else "operational"
+    )
+    result = run_distribution_study(problem, mode=mode)
+    result.write(output)
+    print(f"Distribution study written: {output}")
+    print(f"Mode: {result.mode}")
+    print(f"Total hosting capacity: {result.summary['total_hosting_capacity_mw']:.3f} MW")
+    return ExitCode.SUCCESS
+
+
 def _parse_security_contingencies(raw: str) -> tuple[bool, bool, bool]:
     selected = {item.strip().lower() for item in raw.split(",") if item.strip()}
     supported = {"lines", "generators", "imports"}
@@ -724,6 +764,7 @@ def _capabilities() -> dict[str, Any]:
             "security-check",
             "frequency-check",
             "ac-validate",
+            "distribution-study",
             "capacity-planning",
             "compare-outputs",
             "export-model",

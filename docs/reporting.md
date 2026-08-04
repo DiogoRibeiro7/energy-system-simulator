@@ -48,6 +48,14 @@ simulation cost tables.
 Newton-Raphson convergence, voltage-limit violations, reactive-limit violations,
 branch MVA overloads, active losses, and DC-versus-AC active-flow mismatch.
 
+`energy-sim distribution-study` writes distribution-specific files:
+`distribution_timeseries.csv`, `distribution_hosting_capacity.csv`, and
+`distribution_summary.json`. Distribution columns use the `dist_` prefix and
+report radial feeder voltages, active/reactive branch flows, approximate branch
+loading, post-solve losses, PV curtailment, substation import/export, reverse
+flow, flexible-load reduction, and customer-side versus grid-side battery
+throughput.
+
 When plots are enabled, the report directory includes dispatch, storage,
 thermal, hydro, network, reserve, unserved-energy, cost, emissions, and duration
 curve figures. Optional components are represented by empty plots or empty stable

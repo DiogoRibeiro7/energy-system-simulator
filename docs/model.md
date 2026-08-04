@@ -146,6 +146,34 @@ MVA rating on `aggregate_network.ac_base_mva`. The validator reports
 non-convergence and violations rather than adjusting dispatch to force
 feasibility.
 
+## Distribution feeders
+
+Distribution studies use a separate radial feeder model family and do not alter
+the transmission DC unit-commitment formulation. The initial implementation is a
+balanced single-phase equivalent with linearised DistFlow constraints:
+
+\[
+P_{ij,t}-\sum_{k:(j,k)}P_{jk,t}=p^{\mathrm{load}}_{j,t}
+-p^{\mathrm{pv}}_{j,t}-p^{\mathrm{bat,dis}}_{j,t}
++p^{\mathrm{bat,ch}}_{j,t}-p^{\mathrm{flex}}_{j,t}
+\]
+
+\[
+Q_{ij,t}-\sum_{k:(j,k)}Q_{jk,t}=q^{\mathrm{load}}_{j,t}
+\]
+
+\[
+V_{j,t}^2 = V_{i,t}^2 -
+2(r_{ij}P_{ij,t}+x_{ij}Q_{ij,t})/\mathrm{baseMVA}.
+\]
+
+Branch apparent-power limits use a linear diamond approximation,
+\(|P_{ij,t}|+|Q_{ij,t}|\le S_{ij}\). Losses are reported after the solve as
+\(r_{ij}(P_{ij,t}^2+Q_{ij,t}^2)/\mathrm{baseMVA}\); they are diagnostics, not
+optimised balance terms. Hosting-capacity mode maximises additional rooftop PV
+capacity subject to the same voltage and thermal limits and an explicit
+curtailment-fraction policy.
+
 ## Power balance
 
 All dispatch variables are represented on the source side:

@@ -23,6 +23,8 @@ The supported command-line entry point is `energy-sim`.
   frequency adequacy proxies.
 - `ac-validate --config CONFIG --output DIR`: validate selected nodal dispatch
   periods with AC power flow.
+- `distribution-study --problem PROBLEM --output DIR`: run a standalone radial
+  distribution-feeder dispatch or hosting-capacity study.
 - `capacity-planning --problem PROBLEM`: run a capacity-expansion problem YAML.
 - `compare-outputs OUT1 OUT2 --output REPORT.md`: compare output directories.
 - `export-model --config CONFIG --output MODEL.lp`: export formulation LP.
@@ -113,6 +115,16 @@ config = ess.load_model_config("configs/portfolio_nodal_three_bus.yaml")
 result = ess.solve(config)
 validation = ess.validate_ac_power_flow(config, result)
 validation.write("outputs/ac-validation")
+```
+
+Radial distribution-feeder studies use a separate problem object:
+
+```python
+import energy_system_simulator as ess
+
+problem = ess.load_distribution_problem("configs/distribution_radial_feeder.yaml")
+result = ess.run_distribution_study(problem, mode="hosting_capacity")
+result.write("outputs/hosting")
 ```
 
 ## 1.0 Compatibility Notes

@@ -297,6 +297,9 @@ generator, one storage unit, one import resource, and one demand entry.
 - `configs/frequency_low_inertia.yaml` is a schema v2 example with an
   energy-feasible high-renewables dispatch that is frequency-insecure under the
   proxy thresholds.
+- `configs/distribution_radial_feeder.yaml` is a standalone distribution-feeder
+  study schema for `energy-sim distribution-study`; it is intentionally separate
+  from schema v1/v2 transmission dispatch configurations.
 - `tests/fixtures/invalid_portfolio_missing_bus.yaml` is intentionally invalid
   and is used by the validation tests.
 
