@@ -22,6 +22,9 @@ and this project follows semantic versioning.
 - Standalone hydrogen subsystem studies with electrolyser production, lossy
   storage inventory, exogenous demand, reconversion, explicit emissions
   assumptions, and `MWh_LHV` balance reporting.
+- Standalone district-heat and CHP subsystem studies with heat-only boilers,
+  electric boilers, heat pumps, thermal storage, convex CHP operating regions,
+  heat-network losses, fuel/emissions reconciliation, and coupling outputs.
 
 ## [1.0.0] - 2026-08-03
 

@@ -69,6 +69,12 @@ production, inventory, storage charge/discharge, curtailment, delivered demand,
 shortage, reconversion, conversion losses, process emissions, balance residuals,
 round-trip efficiency, and a marginal-value proxy.
 
+`energy-sim heat-study` writes `heat_timeseries.csv` and `heat_summary.json`.
+Heat outputs report heat by source, CHP electricity, electricity purchases and
+exports, electric-boiler and heat-pump consumption, fuel use, emissions, heat
+dumping, unmet heat, thermal-storage operation, aggregate heat-network losses,
+and independent heat, electricity, and storage balance residuals.
+
 When plots are enabled, the report directory includes dispatch, storage,
 thermal, hydro, network, reserve, unserved-energy, cost, emissions, and duration
 curve figures. Optional components are represented by empty plots or empty stable

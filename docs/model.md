@@ -207,6 +207,37 @@ The study reports shortage slacks for both hydrogen demand and electricity
 deficits, conversion losses, configured reconversion emissions, and balance
 residuals. Efficiencies above one are rejected.
 
+## District heat and CHP
+
+Standalone heat studies enforce a separate heat balance and electricity balance.
+For delivery efficiency \(\eta_n\), end-use heat demand \(d^H_t\) is represented
+as source-side heat requirement \(d^H_t/\eta_n\):
+
+\[
+q^{boiler}_t+q^{eb}_t+q^{hp}_t+q^{chp}_t+q^{dis}_t+q^{unmet}_t/\eta_n
+=d^H_t/\eta_n+q^{charge}_t+q^{dump}_t.
+\]
+
+Electric heating and CHP couple the electricity balance:
+
+\[
+p^{chp}_t+p^{buy}_t+p^{short}_t
+=d^E_t+p^{eb}_t+p^{hp}_t+p^{export}_t.
+\]
+
+CHP operation is a convex hull over configured vertices for electric output,
+heat output, and fuel input:
+
+\[
+p^{chp}_{u,t}=\sum_v\lambda_{u,v,t}p_{u,v},\quad
+q^{chp}_{u,t}=\sum_v\lambda_{u,v,t}q_{u,v},\quad
+f^{chp}_{u,t}=\sum_v\lambda_{u,v,t}f_{u,v},\quad
+\sum_v\lambda_{u,v,t}\le1.
+\]
+
+Fuel use, costs, and emissions are accounted on fuel input once, avoiding
+double counting across heat and electricity products.
+
 ## Power balance
 
 All dispatch variables are represented on the source side:

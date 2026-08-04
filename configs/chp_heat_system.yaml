@@ -1,0 +1,77 @@
+schema_version: 1
+time_step_hours: 1.0
+periods:
+  - winter_peak
+  - windy_low_price
+  - evening_peak
+heat_demand_mw_th:
+  - 8.0
+  - 8.0
+  - 8.0
+electricity_demand_mw:
+  - 4.0
+  - 4.0
+  - 4.0
+network_delivery_efficiency: 0.95
+electricity_purchase_price_eur_per_mwh:
+  - 120.0
+  - 35.0
+  - 120.0
+electricity_export_value_eur_per_mwh:
+  - 45.0
+  - 20.0
+  - 45.0
+heat_shortage_penalty_eur_per_mwh: 10000.0
+electricity_shortage_penalty_eur_per_mwh: 10000.0
+heat_dumping_cost_eur_per_mwh: 5.0
+carbon_price_eur_per_tonne: 50.0
+boilers:
+  - id: gas-boiler
+    heat_capacity_mw: 8.0
+    efficiency_mwh_heat_per_mwh_fuel: 0.9
+    fuel_cost_eur_per_mwh: 35.0
+    variable_cost_eur_per_mwh_heat: 1.0
+    emission_tonnes_per_mwh_fuel: 0.20
+electric_boilers:
+  - id: electrode-boiler
+    heat_capacity_mw: 6.0
+    efficiency_mwh_heat_per_mwh_electric: 0.98
+    variable_cost_eur_per_mwh_heat: 1.0
+heat_pumps:
+  - id: river-heat-pump
+    heat_capacity_mw: 4.0
+    cop:
+      - 2.5
+      - 3.0
+      - 2.5
+    variable_cost_eur_per_mwh_heat: 1.0
+storage:
+  id: hot-water-tank
+  energy_capacity_mwh_th: 6.0
+  charge_capacity_mw_th: 3.0
+  discharge_capacity_mw_th: 3.0
+  initial_inventory_mwh_th: 0.0
+  minimum_final_inventory_mwh_th: 0.0
+  standing_loss_fraction_per_hour: 0.01
+chp_units:
+  - id: extraction-chp
+    fuel_cost_eur_per_mwh: 30.0
+    variable_cost_eur_per_mwh_fuel: 1.0
+    emission_tonnes_per_mwh_fuel: 0.20
+    vertices:
+      - id: off
+        electric_output_mw: 0.0
+        heat_output_mw_th: 0.0
+        fuel_input_mwh_per_hour: 0.0
+      - id: condensing
+        electric_output_mw: 5.0
+        heat_output_mw_th: 2.0
+        fuel_input_mwh_per_hour: 12.0
+      - id: balanced
+        electric_output_mw: 4.0
+        heat_output_mw_th: 6.0
+        fuel_input_mwh_per_hour: 14.0
+      - id: heat-led
+        electric_output_mw: 2.0
+        heat_output_mw_th: 9.0
+        fuel_input_mwh_per_hour: 14.0

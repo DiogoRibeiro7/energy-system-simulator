@@ -39,6 +39,7 @@ from energy_system_simulator.experiments import (
     run_research_experiment,
 )
 from energy_system_simulator.frequency import evaluate_frequency_adequacy
+from energy_system_simulator.heat import load_heat_problem, run_heat_study
 from energy_system_simulator.hydrogen import load_hydrogen_problem, run_hydrogen_study
 from energy_system_simulator.metadata import get_package_version
 from energy_system_simulator.planning import (
@@ -249,6 +250,14 @@ def build_parser() -> argparse.ArgumentParser:
     hydrogen.add_argument("--output", type=Path, required=True)
     hydrogen.add_argument("--overwrite", action="store_true")
 
+    heat = subparsers.add_parser(
+        "heat-study",
+        help="Run a standalone district heat and CHP subsystem study",
+    )
+    heat.add_argument("--problem", type=Path, required=True)
+    heat.add_argument("--output", type=Path, required=True)
+    heat.add_argument("--overwrite", action="store_true")
+
     planning = subparsers.add_parser("capacity-planning", help="Run a capacity-planning YAML")
     planning.add_argument("--problem", type=Path, required=True)
     planning.add_argument("--output", type=Path)
@@ -386,6 +395,9 @@ def _dispatch(args: argparse.Namespace) -> ExitCode:
 
     if args.command == "hydrogen-study":
         return _run_hydrogen_study(args)
+
+    if args.command == "heat-study":
+        return _run_heat_study(args)
 
     if args.command in {"validate", "validate-config", "validate-data"}:
         return _validate(args)
@@ -608,6 +620,21 @@ def _run_hydrogen_study(args: argparse.Namespace) -> ExitCode:
     return ExitCode.SUCCESS
 
 
+def _run_heat_study(args: argparse.Namespace) -> ExitCode:
+    output = ensure_writable_output_directory(
+        args.output,
+        overwrite=args.overwrite,
+        resume=False,
+    )
+    problem = load_heat_problem(args.problem)
+    result = run_heat_study(problem)
+    result.write(output)
+    print(f"Heat study written: {output}")
+    print(f"Heat unmet: {result.summary['unmet_heat_mwh_th']:.3f} MWh-th")
+    print(f"Electricity from CHP: {result.summary['electricity_from_chp_mwh']:.3f} MWh")
+    return ExitCode.SUCCESS
+
+
 def _parse_security_contingencies(raw: str) -> tuple[bool, bool, bool]:
     selected = {item.strip().lower() for item in raw.split(",") if item.strip()}
     supported = {"lines", "generators", "imports"}
@@ -793,6 +820,7 @@ def _capabilities() -> dict[str, Any]:
             "ac-validate",
             "distribution-study",
             "hydrogen-study",
+            "heat-study",
             "capacity-planning",
             "compare-outputs",
             "export-model",

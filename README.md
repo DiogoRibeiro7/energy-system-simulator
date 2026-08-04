@@ -37,6 +37,9 @@ The model is designed for research, teaching, and policy experiments. It uses ex
 - Standalone hydrogen subsystem studies with electrolyser production,
   `MWh_LHV` storage, exogenous demand, reconversion, losses, and emissions
   assumptions.
+- Standalone district-heat and CHP studies with heat-only boilers, electric
+  boilers, heat pumps, thermal storage, heat-network losses, and convex CHP
+  operating regions.
 - Scenario-based stochastic dispatch with value-of-information benchmarks.
 - Optional post-dispatch market prices and settlements from fixed-commitment LP duals.
 - Single-year capacity-expansion planning with representative-period weights.
@@ -95,7 +98,8 @@ N-1 post-contingency security checks are documented in
 documented in `docs/frequency-adequacy.md`. AC validation is documented in
 `docs/ac-validation.md`. Distribution feeder studies are documented in
 `docs/distribution-feeder.md`. Hydrogen subsystem studies are documented in
-`docs/hydrogen.md`.
+`docs/hydrogen.md`. District-heat and CHP studies are documented in
+`docs/heat.md`.
 
 ## Requirements
 
@@ -176,6 +180,12 @@ Run the hydrogen subsystem example:
 
 ```bash
 poetry run energy-sim hydrogen-study --problem configs/hydrogen_system.yaml --output outputs/hydrogen --overwrite
+```
+
+Run the district-heat and CHP example:
+
+```bash
+poetry run energy-sim heat-study --problem configs/chp_heat_system.yaml --output outputs/heat --overwrite
 ```
 
 Equivalent module invocation:
