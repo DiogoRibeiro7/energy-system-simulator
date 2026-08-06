@@ -190,12 +190,32 @@ def test_cli_compare_outputs_command_writes_report(tmp_path: Path) -> None:
     assert "Scenario Output Comparison" in output.read_text(encoding="utf-8")
 
 
+def test_cli_dashboard_command_writes_html(tmp_path: Path, capsys) -> None:
+    config_path = _write_config_with_output(tmp_path)
+    main(["simulate", "--config", str(config_path), "--no-plots"])
+    dashboard = tmp_path / "custom-dashboard.html"
+
+    main(
+        [
+            "dashboard",
+            "--output-dir",
+            str(tmp_path / "outputs"),
+            "--output",
+            str(dashboard),
+        ]
+    )
+
+    assert "Dashboard written" in capsys.readouterr().out
+    assert "Energy System Dashboard" in dashboard.read_text(encoding="utf-8")
+
+
 def test_cli_capabilities_lists_public_commands(capsys) -> None:
     main(["capabilities"])
 
     payload = json.loads(capsys.readouterr().out)
     assert "simulate" in payload["commands"]
     assert "compare-outputs" in payload["commands"]
+    assert "dashboard" in payload["commands"]
     assert payload["exit_codes"]["invalid_configuration"] == 2
 
 

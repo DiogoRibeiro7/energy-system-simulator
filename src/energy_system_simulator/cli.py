@@ -52,7 +52,11 @@ from energy_system_simulator.planning import (
     StorageCandidate,
     TransmissionCandidate,
 )
-from energy_system_simulator.reporting import compare_output_directories, write_outputs
+from energy_system_simulator.reporting import (
+    compare_output_directories,
+    write_dashboard,
+    write_outputs,
+)
 from energy_system_simulator.scenarios import apply_overrides, run_experiment_file
 from energy_system_simulator.security import (
     SecurityOptions,
@@ -268,6 +272,14 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--output", type=Path, required=True)
     compare.add_argument("--overwrite", action="store_true")
 
+    dashboard = subparsers.add_parser(
+        "dashboard",
+        help="Write a self-contained HTML dashboard for an output directory",
+    )
+    dashboard.add_argument("--output-dir", type=Path, required=True)
+    dashboard.add_argument("--output", type=Path)
+    dashboard.add_argument("--overwrite", action="store_true")
+
     export = subparsers.add_parser("export-model", help="Export the dispatch formulation")
     _add_export_arguments(export)
     export_formulation = subparsers.add_parser(
@@ -373,6 +385,16 @@ def _dispatch(args: argparse.Namespace) -> ExitCode:
         table = compare_output_directories(args.outputs, args.output)
         print(f"Comparison report written: {args.output}")
         print(f"Compared metrics: {table['metric'].nunique() if not table.empty else 0}")
+        return ExitCode.SUCCESS
+
+    if args.command == "dashboard":
+        path = args.output if args.output is not None else args.output_dir / "dashboard.html"
+        _ensure_writable_file(path, overwrite=args.overwrite)
+        try:
+            dashboard_path = write_dashboard(args.output_dir, path)
+        except (FileNotFoundError, ValueError) as error:
+            raise ConfigurationError(str(error)) from error
+        print(f"Dashboard written: {dashboard_path}")
         return ExitCode.SUCCESS
 
     if args.command == "capacity-planning":
@@ -823,6 +845,7 @@ def _capabilities() -> dict[str, Any]:
             "heat-study",
             "capacity-planning",
             "compare-outputs",
+            "dashboard",
             "export-model",
             "export-formulation",
             "prepare-data",

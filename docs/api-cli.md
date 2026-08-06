@@ -31,6 +31,8 @@ The supported command-line entry point is `energy-sim`.
   and CHP subsystem study.
 - `capacity-planning --problem PROBLEM`: run a capacity-expansion problem YAML.
 - `compare-outputs OUT1 OUT2 --output REPORT.md`: compare output directories.
+- `dashboard --output-dir DIR`: write a self-contained HTML dashboard for an
+  existing simulation output directory.
 - `export-model --config CONFIG --output MODEL.lp`: export formulation LP.
 - `export-formulation --config CONFIG --output MODEL.lp`: alias for formulation export.
 - `prepare-data --spec SPEC`: build a canonical input snapshot.

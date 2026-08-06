@@ -1,5 +1,6 @@
 """Simulation reporting utilities."""
 
+from energy_system_simulator.reporting.dashboard import write_dashboard
 from energy_system_simulator.reporting.report import (
     compare_output_directories,
     data_dictionary,
@@ -13,5 +14,6 @@ __all__ = [
     "data_dictionary",
     "run_diagnostics",
     "versioned_output_tables",
+    "write_dashboard",
     "write_outputs",
 ]

@@ -67,6 +67,7 @@ def test_write_outputs_creates_versioned_tables_dictionary_diagnostics_and_repor
         "summary_metrics_v1.csv",
         "data_dictionary.csv",
         "diagnostics.json",
+        "dashboard.html",
         "report.md",
     }
     assert expected <= {path.name for path in tmp_path.iterdir()}
@@ -75,6 +76,10 @@ def test_write_outputs_creates_versioned_tables_dictionary_diagnostics_and_repor
     assert diagnostics["status"] == "ok"
     report = (tmp_path / "report.md").read_text(encoding="utf-8")
     assert "Solver status: `optimal`" in report
+    assert "dashboard.html" in report
+    dashboard = (tmp_path / "dashboard.html").read_text(encoding="utf-8")
+    assert "Energy System Dashboard" in dashboard
+    assert "system_timeseries_v1.csv" in dashboard
 
 
 def test_versioned_tables_reproduce_core_summary_metrics() -> None:

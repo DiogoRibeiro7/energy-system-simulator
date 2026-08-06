@@ -31,6 +31,15 @@ violations, solver status, missing timestamps, and asset availability.
 objective value, unserved energy, balance diagnostics, table files, diagnostics,
 and plot references.
 
+`dashboard.html` is a self-contained local dashboard generated from the stable
+output tables and `summary.json`. It includes interactive dispatch, storage,
+emissions, cost, and diagnostic views and can be opened directly in a browser.
+Regenerate it for an existing output directory with:
+
+```bash
+poetry run energy-sim dashboard --output-dir outputs/example --overwrite
+```
+
 Flexible-electrification demand assets add EV and heat-pump columns to standard
 simulation outputs. EV outputs include vehicle energy, delivered mobility energy,
 V2G discharge, unmet task/departure energy, and V2G degradation cost. Heat-pump
