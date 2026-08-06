@@ -8,7 +8,7 @@ authors:
     email: "dfr@esmad.ipp.pt"
     affiliation: "ESMAD, Politécnico do Porto"
     orcid: "https://orcid.org/0009-0001-2022-7072"
-version: 1.1.0
+version: 1.1.1
 date-released: 2026-08-06
 license: BUSL-1.1
 repository-code: "https://github.com/DiogoRibeiro7/energy-system-simulator"

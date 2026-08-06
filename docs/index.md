@@ -32,6 +32,7 @@ Start here for the 1.0 documentation set.
 | Model status and limitations | [model-status.md](model-status.md) |
 | Compatibility matrix | [compatibility.md](compatibility.md) |
 | Release checklist | [release-checklist.md](release-checklist.md) |
+| 1.1.1 release validation | [release-validation-1.1.1.md](release-validation-1.1.1.md) |
 | 1.1 release validation | [release-validation-1.1.md](release-validation-1.1.md) |
 | 1.0 release validation | [release-validation-1.0.md](release-validation-1.0.md) |
 

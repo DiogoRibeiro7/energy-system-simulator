@@ -7,6 +7,13 @@ and this project follows semantic versioning.
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-08-06
+
+### Fixed
+
+- Consolidated dispatch result frames between accounting phases to avoid Pandas
+  DataFrame fragmentation warnings during wide result-table generation.
+
 ## [1.1.0] - 2026-08-06
 
 ### Added
