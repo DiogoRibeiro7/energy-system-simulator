@@ -33,7 +33,8 @@ The supported command-line entry point is `energy-sim`.
 - `compare-outputs OUT1 OUT2 --output REPORT.md`: compare output directories.
 - `dashboard --output-dir DIR`: write a self-contained HTML dashboard for an
   existing simulation output directory. Use `--app` for the structured
-  `dashboard/` app directory and `--serve` to run it locally.
+  `dashboard/` app directory and `--serve` to run it locally on
+  `http://127.0.0.1:8765/` by default.
 - `export-model --config CONFIG --output MODEL.lp`: export formulation LP.
 - `export-formulation --config CONFIG --output MODEL.lp`: alias for formulation export.
 - `prepare-data --spec SPEC`: build a canonical input snapshot.

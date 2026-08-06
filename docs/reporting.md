@@ -49,6 +49,13 @@ Serve it locally with:
 poetry run energy-sim dashboard --output-dir outputs/example --app --serve --overwrite
 ```
 
+Open the local URL printed by the command, usually `http://127.0.0.1:8765`.
+If that port is already in use, choose another one:
+
+```bash
+poetry run energy-sim dashboard --output-dir outputs/example --app --serve --port 8010 --overwrite
+```
+
 Flexible-electrification demand assets add EV and heat-pump columns to standard
 simulation outputs. EV outputs include vehicle energy, delivered mobility energy,
 V2G discharge, unmet task/departure energy, and V2G degradation cost. Heat-pump

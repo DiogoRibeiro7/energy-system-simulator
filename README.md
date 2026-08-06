@@ -209,6 +209,26 @@ Results are written to `outputs/example/`:
 - `dispatch.png`
 - `battery_soc.png`
 
+Generate and serve the structured dashboard for those outputs:
+
+```bash
+poetry run energy-sim dashboard --output-dir outputs/example --app --serve --overwrite
+```
+
+Open the local URL printed by the command, usually `http://127.0.0.1:8765`.
+If that port is already in use, choose another one:
+
+```bash
+poetry run energy-sim dashboard --output-dir outputs/example --app --serve --port 8010 --overwrite
+```
+
+The flexible-electrification dashboard uses its own output directory:
+
+```bash
+poetry run energy-sim simulate --config configs/flexible_electrification.yaml --overwrite
+poetry run energy-sim dashboard --output-dir outputs/flexible-electrification --app --serve --overwrite
+```
+
 ## Model selection
 
 Use the deterministic dispatch model for operational scenario analysis,
