@@ -22,6 +22,7 @@ apply to that version.
 
 | Version | Release Date | Change Date | Change License |
 |---|---:|---:|---|
+| 1.1.2 | 2026-08-06 | 2030-08-06 | Apache-2.0 |
 | 1.1.1 | 2026-08-06 | 2030-08-06 | Apache-2.0 |
 | 1.1.0 | 2026-08-06 | 2030-08-06 | Apache-2.0 |
 | 1.0.0 | 2026-08-04 | 2030-08-04 | Apache-2.0 |

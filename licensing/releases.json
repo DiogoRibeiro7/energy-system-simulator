@@ -29,6 +29,12 @@
       "release_date": "2026-08-06",
       "change_date": "2030-08-06",
       "change_license": "Apache-2.0"
+    },
+    {
+      "version": "1.1.2",
+      "release_date": "2026-08-06",
+      "change_date": "2030-08-06",
+      "change_license": "Apache-2.0"
     }
   ]
 }

@@ -1,11 +1,12 @@
 # Model Status
 
-Current stable release: `1.1.1`.
+Current stable release: `1.1.2`.
 
-The `1.1.1` release is the stable research and teaching release for the current
-roadmap scope. It includes dashboard visualization outputs, dispatch result-frame
-consolidation for wide reports, typed portfolio configuration, asset-level renewable
-availability reporting, generator-indexed thermal unit commitment, typed fuels,
+The `1.1.2` release is the stable research and teaching release for the current
+roadmap scope. It includes dashboard visualization outputs, documented dashboard
+run commands, dispatch result-frame consolidation for wide reports, typed
+portfolio configuration, asset-level renewable availability reporting,
+generator-indexed thermal unit commitment, typed fuels,
 piecewise heat-rate segments, startup categories, richer emissions accounting,
 indexed storage, hydro dispatch, demand response, nodal DC dispatch, reserves,
 rolling horizon, reliability, stochastic dispatch, market settlement, capacity

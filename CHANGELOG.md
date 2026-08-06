@@ -7,6 +7,15 @@ and this project follows semantic versioning.
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-08-06
+
+### Changed
+
+- Added dashboard run instructions to the README, reporting guide, and CLI/API
+  reference, including the default local serve URL and alternate-port example.
+- Added manual CI dispatch and independent matrix execution so runner setup
+  failures do not cancel unrelated Python versions.
+
 ## [1.1.1] - 2026-08-06
 
 ### Fixed

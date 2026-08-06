@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "energy-system-simulator"
-version = "1.1.1"
+version = "1.1.2"
 description = "Transparent simulation and unit commitment for hybrid electricity systems"
 authors = ["Diogo Ribeiro <dfr@esmad.ipp.pt>"]
 readme = "README.md"
