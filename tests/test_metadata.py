@@ -67,8 +67,25 @@ def test_mismatched_duplicate_version_fails(tmp_path: Path) -> None:
         validator.validate_version_consistency(tmp_path)
 
 
+def test_mismatched_zenodo_version_fails(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    validator = _load_version_validator()
+    _copy_version_metadata(root, tmp_path)
+    zenodo = tmp_path / ".zenodo.json"
+    current_version = validator.authoritative_version(tmp_path)
+    zenodo.write_text(
+        zenodo.read_text(encoding="utf-8").replace(
+            f'"version": "{current_version}"', '"version": "9.9.9"'
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(AssertionError, match=r"\.zenodo\.json version"):
+        validator.validate_version_consistency(tmp_path)
+
+
 def _copy_version_metadata(root: Path, target: Path) -> None:
-    for relative_path in ("pyproject.toml", "CITATION.cff"):
+    for relative_path in ("pyproject.toml", "CITATION.cff", ".zenodo.json"):
         destination = target / relative_path
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(root / relative_path, destination)

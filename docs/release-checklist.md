@@ -5,6 +5,7 @@ Use this checklist before tagging a release.
 ## Citation
 
 - `CITATION.cff` version matches `pyproject.toml`.
+- `.zenodo.json` version matches `pyproject.toml`.
 - `CITATION.cff` release date matches `licensing/metadata.json`.
 - Repository URL and author metadata are current.
 - `README.md` links to citation guidance.

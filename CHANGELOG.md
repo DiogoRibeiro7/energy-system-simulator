@@ -7,6 +7,14 @@ and this project follows semantic versioning.
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-08-06
+
+### Fixed
+
+- Synchronized Zenodo metadata with the package and citation version.
+- Added `.zenodo.json` to version and release metadata validation so citation
+  and archive metadata cannot drift silently.
+
 ## [1.1.2] - 2026-08-06
 
 ### Changed

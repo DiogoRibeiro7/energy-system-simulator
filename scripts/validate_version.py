@@ -36,6 +36,9 @@ def validate_version_consistency(root: Path = ROOT) -> None:
         "CITATION.cff": str(
             yaml.safe_load((root / "CITATION.cff").read_text(encoding="utf-8")).get("version")
         ),
+        ".zenodo.json": json.loads((root / ".zenodo.json").read_text(encoding="utf-8")).get(
+            "version"
+        ),
     }
     for source, actual in checks.items():
         if actual != expected:

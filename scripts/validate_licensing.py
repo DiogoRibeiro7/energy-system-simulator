@@ -34,6 +34,7 @@ RELEASE_METADATA_FILES = (
     "README.md",
     "RELEASES.md",
     "CITATION.cff",
+    ".zenodo.json",
     "pyproject.toml",
     "licensing/releases.json",
     "licensing/metadata.json",

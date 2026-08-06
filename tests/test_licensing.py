@@ -114,6 +114,7 @@ def _copy_release_metadata_tree(root: Path, target: Path) -> None:
         "README.md",
         "RELEASES.md",
         "CITATION.cff",
+        ".zenodo.json",
         "pyproject.toml",
     ):
         destination = target / relative_path
