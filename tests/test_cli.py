@@ -209,6 +209,30 @@ def test_cli_dashboard_command_writes_html(tmp_path: Path, capsys) -> None:
     assert "Energy System Dashboard" in dashboard.read_text(encoding="utf-8")
 
 
+def test_cli_dashboard_command_writes_structured_app(tmp_path: Path, capsys) -> None:
+    config_path = _write_config_with_output(tmp_path)
+    main(["simulate", "--config", str(config_path), "--no-plots"])
+    app = tmp_path / "app-dashboard"
+
+    main(
+        [
+            "dashboard",
+            "--output-dir",
+            str(tmp_path / "outputs"),
+            "--app",
+            "--app-dir",
+            str(app),
+        ]
+    )
+
+    assert "Dashboard written" in capsys.readouterr().out
+    assert (app / "index.html").is_file()
+    assert (app / "styles.css").is_file()
+    assert (app / "app.js").is_file()
+    assert (app / "data.json").is_file()
+    assert (app / "data.js").is_file()
+
+
 def test_cli_capabilities_lists_public_commands(capsys) -> None:
     main(["capabilities"])
 

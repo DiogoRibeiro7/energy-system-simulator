@@ -67,6 +67,7 @@ def test_write_outputs_creates_versioned_tables_dictionary_diagnostics_and_repor
         "summary_metrics_v1.csv",
         "data_dictionary.csv",
         "diagnostics.json",
+        "dashboard",
         "dashboard.html",
         "report.md",
     }
@@ -76,10 +77,16 @@ def test_write_outputs_creates_versioned_tables_dictionary_diagnostics_and_repor
     assert diagnostics["status"] == "ok"
     report = (tmp_path / "report.md").read_text(encoding="utf-8")
     assert "Solver status: `optimal`" in report
+    assert "dashboard/index.html" in report
     assert "dashboard.html" in report
     dashboard = (tmp_path / "dashboard.html").read_text(encoding="utf-8")
     assert "Energy System Dashboard" in dashboard
     assert "system_timeseries_v1.csv" in dashboard
+    assert (tmp_path / "dashboard" / "index.html").is_file()
+    assert (tmp_path / "dashboard" / "styles.css").is_file()
+    assert (tmp_path / "dashboard" / "app.js").is_file()
+    assert (tmp_path / "dashboard" / "data.json").is_file()
+    assert (tmp_path / "dashboard" / "data.js").is_file()
 
 
 def test_versioned_tables_reproduce_core_summary_metrics() -> None:

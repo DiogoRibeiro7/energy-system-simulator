@@ -31,13 +31,22 @@ violations, solver status, missing timestamps, and asset availability.
 objective value, unserved energy, balance diagnostics, table files, diagnostics,
 and plot references.
 
-`dashboard.html` is a self-contained local dashboard generated from the stable
-output tables and `summary.json`. It includes interactive dispatch, storage,
-emissions, cost, and diagnostic views and can be opened directly in a browser.
-Regenerate it for an existing output directory with:
+`dashboard/index.html` is a structured local dashboard app generated from the
+stable output tables and `summary.json`. It writes separate HTML, CSS,
+JavaScript, and data files under `dashboard/` and includes interactive dispatch,
+storage, emissions, cost, and diagnostic views. A portable single-file
+`dashboard.html` is also written for audit bundles.
+
+Regenerate the app for an existing output directory with:
 
 ```bash
-poetry run energy-sim dashboard --output-dir outputs/example --overwrite
+poetry run energy-sim dashboard --output-dir outputs/example --app --overwrite
+```
+
+Serve it locally with:
+
+```bash
+poetry run energy-sim dashboard --output-dir outputs/example --app --serve --overwrite
 ```
 
 Flexible-electrification demand assets add EV and heat-pump columns to standard

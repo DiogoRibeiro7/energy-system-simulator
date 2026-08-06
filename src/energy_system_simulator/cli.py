@@ -54,7 +54,9 @@ from energy_system_simulator.planning import (
 )
 from energy_system_simulator.reporting import (
     compare_output_directories,
+    serve_dashboard_app,
     write_dashboard,
+    write_dashboard_app,
     write_outputs,
 )
 from energy_system_simulator.scenarios import apply_overrides, run_experiment_file
@@ -278,6 +280,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     dashboard.add_argument("--output-dir", type=Path, required=True)
     dashboard.add_argument("--output", type=Path)
+    dashboard.add_argument(
+        "--app",
+        action="store_true",
+        help="Write the structured app directory",
+    )
+    dashboard.add_argument("--app-dir", type=Path)
+    dashboard.add_argument(
+        "--serve", action="store_true", help="Serve the structured dashboard app"
+    )
+    dashboard.add_argument("--host", default="127.0.0.1")
+    dashboard.add_argument("--port", type=int, default=8765)
     dashboard.add_argument("--overwrite", action="store_true")
 
     export = subparsers.add_parser("export-model", help="Export the dispatch formulation")
@@ -388,10 +401,26 @@ def _dispatch(args: argparse.Namespace) -> ExitCode:
         return ExitCode.SUCCESS
 
     if args.command == "dashboard":
-        path = args.output if args.output is not None else args.output_dir / "dashboard.html"
-        _ensure_writable_file(path, overwrite=args.overwrite)
         try:
-            dashboard_path = write_dashboard(args.output_dir, path)
+            if args.serve:
+                app_dir = args.app_dir
+                if app_dir is None:
+                    app_dir = args.output_dir / "dashboard"
+                _ensure_writable_directory(app_dir, overwrite=args.overwrite)
+                serve_dashboard_app(args.output_dir, app_dir, host=args.host, port=args.port)
+                return ExitCode.SUCCESS
+            if args.app:
+                app_dir = args.app_dir
+                if app_dir is None:
+                    app_dir = args.output_dir / "dashboard"
+                _ensure_writable_directory(app_dir, overwrite=args.overwrite)
+                dashboard_path = write_dashboard_app(args.output_dir, app_dir)
+            else:
+                path = args.output
+                if path is None:
+                    path = args.output_dir / "dashboard.html"
+                _ensure_writable_file(path, overwrite=args.overwrite)
+                dashboard_path = write_dashboard(args.output_dir, path)
         except (FileNotFoundError, ValueError) as error:
             raise ConfigurationError(str(error)) from error
         print(f"Dashboard written: {dashboard_path}")
@@ -806,6 +835,11 @@ def _print_error(error: Exception, *, json_output: bool, label: str) -> None:
 def _ensure_writable_file(path: Path, *, overwrite: bool) -> None:
     if path.exists() and not overwrite:
         raise ConfigurationError(f"Output file already exists: {path}. Use --overwrite.")
+
+
+def _ensure_writable_directory(path: Path, *, overwrite: bool) -> None:
+    if path.exists() and any(path.iterdir()) and not overwrite:
+        raise ConfigurationError(f"Output directory already exists: {path}. Use --overwrite.")
 
 
 def _configure_logging(verbosity: int, *, quiet: bool) -> None:

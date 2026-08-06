@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 from energy_system_simulator.config import ModelConfig, resolved_config_to_dict
 from energy_system_simulator.constants import DEFAULT_NUMERICAL_POLICY
 from energy_system_simulator.metadata import get_package_version
-from energy_system_simulator.reporting.dashboard import write_dashboard
+from energy_system_simulator.reporting.dashboard import write_dashboard, write_dashboard_app
 from energy_system_simulator.simulation.engine import SimulationResult
 
 SCHEMA_VERSION = 1
@@ -86,6 +86,7 @@ def write_outputs(
     if create_plots:
         _write_plots(result, output)
     write_dashboard(output)
+    write_dashboard_app(output)
     _write_markdown_report(result, output, diagnostics, create_plots=create_plots)
 
 
@@ -789,7 +790,15 @@ def _write_markdown_report(
             )
     else:
         lines.append("- No diagnostic findings.")
-    lines.extend(["", "## Dashboard", "", "- [`dashboard.html`](dashboard.html)"])
+    lines.extend(
+        [
+            "",
+            "## Dashboard",
+            "",
+            "- [`dashboard/index.html`](dashboard/index.html)",
+            "- [`dashboard.html`](dashboard.html)",
+        ]
+    )
     if create_plots:
         lines.extend(["", "## Plots", ""])
         for name in plot_names:

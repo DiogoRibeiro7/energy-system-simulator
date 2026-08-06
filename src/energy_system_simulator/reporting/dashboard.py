@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Mapping
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +25,51 @@ def write_dashboard(
     payload = _dashboard_payload(output)
     path.write_text(_render_dashboard(payload), encoding="utf-8")
     return path
+
+
+def write_dashboard_app(
+    output_directory: str | Path,
+    app_directory: str | Path | None = None,
+) -> Path:
+    """Write a structured local dashboard app for a simulation output directory."""
+    output = Path(output_directory)
+    app = Path(app_directory) if app_directory is not None else output / "dashboard"
+    app.mkdir(parents=True, exist_ok=True)
+    payload = _dashboard_payload(output)
+    encoded = json.dumps(payload, indent=2, sort_keys=True, allow_nan=False)
+    (app / "index.html").write_text(_render_dashboard_app_index(), encoding="utf-8")
+    (app / "styles.css").write_text(_dashboard_styles(), encoding="utf-8")
+    (app / "data.json").write_text(encoded + "\n", encoding="utf-8")
+    (app / "data.js").write_text(
+        "window.ENERGY_DASHBOARD_DATA = "
+        + json.dumps(payload, allow_nan=False, separators=(",", ":"))
+        + ";\n",
+        encoding="utf-8",
+    )
+    (app / "app.js").write_text(_dashboard_app_js(), encoding="utf-8")
+    return app / "index.html"
+
+
+def serve_dashboard_app(
+    output_directory: str | Path,
+    app_directory: str | Path | None = None,
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8765,
+) -> None:
+    """Serve the structured dashboard app with the Python standard library."""
+    index = write_dashboard_app(output_directory, app_directory)
+    handler = partial(SimpleHTTPRequestHandler, directory=str(index.parent))
+    server = ThreadingHTTPServer((host, port), handler)
+    url = f"http://{host}:{server.server_port}/"
+    print(f"Dashboard serving: {url}")
+    print("Press Ctrl+C to stop.")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nDashboard server stopped.")
+    finally:
+        server.server_close()
 
 
 def _dashboard_payload(output: Path) -> dict[str, Any]:
@@ -190,6 +237,512 @@ def _metric_unit(name: str) -> str:
     if "share" in name:
         return "%"
     return ""
+
+
+def _render_dashboard_app_index() -> str:
+    return """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Energy System Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div>
+      <p class="eyebrow">Energy System Simulator</p>
+      <h1>Dashboard</h1>
+    </div>
+    <nav class="nav" aria-label="Dashboard views">
+      <button type="button" data-view="overview" aria-current="page">Overview</button>
+      <button type="button" data-view="dispatch">Dispatch</button>
+      <button type="button" data-view="storage">Storage</button>
+      <button type="button" data-view="emissions">Emissions</button>
+      <button type="button" data-view="costs">Costs</button>
+    </nav>
+    <div class="source" id="source"></div>
+  </aside>
+  <main class="workspace">
+    <header class="topbar">
+      <div>
+        <h2 id="viewTitle">Overview</h2>
+        <p id="viewSubtitle"></p>
+      </div>
+      <div class="status" id="diagnosticStatus"><span></span><strong></strong></div>
+    </header>
+    <section class="metrics" id="metrics"></section>
+    <section class="layout">
+      <div class="panel primary">
+        <div class="panel-head">
+          <h3 id="chartTitle">System Dispatch</h3>
+          <div class="readout" id="readout"></div>
+        </div>
+        <svg id="mainChart" class="chart" role="img" aria-labelledby="chartTitle"></svg>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Cost Breakdown</h3>
+        </div>
+        <svg id="costChart" class="chart compact" role="img" aria-label="Cost breakdown"></svg>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Diagnostics</h3>
+        </div>
+        <ul class="diagnostics" id="diagnostics"></ul>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Files</h3>
+        </div>
+        <div class="files" id="files"></div>
+      </div>
+    </section>
+  </main>
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
+"""
+
+
+def _dashboard_styles() -> str:
+    return """:root {
+  --bg: #eef2f4;
+  --surface: #ffffff;
+  --surface-alt: #f8fafb;
+  --ink: #172026;
+  --muted: #62717c;
+  --line: #d8e0e5;
+  --accent: #0e7c7b;
+  --renewable: #2f9e44;
+  --thermal: #4263eb;
+  --imports: #e67700;
+  --storage: #9c36b5;
+  --shed: #c92a2a;
+  --emissions: #495057;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.sidebar {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 22px 18px;
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+}
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+h1, h2, h3, p { margin-top: 0; }
+h1 { margin-bottom: 0; font-size: 26px; letter-spacing: 0; }
+h2 { margin-bottom: 4px; font-size: 22px; letter-spacing: 0; }
+h3 { margin-bottom: 0; font-size: 15px; letter-spacing: 0; }
+.nav { display: grid; gap: 6px; }
+.nav button {
+  min-height: 38px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  padding: 8px 10px;
+}
+.nav button[aria-current="page"] {
+  border-color: var(--line);
+  background: var(--surface-alt);
+  color: var(--ink);
+  font-weight: 650;
+}
+.source {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.workspace {
+  min-width: 0;
+  padding: 18px;
+}
+.topbar {
+  min-height: 64px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 14px;
+}
+.topbar p { color: var(--muted); margin-bottom: 0; }
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.status span {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.status.error span { background: var(--shed); }
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.metric, .panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.metric {
+  min-height: 84px;
+  padding: 12px 14px;
+}
+.metric small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+.metric strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 21px;
+  white-space: nowrap;
+}
+.metric span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+  gap: 14px;
+}
+.panel {
+  min-width: 0;
+  padding: 14px;
+}
+.panel.primary { grid-row: span 2; }
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 28px;
+  margin-bottom: 8px;
+}
+.chart {
+  width: 100%;
+  height: 430px;
+  display: block;
+}
+.chart.compact { height: 250px; }
+.legend, .files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+.readout {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+.diagnostics {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+.diagnostics li {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+}
+svg text { fill: var(--muted); font-size: 11px; }
+.axis { stroke: var(--line); stroke-width: 1; }
+.grid-line { stroke: var(--line); stroke-width: 1; opacity: 0.7; }
+.hover-line { stroke: var(--ink); stroke-width: 1; opacity: 0.35; pointer-events: none; }
+@media (max-width: 980px) {
+  body { grid-template-columns: 1fr; }
+  .sidebar { min-height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .nav { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .nav button { text-align: center; }
+  .layout { grid-template-columns: 1fr; }
+  .panel.primary { grid-row: auto; }
+  .topbar { flex-direction: column; }
+}
+@media (max-width: 640px) {
+  .nav { grid-template-columns: 1fr 1fr; }
+  .workspace { padding: 12px; }
+  .chart { height: 330px; }
+}
+"""
+
+
+def _dashboard_app_js() -> str:
+    return """const data = window.ENERGY_DASHBOARD_DATA;
+const palette = {
+  demand: "#172026",
+  renewable: "#2f9e44",
+  thermal: "#4263eb",
+  imports: "#e67700",
+  storage: "#9c36b5",
+  shed: "#c92a2a",
+  emissions: "#495057"
+};
+const viewMap = {
+  overview: {
+    title: "Overview",
+    subtitle: "System-level operating results and diagnostic status.",
+    chart: "System Dispatch",
+    unit: "MW",
+    series: [
+      ["end_user_demand_mw", "Demand", palette.demand],
+      ["renewable_used_mw", "Renewable", palette.renewable],
+      ["thermal_output_mw", "Thermal", palette.thermal],
+      ["imports_mw", "Imports", palette.imports]
+    ]
+  },
+  dispatch: {
+    title: "Dispatch",
+    subtitle: "Demand, supply, imports, and scarcity by period.",
+    chart: "System Dispatch",
+    unit: "MW",
+    series: [
+      ["end_user_demand_mw", "Demand", palette.demand],
+      ["renewable_used_mw", "Renewable", palette.renewable],
+      ["thermal_output_mw", "Thermal", palette.thermal],
+      ["imports_mw", "Imports", palette.imports],
+      ["total_load_shed_mw", "Load shed", palette.shed]
+    ]
+  },
+  storage: {
+    title: "Storage",
+    subtitle: "Battery charge, discharge, and state of charge.",
+    chart: "Storage Operation",
+    unit: "MW / MWh",
+    series: [
+      ["battery_charge_mw", "Charge", palette.imports],
+      ["battery_discharge_mw", "Discharge", palette.storage],
+      ["battery_soc_mwh", "State of charge", palette.renewable]
+    ]
+  },
+  emissions: {
+    title: "Emissions",
+    subtitle: "Thermal and import emissions by period.",
+    chart: "Emissions",
+    unit: "tonnes",
+    series: [
+      ["thermal_emissions_tonnes", "Thermal", palette.emissions],
+      ["import_emissions_tonnes", "Imports", palette.imports]
+    ]
+  },
+  costs: {
+    title: "Costs",
+    subtitle: "Objective cost composition and operating drivers.",
+    chart: "System Dispatch",
+    unit: "MW",
+    series: [
+      ["thermal_output_mw", "Thermal", palette.thermal],
+      ["imports_mw", "Imports", palette.imports],
+      ["battery_discharge_mw", "Battery discharge", palette.storage]
+    ]
+  }
+};
+function formatNumber(value, unit) {
+  if (value === null || value === undefined) return "";
+  if (unit === "%") return (value * 100).toFixed(1);
+  if (Math.abs(value) >= 1000000) {
+    return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+  }
+  if (Math.abs(value) >= 1000) {
+    return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  }
+  return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+function setMetrics() {
+  document.getElementById("metrics").innerHTML = data.metrics.map(metric => `
+    <article class="metric">
+      <small>${metric.label}</small>
+      <strong>${formatNumber(metric.value, metric.unit)} <span>${metric.unit}</span></strong>
+    </article>
+  `).join("");
+}
+function setSource() {
+  const sample = data.downsampled ? `Showing ${data.displayed_periods.toLocaleString()} sampled periods.` : "Showing every period.";
+  document.getElementById("source").textContent = `${data.periods.toLocaleString()} periods. ${sample} Source: ${data.source_table}`;
+}
+function activeSeries(view) {
+  return view.series
+    .map(([key, label, color]) => [key, label, color, data.series[key] || []])
+    .filter(item => item[3].length);
+}
+function drawLineChart(view) {
+  const svg = document.getElementById("mainChart");
+  const width = svg.clientWidth || 900;
+  const height = svg.clientHeight || 420;
+  const margin = { top: 18, right: 18, bottom: 38, left: 54 };
+  const innerW = width - margin.left - margin.right;
+  const innerH = height - margin.top - margin.bottom;
+  const series = activeSeries(view);
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.innerHTML = "";
+  if (!series.length) {
+    svg.innerHTML = `<text x="${width / 2}" y="${height / 2}" text-anchor="middle">No data</text>`;
+    return;
+  }
+  const values = series.flatMap(item => item[3]);
+  const maxY = Math.max(...values, 1);
+  const minY = Math.min(0, ...values);
+  const spanY = maxY - minY || 1;
+  const count = Math.max(data.series.timestamp.length - 1, 1);
+  const x = index => margin.left + innerW * index / count;
+  const y = value => margin.top + innerH - ((value - minY) / spanY * innerH);
+  for (let tick = 0; tick <= 4; tick += 1) {
+    const yy = margin.top + innerH * tick / 4;
+    const value = maxY - spanY * tick / 4;
+    svg.insertAdjacentHTML("beforeend", `<line class="grid-line" x1="${margin.left}" y1="${yy}" x2="${width - margin.right}" y2="${yy}"></line>`);
+    svg.insertAdjacentHTML("beforeend", `<text x="${margin.left - 8}" y="${yy + 4}" text-anchor="end">${formatNumber(value, "")}</text>`);
+  }
+  svg.insertAdjacentHTML("beforeend", `<line class="axis" x1="${margin.left}" y1="${height - margin.bottom}" x2="${width - margin.right}" y2="${height - margin.bottom}"></line>`);
+  svg.insertAdjacentHTML("beforeend", `<line class="axis" x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${height - margin.bottom}"></line>`);
+  series.forEach(([key, label, color, values]) => {
+    const path = values.map((value, index) => `${index ? "L" : "M"}${x(index).toFixed(2)},${y(value).toFixed(2)}`).join(" ");
+    svg.insertAdjacentHTML("beforeend", `<path d="${path}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"></path>`);
+  });
+  const hover = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  hover.setAttribute("class", "hover-line");
+  hover.setAttribute("y1", String(margin.top));
+  hover.setAttribute("y2", String(height - margin.bottom));
+  hover.style.display = "none";
+  svg.appendChild(hover);
+  svg.onmousemove = event => {
+    const rect = svg.getBoundingClientRect();
+    const ratio = Math.min(Math.max((event.clientX - rect.left - margin.left) / innerW, 0), 1);
+    const index = Math.round(ratio * Math.max(data.series.timestamp.length - 1, 0));
+    hover.style.display = "block";
+    hover.setAttribute("x1", String(x(index)));
+    hover.setAttribute("x2", String(x(index)));
+    document.getElementById("readout").textContent = [
+      data.series.timestamp[index],
+      ...series.map(([key, label, color, values]) => `${label}: ${formatNumber(values[index], view.unit)}`)
+    ].join(" | ");
+  };
+  svg.onmouseleave = () => { hover.style.display = "none"; };
+  document.getElementById("legend").innerHTML = series.map(([key, label, color]) =>
+    `<span class="legend-item"><span class="swatch" style="background:${color}"></span>${label}</span>`
+  ).join("");
+}
+function drawCosts() {
+  const svg = document.getElementById("costChart");
+  const width = svg.clientWidth || 420;
+  const height = svg.clientHeight || 250;
+  const margin = { top: 6, right: 18, bottom: 24, left: 150 };
+  const rows = data.costs || [];
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.innerHTML = "";
+  if (!rows.length) {
+    svg.innerHTML = `<text x="${width / 2}" y="${height / 2}" text-anchor="middle">No cost data</text>`;
+    return;
+  }
+  const innerW = width - margin.left - margin.right;
+  const rowH = (height - margin.top - margin.bottom) / rows.length;
+  const barH = Math.max(12, rowH - 4);
+  const maxValue = Math.max(...rows.map(row => Math.abs(row.value_eur)), 1);
+  rows.forEach((row, index) => {
+    const y = margin.top + index * rowH;
+    const w = Math.abs(row.value_eur) / maxValue * innerW;
+    svg.insertAdjacentHTML("beforeend", `<text x="${margin.left - 8}" y="${y + barH * 0.75}" text-anchor="end">${row.component.replaceAll("_", " ")}</text>`);
+    svg.insertAdjacentHTML("beforeend", `<rect x="${margin.left}" y="${y}" width="${w}" height="${barH}" fill="${palette.thermal}" rx="3"></rect>`);
+  });
+}
+function setDiagnostics() {
+  const status = document.getElementById("diagnosticStatus");
+  status.classList.toggle("error", data.diagnostic_status === "error");
+  status.querySelector("strong").textContent = `Diagnostics: ${data.diagnostic_status}`;
+  const list = document.getElementById("diagnostics");
+  if (!data.diagnostics.length) {
+    list.innerHTML = "<li>No diagnostic findings.</li>";
+    return;
+  }
+  list.innerHTML = data.diagnostics.map(item =>
+    `<li><strong>${item.severity}</strong> ${item.check}: ${item.message}</li>`
+  ).join("");
+}
+function setFiles() {
+  const files = ["dashboard.html", "dashboard/index.html", "report.md", "summary.json", "system_timeseries_v1.csv", "asset_timeseries_v1.csv", "data_dictionary.csv"];
+  document.getElementById("files").innerHTML = files.map(file =>
+    `<span class="legend-item"><span class="swatch" style="background:var(--accent)"></span>${file}</span>`
+  ).join("");
+}
+function setView(name) {
+  const view = viewMap[name];
+  document.getElementById("viewTitle").textContent = view.title;
+  document.getElementById("viewSubtitle").textContent = view.subtitle;
+  document.getElementById("chartTitle").textContent = view.chart;
+  document.querySelectorAll("[data-view]").forEach(button => {
+    button.setAttribute("aria-current", button.dataset.view === name ? "page" : "false");
+  });
+  drawLineChart(view);
+}
+setMetrics();
+setSource();
+setDiagnostics();
+setFiles();
+drawCosts();
+setView("overview");
+document.querySelectorAll("[data-view]").forEach(button => {
+  button.addEventListener("click", () => setView(button.dataset.view));
+});
+window.addEventListener("resize", () => {
+  const selected = document.querySelector("[data-view][aria-current='page']");
+  setView(selected ? selected.dataset.view : "overview");
+  drawCosts();
+});
+"""
 
 
 def _render_dashboard(payload: Mapping[str, Any]) -> str:
