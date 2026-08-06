@@ -36,5 +36,5 @@ Use this checklist before tagging a release.
 - Configuration schemas are documented in `docs/configuration.md`.
 - Output tables are documented in `docs/reporting.md`.
 - Breaking changes are listed in `CHANGELOG.md`.
-- Known limitations and unresolved risks are listed in
-  `docs/release-validation-1.0.md`.
+- Known limitations and unresolved risks are listed in the current
+  `docs/release-validation-*.md` report.

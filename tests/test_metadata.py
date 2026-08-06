@@ -55,8 +55,11 @@ def test_mismatched_duplicate_version_fails(tmp_path: Path) -> None:
     validator = _load_version_validator()
     _copy_version_metadata(root, tmp_path)
     citation = tmp_path / "CITATION.cff"
+    current_version = validator.authoritative_version(tmp_path)
     citation.write_text(
-        citation.read_text(encoding="utf-8").replace("version: 1.0.0", "version: 9.9.9"),
+        citation.read_text(encoding="utf-8").replace(
+            f"version: {current_version}", "version: 9.9.9"
+        ),
         encoding="utf-8",
     )
 

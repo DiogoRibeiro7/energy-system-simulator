@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from energy_system_simulator.config import load_config
+from energy_system_simulator.metadata import get_package_version
 from energy_system_simulator.reporting import (
     compare_output_directories,
     run_diagnostics,
@@ -25,7 +26,7 @@ def test_write_outputs_includes_machine_readable_manifest(tmp_path: Path) -> Non
 
     manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
     assert (tmp_path / "asset_timeseries.csv").is_file()
-    assert manifest["package_version"] == "1.0.0"
+    assert manifest["package_version"] == get_package_version()
     assert len(manifest["input_file_sha256"]) == 64
     assert len(manifest["configuration_sha256"]) == 64
     assert manifest["solver"]["name"] == "scipy.optimize.milp"

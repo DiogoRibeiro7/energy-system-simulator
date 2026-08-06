@@ -7,6 +7,24 @@ and this project follows semantic versioning.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-06
+
+### Added
+
+- Structured local dashboard app output under `dashboard/`, with separate
+  `index.html`, `styles.css`, `app.js`, `data.json`, and `data.js` files.
+- `energy-sim dashboard --app` to regenerate the structured dashboard app for
+  an existing output directory.
+- `energy-sim dashboard --serve` to serve the structured dashboard locally with
+  the Python standard library.
+- Self-contained `dashboard.html` output for portable audit bundles.
+
+### Changed
+
+- Standard simulation reports now link to both the structured dashboard app and
+  the portable single-file dashboard.
+- Reporting documentation now describes dashboard app generation and serving.
+
 ## [1.0.0] - 2026-08-04
 
 ### Added

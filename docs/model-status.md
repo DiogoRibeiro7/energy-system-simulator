@@ -1,8 +1,8 @@
 # Model Status
 
-Current stable release: `1.0.0`.
+Current stable release: `1.1.0`.
 
-The `1.0.0` release is the stable research and teaching release for the current
+The `1.1.0` release is the stable research and teaching release for the current
 roadmap scope. It includes typed portfolio configuration, asset-level renewable
 availability reporting, generator-indexed thermal unit commitment, typed fuels,
 piecewise heat-rate segments, startup categories, richer emissions accounting,

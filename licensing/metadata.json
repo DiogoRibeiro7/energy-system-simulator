@@ -3,7 +3,7 @@
   "package_name": "energy-system-simulator",
   "copyright_holder": "Diogo Ribeiro",
   "commercial_contact_email": "dfr@esmad.ipp.pt",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "license": "BUSL-1.1",
-  "release_date": "2026-08-04"
+  "release_date": "2026-08-06"
 }
