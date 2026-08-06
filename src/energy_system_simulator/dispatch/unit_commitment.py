@@ -588,12 +588,19 @@ class UnitCommitment:
             problem.renewable_available_mw - frame["renewable_used_mw"]
         )
         frame["gross_demand_mw"] = problem.gross_demand_mw
+        self._consolidate_result_frame(frame)
         self._add_thermal_accounting_columns(frame, problem.thermal_units, problem)
+        self._consolidate_result_frame(frame)
         self._add_storage_accounting_columns(frame, problem.storage_units)
+        self._consolidate_result_frame(frame)
         self._add_hydro_accounting_columns(frame, problem.hydro_units, problem)
+        self._consolidate_result_frame(frame)
         self._add_network_accounting_columns(frame, problem)
+        self._consolidate_result_frame(frame)
         self._add_demand_accounting_columns(frame, problem.demand_units)
+        self._consolidate_result_frame(frame)
         self._add_reserve_accounting_columns(frame, problem)
+        self._consolidate_result_frame(frame)
         nonnegative_cleanup_max_abs = self._clip_nonnegative_solver_noise(
             frame,
             problem.thermal_units,
@@ -603,8 +610,11 @@ class UnitCommitment:
         )
         if problem.demand_units:
             self._add_demand_accounting_columns(frame, problem.demand_units)
+            self._consolidate_result_frame(frame)
         self._add_network_accounting_columns(frame, problem)
+        self._consolidate_result_frame(frame)
         self._add_reserve_accounting_columns(frame, problem)
+        self._consolidate_result_frame(frame)
 
         constant_curtailment_cost = (
             self.config.penalties.renewable_curtailment_eur_per_mwh
@@ -3560,6 +3570,14 @@ class UnitCommitment:
     def _sum_prefixed_frame_columns(frame: pd.DataFrame, prefix: str) -> pd.Series:
         columns = [column for column in frame.columns if column.startswith(prefix)]
         return frame[columns].sum(axis=1) if columns else pd.Series(0.0, index=frame.index)
+
+    @staticmethod
+    def _consolidate_result_frame(frame: pd.DataFrame) -> None:
+        # Pandas can fragment a frame after many result-column inserts; consolidate between
+        # accounting phases so later inserts do not degrade or emit PerformanceWarning.
+        consolidate = getattr(frame, "_consolidate_inplace", None)
+        if consolidate is not None:
+            consolidate()
 
     def _coerce_binary_columns(
         self,

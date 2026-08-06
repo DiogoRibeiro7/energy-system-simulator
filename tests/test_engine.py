@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -21,6 +22,17 @@ def test_example_simulation_runs_end_to_end() -> None:
     assert result.summary["total_demand_mwh"] > 0.0
     assert result.summary["served_demand_mwh"] <= result.summary["total_demand_mwh"] + 1e-6
     assert result.summary["renewable_available_mwh"] > 0.0
+
+
+def test_result_accounting_does_not_fragment_dataframe() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "configs" / "flexible_electrification.yaml")
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", pd.errors.PerformanceWarning)
+        result = SimulationEngine(config).run()
+
+    assert result.summary["served_demand_mwh"] > 0.0
 
 
 def test_multiple_renewable_assets_reconcile_to_aggregate_dispatch(tmp_path: Path) -> None:
