@@ -1,10 +1,11 @@
 # Model Status
 
-Current stable release: `1.1.3`.
+Current stable release: `1.1.4`.
 
-The `1.1.3` release is the stable research and teaching release for the current
-roadmap scope. It includes synchronized citation and Zenodo release metadata,
-dashboard visualization outputs, documented dashboard run commands, dispatch
+The `1.1.4` release is the stable research and teaching release for the current
+roadmap scope. It includes a `py.typed` marker and complete package metadata, a
+citable Zenodo DOI, automated release packaging, synchronized citation and
+Zenodo release metadata, dashboard visualization outputs, documented dashboard run commands, dispatch
 result-frame consolidation for wide reports, typed portfolio configuration,
 asset-level renewable availability reporting, generator-indexed thermal unit
 commitment, typed fuels,
