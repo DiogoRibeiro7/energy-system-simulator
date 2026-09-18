@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Poetry
+        run: pip install "poetry>=1.8,<3"
+      - name: Tag matches package version
+        run: |
+          version="$(poetry version --short)"
+          if [ "v${version}" != "${TAG}" ]; then
+            echo "Tag ${TAG} does not match pyproject.toml version ${version}" >&2
+            exit 1
+          fi
+          echo "VERSION=${version}" >> "${GITHUB_ENV}"
+      - name: Install dependencies
+        run: poetry install
+      - name: Release metadata
+        run: poetry run python scripts/validate_licensing.py
+      - name: Version metadata
+        run: poetry run python scripts/validate_version.py
+      - name: Release readiness
+        run: poetry run python scripts/validate_release_readiness.py
+      - name: Build package
+        run: poetry build
+      - name: Wheel install smoke
+        run: poetry run python scripts/smoke_wheel_install.py
+      - name: Changelog section
+        run: |
+          awk -v header="## [${VERSION}]" '
+            index($0, header) == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "CHANGELOG.md has no section for ${VERSION}" >&2
+            exit 1
+          fi
+      - name: Attach artifacts to the GitHub release
+        run: |
+          if gh release view "${TAG}" > /dev/null 2>&1; then
+            gh release upload "${TAG}" dist/* --clobber
+          else
+            gh release create "${TAG}" dist/* \
+              --draft \
+              --verify-tag \
+              --title "Energy System Simulator ${VERSION}" \
+              --notes-file release-notes.md
+          fi
