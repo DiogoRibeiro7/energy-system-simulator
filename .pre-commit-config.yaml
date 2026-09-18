@@ -1,17 +1,27 @@
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.6
+  # Check-only hooks: committed experiment and case-study artifacts are hashed,
+  # so nothing here may rewrite files.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
     hooks:
-      - id: ruff
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.1
+    hooks:
+      - id: ruff-check
         args: [--fix]
       - id: ruff-format
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.13.0
+  # Runs in the Poetry environment so the result matches CI (`poetry run mypy src`).
+  - repo: local
     hooks:
       - id: mypy
-        additional_dependencies:
-          - numpy>=1.26
-          - pandas>=2.1
-          - pandas-stubs>=2.1
-          - scipy>=1.11
-          - PyYAML>=6.0
+        name: mypy
+        entry: poetry run mypy src
+        language: system
+        types: [python]
+        pass_filenames: false

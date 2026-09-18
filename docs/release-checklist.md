@@ -39,3 +39,13 @@ Use this checklist before tagging a release.
 - Breaking changes are listed in `CHANGELOG.md`.
 - Known limitations and unresolved risks are listed in the current
   `docs/release-validation-*.md` report.
+
+## Publishing
+
+- `CHANGELOG.md` has a dated section for the release version.
+- Push the `vX.Y.Z` tag. The `Release` workflow checks that the tag matches
+  `pyproject.toml`, reruns the metadata validators, builds the source and wheel
+  artifacts, and smoke-tests the wheel.
+- If a GitHub release already exists for the tag, the workflow attaches the
+  artifacts to it. Otherwise it creates a draft release with the changelog
+  section as notes; review the draft and publish it.
