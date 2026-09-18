@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/DiogoRibeiro7/energy-system-simulator/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DiogoRibeiro7/energy-system-simulator/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/DiogoRibeiro7/energy-system-simulator)](https://github.com/DiogoRibeiro7/energy-system-simulator/releases/latest)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21797556.svg)](https://doi.org/10.5281/zenodo.21797556)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](docs/compatibility.md)
 [![License](https://img.shields.io/badge/license-BUSL--1.1-orange)](LICENSE)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
@@ -386,7 +387,26 @@ limitations.
 ## Citation
 
 If you use this software in research, cite Energy System Simulator using the
-metadata in [CITATION.cff](CITATION.cff).
+metadata in [CITATION.cff](CITATION.cff), or GitHub's "Cite this repository"
+button, which reads the same file.
+
+Releases are archived on Zenodo. The DOI
+[10.5281/zenodo.21797556](https://doi.org/10.5281/zenodo.21797556) covers all
+versions and always resolves to the latest one. To cite the exact version you
+used, which is preferable for reproducibility, take the version-specific DOI
+from that Zenodo page.
+
+```bibtex
+@software{ribeiro_energy_system_simulator,
+  author    = {Ribeiro, Diogo},
+  title     = {Energy System Simulator},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.21797556},
+  url       = {https://doi.org/10.5281/zenodo.21797556}
+}
+```
+
+Add `version` and `year` fields for the release you used.
 
 ## License
 

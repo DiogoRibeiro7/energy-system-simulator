@@ -41,6 +41,7 @@ include = [
 
 [tool.poetry.urls]
 Changelog = "https://github.com/DiogoRibeiro7/energy-system-simulator/blob/main/CHANGELOG.md"
+DOI = "https://doi.org/10.5281/zenodo.21797556"
 Issues = "https://github.com/DiogoRibeiro7/energy-system-simulator/issues"
 Releases = "https://github.com/DiogoRibeiro7/energy-system-simulator/releases"
 
