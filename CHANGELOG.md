@@ -16,6 +16,9 @@ and this project follows semantic versioning.
   the GitHub release.
 - CodeQL analysis for Python and GitHub Actions workflows.
 - README status badges and an example dispatch figure.
+- Zenodo concept DOI `10.5281/zenodo.21797556` in `CITATION.cff`, the README
+  citation section and badge, and the package URLs, with a licensing-validator
+  check that the README and `CITATION.cff` cite the same DOI.
 
 ### Changed
 
@@ -29,6 +32,8 @@ and this project follows semantic versioning.
   steps in `docs/release-checklist.md`.
 - Development dependencies now allow mypy 2.x, pandas-stubs 3.x, and
   pytest-cov 7.x.
+- Refreshed the Zenodo record description in `.zenodo.json`, which still
+  described the pre-1.0 single-plant model.
 
 ### Fixed
 
