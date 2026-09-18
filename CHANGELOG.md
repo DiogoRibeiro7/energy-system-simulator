@@ -7,6 +7,8 @@ and this project follows semantic versioning.
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-09-18
+
 ### Added
 
 - `py.typed` marker so type checkers use the package's inline annotations.
