@@ -6,6 +6,25 @@ The model is solved over periods \(t=1,\ldots,T\), with a constant period length
 
 ## Distribution representation
 
+The default model represents distribution as one aggregate element between the
+source side, where dispatch is optimised, and end users. It is a preprocessing
+step, not a network of buses and lines:
+
+```mermaid
+flowchart LR
+    demand["End-user demand d_t"]
+    limit{"d_t above η_n · Fmax ?"}
+    cap["Network-capacity shedding<br/>d_t − d̄_t<br/>reported before dispatch"]
+    deliver["Deliverable demand<br/>d̄_t = min(d_t, η_n · Fmax)"]
+    losses["Delivery losses<br/>g_t = d̄_t / η_n"]
+    dispatch["Dispatch model serves g_t with<br/>generation, storage, imports,<br/>or source-side load shedding"]
+    demand --> limit
+    limit -- "excess" --> cap
+    limit -- "deliverable part" --> deliver
+    deliver --> losses
+    losses --> dispatch
+```
+
 Let \(\eta_n=1-\lambda\) be network delivery efficiency and \(F^{\max}\) the source-side transfer capacity. End-user demand \(d_t\) is split into:
 
 \[

@@ -259,6 +259,33 @@ list every command and exit code.
 
 ## Mathematical core
 
+The default model balances all supply on the source side of a single aggregate
+distribution network, which applies delivery losses and a transfer-capacity
+limit before power reaches end users:
+
+```mermaid
+flowchart LR
+    subgraph supply["Source side: dispatch optimisation"]
+        ren["Renewables used R_t"]
+        thermal["Thermal output P_t"]
+        hydro["Hydro generation H_t"]
+        storage["Storage discharge and charge"]
+        imports["Imports I_t"]
+        shed["Source-side load shedding L_t"]
+    end
+    net["Aggregate distribution network<br/>source-equivalent demand G_t<br/>delivery losses<br/>transfer-capacity limit"]
+    users["End-user demand"]
+    cap["Network-capacity shedding"]
+    ren --> net
+    thermal --> net
+    hydro --> net
+    storage <--> net
+    imports --> net
+    shed --> net
+    net -- "delivered demand" --> users
+    net -. "demand above the transfer limit" .-> cap
+```
+
 For each period $t$, the source-side balance is
 
 $$
