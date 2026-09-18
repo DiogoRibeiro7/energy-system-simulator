@@ -28,6 +28,17 @@ poetry run pytest
 poetry run python scripts/validate_licensing.py
 ```
 
+Optionally install the pre-commit hooks so formatting, linting, and type checks
+run on every commit:
+
+```bash
+poetry run pre-commit install
+```
+
+Ruff may fix and format Python sources; every other hook only checks files.
+Committed experiment and case-study artifacts are hashed, so do not add hooks
+that rewrite whitespace or line endings in data, tables, or reports.
+
 ## Pull Requests
 
 - Keep changes focused and explain the motivation.
