@@ -127,3 +127,25 @@ def test_residual_summary_identifies_family_worst_period_and_scale() -> None:
     assert summary["max_abs_residual"] == pytest.approx(0.5)
     assert summary["scale"] == pytest.approx(45.0)
     assert summary["scale_normalized_residual"] == pytest.approx(0.5 / 45.0)
+
+
+def test_residual_summary_reports_row_position_for_non_default_index() -> None:
+    frame = pd.DataFrame(
+        {
+            "source_balance_residual_mw": np.array([0.0, -0.5, 0.25]),
+            "left_mw": np.array([10.0, 20.0, 30.0]),
+            "right_mw": np.array([10.0, 25.0, 30.0]),
+        },
+        index=[100, 101, 102],
+    )
+
+    summary = SimulationEngine._residual_summary(
+        frame,
+        "source_balance",
+        "source_balance_residual_mw",
+        ("left_mw", "right_mw"),
+    )
+
+    assert summary["period_index"] == 1
+    assert summary["max_abs_residual"] == pytest.approx(0.5)
+    assert summary["scale"] == pytest.approx(45.0)

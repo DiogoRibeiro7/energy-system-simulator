@@ -1807,8 +1807,8 @@ class SimulationEngine:
         scale_columns: tuple[str, ...],
     ) -> dict[str, Any]:
         residuals = frame[residual_column].abs()
-        period_index = int(residuals.idxmax())
-        max_abs_residual = float(residuals.loc[period_index])
+        period_index = int(residuals.argmax())
+        max_abs_residual = float(residuals.iloc[period_index])
         scale = sum(abs(float(frame[column].iloc[period_index])) for column in scale_columns)
         denominator = max(scale, DEFAULT_NUMERICAL_POLICY.primal_feasibility_mw)
         timestamp = frame["timestamp"].iloc[period_index] if "timestamp" in frame else None
