@@ -27,11 +27,16 @@ and this project follows semantic versioning.
   locked version, and adds check-only hygiene hooks.
 - Clarified supported versions in `SECURITY.md` and documented the publishing
   steps in `docs/release-checklist.md`.
+- Development dependencies now allow mypy 2.x, pandas-stubs 3.x, and
+  pytest-cov 7.x.
 
 ### Fixed
 
 - The pre-commit mypy hook failed in its isolated environment because the
   latest NumPy stubs require Python 3.12 syntax.
+- Residual diagnostics and AC validation period selection used an index label
+  as a row position, which raised `IndexError` for result frames without a
+  default integer index. Both now use the row position directly.
 
 ## [1.1.3] - 2026-08-06
 

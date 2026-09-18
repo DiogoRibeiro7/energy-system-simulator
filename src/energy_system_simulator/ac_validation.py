@@ -557,7 +557,7 @@ def _idxmax(frame: pd.DataFrame, preferred: str, fallback: str) -> int:
     column = preferred if preferred in frame else fallback
     if column not in frame:
         return 0
-    return int(frame[column].astype(float).idxmax())
+    return int(frame[column].astype(float).argmax())
 
 
 def _first_line_flow_column(config: ModelConfig) -> str:
