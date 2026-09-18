@@ -9,6 +9,11 @@ Use this checklist before tagging a release.
 - `CITATION.cff` release date matches `licensing/metadata.json`.
 - Repository URL and author metadata are current.
 - `README.md` links to citation guidance.
+- `CITATION.cff` and `README.md` use the Zenodo concept DOI, which covers all
+  versions, so neither needs editing per release.
+- After publishing the GitHub release, confirm that Zenodo archived it and
+  issued a version DOI. Zenodo only archives published releases, not drafts or
+  bare tags.
 
 ## Reproducibility
 
