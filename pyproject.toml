@@ -5,6 +5,29 @@ description = "Transparent simulation and unit commitment for hybrid electricity
 authors = ["Diogo Ribeiro <dfr@esmad.ipp.pt>"]
 readme = "README.md"
 license = "BUSL-1.1"
+homepage = "https://github.com/DiogoRibeiro7/energy-system-simulator"
+repository = "https://github.com/DiogoRibeiro7/energy-system-simulator"
+documentation = "https://github.com/DiogoRibeiro7/energy-system-simulator/blob/main/docs/index.md"
+keywords = [
+  "energy-systems",
+  "power-systems",
+  "unit-commitment",
+  "economic-dispatch",
+  "optimization",
+  "milp",
+  "renewable-energy",
+  "energy-storage",
+  "simulation",
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Science/Research",
+  "Intended Audience :: Education",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering",
+  "Topic :: Scientific/Engineering :: Mathematics",
+  "Typing :: Typed",
+]
 packages = [{ include = "energy_system_simulator", from = "src" }]
 include = [
   { path = "LICENSE", format = ["sdist", "wheel"] },
@@ -15,6 +38,11 @@ include = [
   { path = "licensing/releases.json", format = ["sdist", "wheel"] },
   { path = "licensing/metadata.json", format = ["sdist", "wheel"] },
 ]
+
+[tool.poetry.urls]
+Changelog = "https://github.com/DiogoRibeiro7/energy-system-simulator/blob/main/CHANGELOG.md"
+Issues = "https://github.com/DiogoRibeiro7/energy-system-simulator/issues"
+Releases = "https://github.com/DiogoRibeiro7/energy-system-simulator/releases"
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.14"
