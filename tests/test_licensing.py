@@ -103,6 +103,58 @@ def test_citation_structure_is_valid() -> None:
     assert citation["license"] == "BUSL-1.1"
     assert citation["authors"][0]["given-names"] == "Diogo"
     assert citation["authors"][0]["family-names"] == "Ribeiro"
+    assert citation["doi"] == "10.5281/zenodo.21797556"
+    assert citation["identifiers"][0]["value"] == citation["doi"]
+
+
+def test_citation_doi_matches_readme() -> None:
+    _load_validator().validate_citation_doi()
+
+
+@pytest.mark.parametrize(
+    ("relative_path", "old", "new", "expected_message"),
+    [
+        (
+            "CITATION.cff",
+            "doi: 10.5281/zenodo.21797556",
+            "doi: 10.1000/not-zenodo",
+            "must declare a Zenodo DOI",
+        ),
+        (
+            "README.md",
+            "https://doi.org/10.5281/zenodo.21797556",
+            "https://doi.org/10.5281/zenodo.11111111",
+            "does not link to the CITATION.cff DOI",
+        ),
+        (
+            "README.md",
+            "## Citation",
+            "## Citation\n\nSee also 10.5281/zenodo.11111111.",
+            "cites DOIs not declared in CITATION.cff",
+        ),
+    ],
+)
+def test_inconsistent_citation_doi_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    relative_path: str,
+    old: str,
+    new: str,
+    expected_message: str,
+) -> None:
+    validator = _load_validator()
+    root = Path(__file__).resolve().parents[1]
+    _copy_release_metadata_tree(root, tmp_path)
+
+    target = tmp_path / relative_path
+    text = target.read_text(encoding="utf-8")
+    assert old in text
+    target.write_text(text.replace(old, new), encoding="utf-8")
+
+    monkeypatch.setattr(validator, "ROOT", tmp_path)
+
+    with pytest.raises(AssertionError, match=expected_message):
+        validator.validate_citation_doi()
 
 
 def _copy_release_metadata_tree(root: Path, target: Path) -> None:

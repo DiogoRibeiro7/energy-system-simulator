@@ -39,6 +39,7 @@ RELEASE_METADATA_FILES = (
     "licensing/releases.json",
     "licensing/metadata.json",
 )
+ZENODO_DOI_PATTERN = re.compile(r"10\.5281/zenodo\.\d+")
 PROHIBITED_PLACEHOLDER_PATTERNS = (
     re.compile(r"\[(FULL LEGAL NAME|CONTACT EMAIL|PROJECT NAME|START YEAR|CURRENT YEAR)\]"),
     re.compile(r"\bTODO\b", re.IGNORECASE),
@@ -252,12 +253,28 @@ def validate_owner_contact_metadata() -> None:
         raise AssertionError("CITATION.cff author name does not match metadata")
 
 
+def validate_citation_doi() -> None:
+    citation = yaml.safe_load((ROOT / "CITATION.cff").read_text(encoding="utf-8"))
+    if not isinstance(citation, dict):
+        raise AssertionError("CITATION.cff must be a mapping")
+    doi = citation.get("doi")
+    if not isinstance(doi, str) or not ZENODO_DOI_PATTERN.fullmatch(doi):
+        raise AssertionError("CITATION.cff must declare a Zenodo DOI")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    if f"https://doi.org/{doi}" not in readme:
+        raise AssertionError(f"README.md does not link to the CITATION.cff DOI {doi}")
+    stray = set(ZENODO_DOI_PATTERN.findall(readme)) - {doi}
+    if stray:
+        raise AssertionError(f"README.md cites DOIs not declared in CITATION.cff: {sorted(stray)}")
+
+
 def main() -> int:
     checks = (
         validate_required_files,
         validate_no_unresolved_release_placeholders,
         validate_package_metadata,
         validate_owner_contact_metadata,
+        validate_citation_doi,
         validate_readme_links,
         validate_no_superseded_current_license_claims,
         validate_release_manifest,
