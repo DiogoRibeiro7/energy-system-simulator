@@ -18,6 +18,34 @@ approximation of apparent-power loading:
 Losses are reported after the solve as a quadratic diagnostic. They are not fed
 back into the linear optimisation objective or balances.
 
+The bundled example, `configs/distribution_radial_feeder.yaml`, is a three-bus
+radial feeder with distributed energy resources at the middle and end buses:
+
+```mermaid
+flowchart LR
+    grid(["Upstream grid<br/>import and export up to 15 MW"])
+    sub["substation<br/>no load"]
+    mid["feeder_mid<br/>load 0.2 to 0.9 MW"]
+    tail["feeder_end<br/>load 0.1 to 0.7 MW"]
+    gridbat[("grid_battery<br/>grid side<br/>0.4 MW / 0.8 MWh")]
+    pv{{"end_rooftop PV<br/>0.8 MW"}}
+    custbat[("customer_battery<br/>customer side<br/>0.3 MW / 0.6 MWh")]
+    flex["evening_flex<br/>flexible load up to 0.2 MW"]
+    grid --- sub
+    sub -- "sub_mid: 3.0 MVA" --- mid
+    mid -- "mid_end: 1.4 MVA" --- tail
+    mid --- gridbat
+    tail --- pv
+    tail --- custbat
+    tail --- flex
+```
+
+Every bus has voltage bounds of 0.98 to 1.02 pu. In hosting-capacity mode this
+example yields 0.98 MW of rooftop PV at `feeder_end`. The limit is the 1.4 MVA
+rating of `mid_end`, which reaches full loading at noon when PV output flows
+back towards the substation. Voltages stay between 0.996 and 1.005 pu, so the
+voltage bounds do not bind.
+
 ## Inputs
 
 Use a separate YAML file such as `configs/distribution_radial_feeder.yaml` with:

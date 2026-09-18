@@ -7,6 +7,13 @@ and this project follows semantic versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Diagrams of the aggregate distribution representation in the README and
+  `docs/model.md`, and of the example radial feeder in
+  `docs/distribution-feeder.md`, with the verified hosting-capacity result and
+  its binding constraint.
+
 ## [1.1.4] - 2026-09-18
 
 ### Added
