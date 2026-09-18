@@ -7,6 +7,32 @@ and this project follows semantic versioning.
 
 ## [Unreleased]
 
+### Added
+
+- `py.typed` marker so type checkers use the package's inline annotations.
+- Package metadata: project URLs, keywords, and trove classifiers.
+- `Release` workflow that validates a pushed `vX.Y.Z` tag against
+  `pyproject.toml`, builds and smoke-tests the artifacts, and attaches them to
+  the GitHub release.
+- CodeQL analysis for Python and GitHub Actions workflows.
+- README status badges and an example dispatch figure.
+
+### Changed
+
+- Restructured the README around a quick start, grouped capabilities, and a
+  documentation table, and fixed equations that did not render on GitHub.
+- CI now runs with read-only token permissions, cancels superseded pull-request
+  runs, and has a job timeout.
+- Pre-commit now runs mypy through Poetry so it matches CI, pins Ruff to the
+  locked version, and adds check-only hygiene hooks.
+- Clarified supported versions in `SECURITY.md` and documented the publishing
+  steps in `docs/release-checklist.md`.
+
+### Fixed
+
+- The pre-commit mypy hook failed in its isolated environment because the
+  latest NumPy stubs require Python 3.12 syntax.
+
 ## [1.1.3] - 2026-08-06
 
 ### Fixed

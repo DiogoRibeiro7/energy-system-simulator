@@ -2,13 +2,16 @@
 
 ## Supported Versions
 
-Security fixes are applied to the latest version on the default branch. The
+Security fixes are applied to the default branch and shipped in the next patch
+release of the latest minor version. Older releases do not receive fixes. The
 current public licence is Business Source License 1.1, and each released version
 converts to Apache License 2.0 on its applicable Change Date.
 
-| Version | Supported |
-| ------- | --------- |
-| main    | Yes       |
+| Version              | Supported |
+| -------------------- | --------- |
+| main                 | Yes       |
+| Latest 1.x release   | Yes       |
+| Older releases       | No        |
 
 ## Reporting a Vulnerability
 

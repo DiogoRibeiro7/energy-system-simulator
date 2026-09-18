@@ -1,9 +1,9 @@
 # Documentation Index
 
-Start here for the 1.0 documentation set.
+Start here for the 1.x documentation set.
 
 | Area | Document |
-|---|---|
+| --- | --- |
 | Architecture | [architecture.md](architecture.md) |
 | Mathematical model | [model.md](model.md) |
 | Configuration schemas | [configuration.md](configuration.md) |

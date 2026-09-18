@@ -17,6 +17,11 @@ explicit physical and economic constraints rather than machine-learning methods,
 so every result can be traced back to a documented equation and a versioned
 input.
 
+![Two-week dispatch of the example system: end-user demand, renewable generation used, thermal output, and imports](docs/figures/example_dispatch.png)
+
+*Dispatch of the bundled example system, produced by the
+[quick start](#quick-start) commands below.*
+
 **Contents:** [Quick start](#quick-start) ·
 [Python API](#python-api) ·
 [Capabilities](#capabilities) ·
