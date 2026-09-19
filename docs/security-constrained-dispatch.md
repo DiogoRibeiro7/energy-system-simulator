@@ -41,6 +41,41 @@ The `--contingencies` option accepts a comma-separated subset such as
 `--no-committed-reserve-limit` to bound redispatch directly by ramp/headroom
 instead of by procured reserve quantities.
 
+## Example Network
+
+`configs/portfolio_nodal_three_bus.yaml` is a meshed three-bus DC network, so
+every bus stays connected when any single line is lost. Each box lists the
+assets at that bus, and line labels give the rating and susceptance.
+
+```mermaid
+flowchart LR
+    north["<b>north</b> (slack bus)<br/>north-solar: 90 MW<br/>north-wind: 70 MW<br/>market imports:<br/>up to 30 MW"]
+    central["<b>central</b><br/>central-battery:<br/>30 MW / 60 MWh<br/>central-load"]
+    south["<b>south</b><br/>south-gas: 120 MW<br/>south-load"]
+    north ---|"north-central<br/>65 MW, b = 12"| central
+    central ---|"central-south<br/>50 MW, b = 10<br/>60% available 08:00-13:00"| south
+    north ---|"north-south<br/>35 MW, b = 8"| south
+```
+
+The input data derates `central-south` to 30 MW from 08:00 to 13:00 UTC. In the
+base dispatch, no line reaches its available capacity: the highest loading is
+72.5%, on `north-central`. `central-south` carries power from south to central
+in every hour.
+
+Running the first command above on this example checks the default `lines` and
+`generators` contingency classes and gives:
+
+| Contingency | Insecure periods | Consequence |
+| --- | ---: | --- |
+| `generator:south-gas` | 24 of 24 | Up to 120 MW of emergency load shedding |
+| `line:north-central` | 15 of 24 | `central-south` and `north-south` overloaded; up to 34.2 MW of emergency overload |
+| `line:north-south` | 4 of 24 | `north-central` overloaded, by up to 4.2 MW |
+| `line:central-south` | 2 of 24 | `north-south` overloaded, by up to 6.5 MW |
+
+The base dispatch is therefore not N-1 secure. The network has a single
+thermal unit, and `north-central` is the line whose loss the other two cannot
+absorb in most hours.
+
 ## Outputs
 
 The command writes:
