@@ -313,7 +313,9 @@ generator, one storage unit, one import resource, and one demand entry.
   advanced EV fleet, vehicle-to-grid capability, heat pumps, COP variation, and
   backup heat.
 - `configs/portfolio_nodal_three_bus.yaml` is a schema v2 example with a
-  three-bus DC network, line-flow exports, and a time-varying line outage.
+  three-bus DC network, line-flow exports, and a time-varying line outage. Its
+  topology is drawn in
+  [security-constrained-dispatch.md](security-constrained-dispatch.md#example-network).
 - `configs/frequency_low_inertia.yaml` is a schema v2 example with an
   energy-feasible high-renewables dispatch that is frequency-insecure under the
   proxy thresholds.

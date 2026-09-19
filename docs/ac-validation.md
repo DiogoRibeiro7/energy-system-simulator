@@ -22,6 +22,9 @@ Supported AC metadata:
 - `thermal_generators[]`, `hydro_units[]`, and `renewable_generators[]`:
   optional reactive-power min/max limits.
 
+The examples below use the three-bus network drawn in
+[security-constrained-dispatch.md](security-constrained-dispatch.md#example-network).
+
 Run validation on the default selected periods:
 
 ```bash

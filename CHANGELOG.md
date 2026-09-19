@@ -15,6 +15,9 @@ and this project follows semantic versioning.
   its binding constraint.
 - `tests/test_docs_math.py`, which fails if any tracked Markdown file contains
   math that GitHub would not render.
+- Diagram of the three-bus nodal example network in
+  `docs/security-constrained-dispatch.md`, with its base-case line loading and
+  the N-1 results of the documented `security-check` command.
 
 ### Fixed
 
