@@ -2,7 +2,7 @@
 
 ## Sets and periods
 
-The model is solved over periods \(t=1,\ldots,T\), with a constant period length \(\Delta t\) in hours.
+The model is solved over periods $t=1,\ldots,T$, with a constant period length $\Delta t$ in hours.
 
 ## Distribution representation
 
@@ -25,26 +25,26 @@ flowchart LR
     losses --> dispatch
 ```
 
-Let \(\eta_n=1-\lambda\) be network delivery efficiency and \(F^{\max}\) the source-side transfer capacity. End-user demand \(d_t\) is split into:
+Let $\eta_n=1-\lambda$ be network delivery efficiency and $F^{\max}$ the source-side transfer capacity. End-user demand $d_t$ is split into:
 
-\[
+```math
 \bar d_t = \min(d_t,\eta_nF^{\max}),
-\]
+```
 
-\[
+```math
 d_t^{\mathrm{network\ shed}} = d_t-\bar d_t,
-\]
+```
 
 and the source-equivalent demand passed to the dispatch model is
 
-\[
+```math
 g_t=\frac{\bar d_t}{\eta_n}.
-\]
+```
 
 The ordering is deliberate: transfer capacity is applied first to end-user
-demand through the maximum deliverable demand \(\eta_nF^{\max}\). Any excess is
+demand through the maximum deliverable demand $\eta_nF^{\max}$. Any excess is
 reported as network-capacity shedding before dispatch optimisation. The dispatch
-model then serves the remaining source-equivalent demand \(g_t\) with generation,
+model then serves the remaining source-equivalent demand $g_t$ with generation,
 storage, imports, or source-side load shedding.
 
 Demand response is applied to the source-side deliverable demand after this
@@ -54,8 +54,8 @@ factor used for the aggregate dispatch input.
 
 ## Renewable generation
 
-Let \(K^{\mathrm{ren}}\) be the configured renewable asset set. Each asset \(k\)
-has exogenous availability \(a_{k,t}\) from its configured weather columns and
+Let $K^{\mathrm{ren}}$ be the configured renewable asset set. Each asset $k$
+has exogenous availability $a_{k,t}$ from its configured weather columns and
 asset derating settings. The simple solar and wind modes preserve the original
 deterministic models. Detailed solar reports DC potential, AC potential,
 clipping, temperature, and other derating losses. Detailed wind reports
@@ -66,53 +66,53 @@ inside the validated curve range.
 For a detailed renewable profile, final availability is reconciled from gross
 potential by explicit losses:
 
-\[
+```math
 a_{k,t}=g_{k,t}
 -\lambda^{\mathrm{clip/temp/shutdown}}_{k,t}
 -\lambda^{\mathrm{wake/electrical/availability}}_{k,t}.
-\]
+```
 
 All loss terms are non-negative, configured as transparent scalar factors or
 validated input-column schedules. The implementation rejects non-finite values,
-negative weather inputs, factors outside \([0,1]\), and wind speeds outside a
+negative weather inputs, factors outside $[0,1]$, and wind speeds outside a
 tabulated power-curve range.
 
 Available renewable production passed to the current aggregate dispatch
 formulation is:
 
-\[
+```math
 a_t^{\mathrm{ren}}=\sum_{k\in K^{\mathrm{ren}}} a_{k,t}.
-\]
+```
 
 The used renewable variable satisfies
 
-\[
+```math
 0\le r_t\le a_t^{\mathrm{ren}}.
-\]
+```
 
-Aggregate curtailment is \(a_t^{\mathrm{ren}}-r_t\). Until renewable dispatch is
+Aggregate curtailment is $a_t^{\mathrm{ren}}-r_t$. Until renewable dispatch is
 indexed in the optimisation, asset-level used output is reported by availability
 share:
 
-\[
+```math
 r_{k,t}=r_t\frac{a_{k,t}}{a_t^{\mathrm{ren}}}
-\]
+```
 
-when \(a_t^{\mathrm{ren}}>0\), and zero otherwise. Asset-level curtailment is
-\(a_{k,t}-r_{k,t}\). These reported asset quantities reconcile exactly to the
+when $a_t^{\mathrm{ren}} \gt 0$, and zero otherwise. Asset-level curtailment is
+$a_{k,t}-r_{k,t}$. These reported asset quantities reconcile exactly to the
 aggregate dispatch variables.
 
 ## Rolling horizon
 
-Full-horizon simulation solves all periods \(1,\ldots,T\) in one optimisation.
+Full-horizon simulation solves all periods $1,\ldots,T$ in one optimisation.
 Rolling-horizon simulation instead solves subproblems over windows
-\(\mathcal{W}_m\), retains only an implementation segment
-\(\mathcal{I}_m \subseteq \mathcal{W}_m\), and transfers terminal states from
-\(\mathcal{I}_m\) into the next subproblem:
+$\mathcal W_m$, retains only an implementation segment
+$\mathcal I_m \subseteq \mathcal W_m$, and transfers terminal states from
+$\mathcal I_m$ into the next subproblem:
 
-\[
+```math
 x^{0}_{m+1}=x^{\mathrm{end}}_{\mathcal{I}_m}.
-\]
+```
 
 Transferred states include thermal commitment and elapsed up/down durations,
 storage state of charge, reservoir storage, and remaining task demand energy.
@@ -140,15 +140,15 @@ thermal and hydro inertia is reported in MW*s. Storage fast frequency response
 and synthetic inertia are represented separately from sustained primary response
 and are capped by available discharge power and state of charge.
 
-For nominal frequency \(f_0\), largest credible loss \(L_t\), and total inertia
-\(I_t\), the RoCoF proxy is:
+For nominal frequency $f_0$, largest credible loss $L_t$, and total inertia
+$I_t$, the RoCoF proxy is:
 
-\[
+```math
 \mathrm{RoCoF}_t = \frac{f_0 L_t}{2 I_t}.
-\]
+```
 
 The quasi-steady response requirement subtracts a demand-damping allowance
-\(D\Delta f\) from the largest loss. These linear checks are not dynamic
+$D\Delta f$ from the largest loss. These linear checks are not dynamic
 frequency simulation and are intended only for commitment and planning studies.
 
 ## AC validation
@@ -171,24 +171,24 @@ Distribution studies use a separate radial feeder model family and do not alter
 the transmission DC unit-commitment formulation. The initial implementation is a
 balanced single-phase equivalent with linearised DistFlow constraints:
 
-\[
+```math
 P_{ij,t}-\sum_{k:(j,k)}P_{jk,t}=p^{\mathrm{load}}_{j,t}
 -p^{\mathrm{pv}}_{j,t}-p^{\mathrm{bat,dis}}_{j,t}
 +p^{\mathrm{bat,ch}}_{j,t}-p^{\mathrm{flex}}_{j,t}
-\]
+```
 
-\[
+```math
 Q_{ij,t}-\sum_{k:(j,k)}Q_{jk,t}=q^{\mathrm{load}}_{j,t}
-\]
+```
 
-\[
+```math
 V_{j,t}^2 = V_{i,t}^2 -
 2(r_{ij}P_{ij,t}+x_{ij}Q_{ij,t})/\mathrm{baseMVA}.
-\]
+```
 
 Branch apparent-power limits use a linear diamond approximation,
-\(|P_{ij,t}|+|Q_{ij,t}|\le S_{ij}\). Losses are reported after the solve as
-\(r_{ij}(P_{ij,t}^2+Q_{ij,t}^2)/\mathrm{baseMVA}\); they are diagnostics, not
+$|P_{ij,t}|+|Q_{ij,t}|\le S_{ij}$. Losses are reported after the solve as
+$r_{ij}(P_{ij,t}^2+Q_{ij,t}^2)/\mathrm{baseMVA}$; they are diagnostics, not
 optimised balance terms. Hosting-capacity mode maximises additional rooftop PV
 capacity subject to the same voltage and thermal limits and an explicit
 curtailment-fraction policy.
@@ -196,31 +196,31 @@ curtailment-fraction policy.
 ## Hydrogen subsystem
 
 Standalone hydrogen studies model an explicit lossy carrier in `MWh_LHV`.
-Electrolyser electrical input \(p^{el}_t\) produces hydrogen according to:
+Electrolyser electrical input $p_t^{el}$ produces hydrogen according to:
 
-\[
+```math
 h^{prod}_t=\eta^{el}p^{el}_t\Delta t.
-\]
+```
 
 Carrier balance lets hydrogen from current production or storage discharge serve
 exogenous demand, reconversion, storage charging, or curtailment:
 
-\[
+```math
 h^{prod}_t+h^{dis}_t
 =h^{store}_t+h^{del}_t+h^{rec}_t+h^{curt}_t.
-\]
+```
 
 Inventory evolves with standing losses:
 
-\[
+```math
 s_t=(1-\lambda)^{\Delta t}s_{t-1}+h^{store}_t-h^{dis}_t.
-\]
+```
 
 Reconversion is explicitly inefficient:
 
-\[
+```math
 p^{rec}_t=\eta^{rec}h^{rec}_t/\Delta t.
-\]
+```
 
 The study reports shortage slacks for both hydrogen demand and electricity
 deficits, conversion losses, configured reconversion emissions, and balance
@@ -229,30 +229,30 @@ residuals. Efficiencies above one are rejected.
 ## District heat and CHP
 
 Standalone heat studies enforce a separate heat balance and electricity balance.
-For delivery efficiency \(\eta_n\), end-use heat demand \(d^H_t\) is represented
-as source-side heat requirement \(d^H_t/\eta_n\):
+For delivery efficiency $\eta_n$, end-use heat demand $d^H_t$ is represented
+as source-side heat requirement $d^H_t/\eta_n$:
 
-\[
+```math
 q^{boiler}_t+q^{eb}_t+q^{hp}_t+q^{chp}_t+q^{dis}_t+q^{unmet}_t/\eta_n
 =d^H_t/\eta_n+q^{charge}_t+q^{dump}_t.
-\]
+```
 
 Electric heating and CHP couple the electricity balance:
 
-\[
+```math
 p^{chp}_t+p^{buy}_t+p^{short}_t
 =d^E_t+p^{eb}_t+p^{hp}_t+p^{export}_t.
-\]
+```
 
 CHP operation is a convex hull over configured vertices for electric output,
 heat output, and fuel input:
 
-\[
+```math
 p^{chp}_{u,t}=\sum_v\lambda_{u,v,t}p_{u,v},\quad
 q^{chp}_{u,t}=\sum_v\lambda_{u,v,t}q_{u,v},\quad
 f^{chp}_{u,t}=\sum_v\lambda_{u,v,t}f_{u,v},\quad
 \sum_v\lambda_{u,v,t}\le1.
-\]
+```
 
 Fuel use, costs, and emissions are accounted on fuel input once, avoiding
 double counting across heat and electricity products.
@@ -261,71 +261,71 @@ double counting across heat and electricity products.
 
 All dispatch variables are represented on the source side:
 
-\[
+```math
 r_t+\sum_{g\in G}p_{g,t}+\sum_{h\in H}x_{h,t}+d_t^{\mathrm{bat}}+i_t+\ell_t
 +\sum_{j\in D}\left(\ell_{j,t}+v_{j,t}+o_{j,t}\right)
 =g_t+c_t^{\mathrm{bat}}+\sum_{j\in D}\left(u_{j,t}+e_{j,t}\right).
-\]
+```
 
-Here \(\ell_t\) is the legacy aggregate source-equivalent involuntary load
+Here $\ell_t$ is the legacy aggregate source-equivalent involuntary load
 shedding variable used when no demand portfolio is supplied. In demand-portfolio
-mode, \(\ell_{j,t}\) is entity-specific involuntary shedding, \(v_{j,t}\) is
-voluntary curtailment, \(o_{j,t}\) is shifted-out demand, \(u_{j,t}\) is
-shifted-in demand, and \(e_{j,t}\) is task or EV charging demand.
+mode, $\ell_{j,t}$ is entity-specific involuntary shedding, $v_{j,t}$ is
+voluntary curtailment, $o_{j,t}$ is shifted-out demand, $u_{j,t}$ is
+shifted-in demand, and $e_{j,t}$ is task or EV charging demand.
 
 ## Thermal generators
 
-Let \(G\) be the configured thermal generator set. For each generator \(g\in G\)
-and period \(t\), commitment status \(u_{g,t}\), startup \(y_{g,t}\), shutdown
-\(z_{g,t}\), and output \(p_{g,t}\) are indexed by generator. The power balance
+Let $G$ be the configured thermal generator set. For each generator $g\in G$
+and period $t$, commitment status $u_{g,t}$, startup $y_{g,t}$, shutdown
+$z_{g,t}$, and output $p_{g,t}$ are indexed by generator. The power balance
 uses total thermal output:
 
-\[
+```math
 r_t+\sum_{g\in G}p_{g,t}+\sum_{h\in H}x_{h,t}+d_t^{\mathrm{bat}}+i_t+\ell_t
 +\sum_{j\in D}\left(\ell_{j,t}+v_{j,t}+o_{j,t}\right)
 =g_t+c_t^{\mathrm{bat}}+\sum_{j\in D}\left(u_{j,t}+e_{j,t}\right).
-\]
+```
 
 Generator availability is an exogenous multiplier
-\(\alpha_{g,t}\in[0,1]\), combining the static `availability_factor` and an
+$\alpha_{g,t}\in[0,1]$, combining the static `availability_factor` and an
 optional configured availability time-series column. Output bounds are:
 
-\[
+```math
 P_g^{\min}u_{g,t}\le p_{g,t}\le
 \alpha_{g,t}P_g^{\max}u_{g,t}.
-\]
+```
 
-When `must_run` is true, \(u_{g,t}=1\) for every period. Start-up and shutdown
-variables \(y_{g,t},z_{g,t}\in\{0,1\}\) satisfy
+When `must_run` is true, $u_{g,t}=1$ for every period. Start-up and shutdown
+variables $y_{g,t},z_{g,t}\in\lbrace 0,1\rbrace$ satisfy
 
-\[
+```math
 u_{g,t}-u_{g,t-1}=y_{g,t}-z_{g,t}.
-\]
+```
 
-For \(t=1\), \(u_{g,t-1}\) is the configured initial commitment state for unit
-\(g\).
+For $t=1$, $u_{g,t-1}$ is the configured initial commitment state for unit
+$g$.
 
 They are mutually exclusive in each period:
 
-\[
+```math
 y_{g,t} + z_{g,t} \le 1.
-\]
+```
 
 Minimum up and down durations are configured in hours and converted to periods
 with a conservative ceiling rule:
 
-\[
+```math
 N_g^{\uparrow}=\left\lceil H_g^{\uparrow}/\Delta t\right\rceil,\quad
 N_g^{\downarrow}=\left\lceil H_g^{\downarrow}/\Delta t\right\rceil.
-\]
+```
 
 Residual initial up-time and down-time obligations are enforced at the start of
 the horizon from the configured initial state. If the unit is initially on, the
 first
 
-\[
+```math
 \left\lceil\max(0,H^{\uparrow}-H^{\uparrow}_0)/\Delta t\right\rceil
-\]
+```
 
 periods are forced on. If the unit is initially off, the corresponding residual
 minimum down periods are forced off.
@@ -336,31 +336,31 @@ startup period. It interprets `shutdown_ramp_mw` as the maximum output in the
 period immediately before a shutdown, including the configured initial output
 when the unit shuts down in period 1.
 
-\[
+```math
 p_{g,t}-p_{g,t-1}\le
 R_g^{\uparrow}\Delta t\,u_{g,t-1}+S_g^{\uparrow}y_{g,t},
-\]
+```
 
-\[
+```math
 p_{g,t-1}-p_{g,t}\le
 R_g^{\downarrow}\Delta t\,u_{g,t}+S_g^{\downarrow}z_{g,t}.
-\]
+```
 
 Because this formulation does not model multi-period startup or shutdown
-trajectories, both transition limits must be at least \(P^{\min}\). Otherwise a
+trajectories, both transition limits must be at least $P^{\min}$. Otherwise a
 unit could be configured so that it cannot physically move between off and its
 minimum stable output.
 
 Minimum up and down times are imposed through rolling sums of recent starts and
 shutdowns:
 
-\[
+```math
 \sum_{k=\max(1,t-N_g^{\uparrow}+1)}^t y_{g,k} \le u_{g,t},
-\]
+```
 
-\[
+```math
 \sum_{k=\max(1,t-N_g^{\downarrow}+1)}^t z_{g,k} \le 1-u_{g,t}.
-\]
+```
 
 ### Terminal commitment policy
 
@@ -374,7 +374,7 @@ thermal configuration supports:
 - `carry_residual_obligations`: allows terminal transitions and reports the
   remaining minimum up/down obligations for a later rolling-horizon solve.
 - `fixed_terminal_commitment`: applies the strict transition rule and fixes
-  \(u_T\) to `terminal_on`.
+  $u_T$ to `terminal_on`.
 
 The unsupported `terminal_cost_approximation` policy was considered but not
 implemented because no calibrated terminal value is available in the standalone
@@ -383,15 +383,15 @@ model.
 For the strict and fixed policies, transitions are forbidden when they cannot
 complete their minimum-duration windows:
 
-\[
+```math
 y_{g,t}=0 \quad \forall g,\ t>T-N_g^{\uparrow}+1,
-\]
+```
 
-\[
+```math
 z_{g,t}=0 \quad \forall g,\ t>T-N_g^{\downarrow}+1.
-\]
+```
 
-For example, in a three-period hourly horizon with \(H^{\uparrow}=3\), a startup
+For example, in a three-period hourly horizon with $H^{\uparrow}=3$, a startup
 in period 1 is feasible because periods 1, 2, and 3 complete the obligation. A
 startup in period 2 or 3 is forbidden in strict standalone mode. In carry-forward
 mode, a period-3 startup is feasible and the result reports two residual
@@ -404,27 +404,27 @@ incremental heat-rate curve. The compatibility mode remains available: when no
 heat-rate segments are configured, the model uses the generator's scalar
 `variable_cost_eur_per_mwh` and `emission_factor_tonnes_per_mwh`.
 
-For a segmented generator \(g\), segment output \(q_{g,s,t}\ge0\) covers output
+For a segmented generator $g$, segment output $q_{g,s,t}\ge0$ covers output
 above the minimum stable block:
 
-\[
+```math
 p_{g,t}-P_g^{\min}u_{g,t}=\sum_s q_{g,s,t},
-\]
+```
 
-\[
+```math
 0\le q_{g,s,t}\le Q_{g,s}u_{g,t}.
-\]
+```
 
 Segment capacities must satisfy
-\(\sum_s Q_{g,s}=P_g^{\max}-P_g^{\min}\). Fuel input in MWh-thermal is:
+$\sum_s Q_{g,s}=P_g^{\max}-P_g^{\min}$. Fuel input in MWh-thermal is:
 
-\[
+```math
 F_{g,t}=\Delta t\left(F_g^{\min}u_{g,t}+\sum_s h_{g,s}q_{g,s,t}\right)
 +F_{g,t}^{\mathrm{start}},
-\]
+```
 
-where \(F_g^{\min}\) is the online minimum-block fuel input in thermal MWh per
-hour and \(h_{g,s}\) is the incremental heat rate in thermal MWh per electrical
+where $F_g^{\min}$ is the online minimum-block fuel input in thermal MWh per
+hour and $h_{g,s}$ is the incremental heat rate in thermal MWh per electrical
 MWh. Period efficiency is reported as electrical output MWh divided by total
 fuel input MWh-thermal when fuel input is positive.
 
@@ -438,12 +438,12 @@ Fuel cost, direct CO2, methane, NOx, and SOx are computed from thermal fuel
 input. CO2 receives the configured carbon price. Methane, NOx, and SOx are
 reported diagnostics and are not priced by the current objective.
 
-Startup categories split \(y_{g,t}\) into category binaries
-\(y_{g,c,t}\):
+Startup categories split $y_{g,t}$ into category binaries
+$y_{g,c,t}$:
 
-\[
+```math
 \sum_c y_{g,c,t}=y_{g,t}.
-\]
+```
 
 Category eligibility is based on prior downtime thresholds. The implementation
 uses explicit lookback constraints over previous commitment states and the
@@ -452,35 +452,35 @@ fuel input, direct emissions, fuel cost, and carbon cost.
 
 ## Storage
 
-For each storage asset \(s\), the model uses charge power \(c_{s,t}\),
-discharge power \(d_{s,t}\), stored energy \(e_{s,t}\), and binary charge and
-discharge modes \(m^c_{s,t},m^d_{s,t}\in\{0,1\}\).
+For each storage asset $s$, the model uses charge power $c_{s,t}$,
+discharge power $d_{s,t}$, stored energy $e_{s,t}$, and binary charge and
+discharge modes $m^c_{s,t},m^d_{s,t}\in\lbrace 0,1\rbrace$.
 
 The state of charge evolves as
 
-\[
+```math
 e_{s,t}=\rho_s e_{s,t-1}
 +\eta^c_s c_{s,t}\Delta t
 -\frac{d_{s,t}\Delta t}{\eta^d_s},
-\]
+```
 
-where \(\rho_s=(1-\lambda_s)^{\Delta t}\) applies standing self-discharge over
-the model interval. For \(t=1\), \(e_{s,t-1}\) is the configured initial stored
+where $\rho_s=(1-\lambda_s)^{\Delta t}$ applies standing self-discharge over
+the model interval. For $t=1$, $e_{s,t-1}$ is the configured initial stored
 energy.
 
-\[
+```math
 0\le c_{s,t}\le P^{c,\max}_{s,t}m^c_{s,t},
-\]
+```
 
-\[
+```math
 0\le d_{s,t}\le P^{d,\max}_{s,t}m^d_{s,t},
-\]
+```
 
-\[
+```math
 m^c_{s,t}+m^d_{s,t}\le 1.
-\]
+```
 
-Optional minimum operating powers bind \(c_{s,t}\) and \(d_{s,t}\) from below
+Optional minimum operating powers bind $c_{s,t}$ and $d_{s,t}$ from below
 when their modes are active. Optional ramp limits apply to charge and discharge
 power separately. Static and time-series availability factors scale the charge
 and discharge power limits.
@@ -489,12 +489,12 @@ The terminal state of charge is enforced per asset and supports four modes:
 minimum final state, exact final state, cyclic final state equal to the initial
 state, and unconstrained.
 
-Optional degradation bands introduce non-negative variables \(b_{s,k,t}\) that
+Optional degradation bands introduce non-negative variables $b_{s,k,t}$ that
 allocate throughput to cost bands:
 
-\[
+```math
 \sum_k b_{s,k,t}=(c_{s,t}+d_{s,t})\Delta t.
-\]
+```
 
 Band costs must be nondecreasing. With a linear objective, throughput is assigned
 to lower-cost bands first without extra binary variables. The approximation is
@@ -503,84 +503,84 @@ metrics but does not model electrochemical ageing states.
 
 ## Demand Response
 
-Let \(D\) be the configured demand entity set. Each entity has a source-side
-baseline demand \(b_{j,t}\). Fixed demand only supports involuntary shedding:
+Let $D$ be the configured demand entity set. Each entity has a source-side
+baseline demand $b_{j,t}$. Fixed demand only supports involuntary shedding:
 
-\[
+```math
 0\le \ell_{j,t}\le b_{j,t}.
-\]
+```
 
 Curtailable demand can reduce served demand voluntarily:
 
-\[
+```math
 0\le v_{j,t}\le \min(\phi_j b_{j,t}, V_j^{\max}),
-\]
+```
 
-where \(\phi_j\) is `maximum_curtailment_fraction` and \(V_j^{\max}\) is the
+where $\phi_j$ is `maximum_curtailment_fraction` and $V_j^{\max}$ is the
 optional absolute curtailment limit.
 
-Shiftable demand uses shifted-out \(o_{j,t}\) and shifted-in \(u_{j,t}\)
+Shiftable demand uses shifted-out $o_{j,t}$ and shifted-in $u_{j,t}$
 variables:
 
-\[
+```math
 0\le o_{j,t}\le O_j^{\max},\quad 0\le u_{j,t}\le U_j^{\max}.
-\]
+```
 
 Energy is conserved over the full horizon or over configured non-overlapping
 windows:
 
-\[
+```math
 \sum_{t\in W}u_{j,t}\Delta t=(1+\rho_j)\sum_{t\in W}o_{j,t}\Delta t,
-\]
+```
 
-where \(\rho_j\) is an optional rebound fraction.
+where $\rho_j$ is an optional rebound fraction.
 
-Deferrable demand and EV charging use a task charging variable \(e_{j,t}\) that
+Deferrable demand and EV charging use a task charging variable $e_{j,t}$ that
 is available only inside the configured period window:
 
-\[
+```math
 0\le e_{j,t}\le E_j^{\max}.
-\]
+```
 
 Task completion is:
 
-\[
+```math
 \sum_t e_{j,t}\Delta t-\sum_t \ell_{j,t}\Delta t+m_j=R_j,
-\]
+```
 
-where \(R_j\) is required task energy and \(m_j\) is unmet task energy. This
+where $R_j$ is required task energy and $m_j$ is unmet task energy. This
 prevents generic load shedding from counting as completed charging.
 
-Advanced EV fleets may also track vehicle energy \(s^{ev}_{j,t}\), arrival and
-departure windows, fleet availability \(a_j\), and optional vehicle-to-grid
-discharge \(g^{v2g}_{j,t}\):
+Advanced EV fleets may also track vehicle energy $s_{j,t}^{ev}$, arrival and
+departure windows, fleet availability $a_j$, and optional vehicle-to-grid
+discharge $g_{j,t}^{v2g}$:
 
-\[
+```math
 s^{ev}_{j,t}=s^{ev}_{j,t-1}+\eta^{ch}_j e_{j,t}\Delta t
 -g^{v2g}_{j,t}\Delta t/\eta^{v2g}_j.
-\]
+```
 
 Charging, V2G discharge, and vehicle energy capacity are all scaled by fleet
 availability. At the departure period, configured required energy must be
 present or explicitly reported as unmet departure energy.
 
-Heat-pump demand interprets the demand profile as useful heat demand \(h_{j,t}\),
-not fixed electrical demand. Electrical input \(p^{hp}_{j,t}\), backup heat
-\(b^{hp}_{j,t}\), thermal storage \(s^{hp}_{j,t}\), deterministic COP
-\(\mathrm{COP}_{j,t}\), thermal standing losses, and comfort violation
-\(c^{hp}_{j,t}\) satisfy:
+Heat-pump demand interprets the demand profile as useful heat demand $h_{j,t}$,
+not fixed electrical demand. Electrical input $p_{j,t}^{hp}$, backup heat
+$b_{j,t}^{hp}$, thermal storage $s_{j,t}^{hp}$, deterministic COP
+$`\mathrm{COP}_{j,t}`$, thermal standing losses, and comfort violation
+$c_{j,t}^{hp}$ satisfy:
 
-\[
+```math
 s^{hp}_{j,t}=\rho_j s^{hp}_{j,t-1}
 +\mathrm{COP}_{j,t}p^{hp}_{j,t}\Delta t
 +b^{hp}_{j,t}\Delta t-h_{j,t}\Delta t+c^{hp}_{j,t}.
-\]
+```
 
 Comfort bounds are enforced on thermal storage with explicit violation slack:
 
-\[
+```math
 S_j^{min}\le s^{hp}_{j,t}+c^{hp}_{j,t}\le S_j^{max}.
-\]
+```
 
 Backup heat has explicit cost and emissions. Comfort violations are not silent;
 they appear in dispatch outputs and are penalised by the configured value.
@@ -588,9 +588,9 @@ they appear in dispatch outputs and are penalised by the configured value.
 For every demand entity and period, involuntary shedding cannot exceed adjusted
 demand:
 
-\[
+```math
 \ell_{j,t}+v_{j,t}+o_{j,t}-u_{j,t}-e_{j,t}\le b_{j,t}.
-\]
+```
 
 Demand preprocessing can add transparent temperature-sensitive load with
 heating- and cooling-degree terms. No statistical or machine-learning demand
@@ -600,40 +600,40 @@ model is used.
 
 Hydro reservoirs use direct energy-equivalent water units. Natural inflow,
 turbine release, and spill are MW-water. Reservoir state is MWh-water. Constant
-turbine efficiency \(\eta^h_h\) converts release to electrical generation:
+turbine efficiency $\eta^h_h$ converts release to electrical generation:
 
-\[
+```math
 x_{h,t}=\eta^h_h q_{h,t},
-\]
+```
 
-where \(x_{h,t}\) is hydro generation in MW and \(q_{h,t}\) is turbine release
+where $x_{h,t}$ is hydro generation in MW and $q_{h,t}$ is turbine release
 in MW-water.
 
 The reservoir water balance is:
 
-\[
+```math
 v_{h,t}=\rho_h v_{h,t-1}+a^h_{h,t}\Delta t-q_{h,t}\Delta t-s_{h,t}\Delta t,
-\]
+```
 
-where \(v_{h,t}\) is reservoir state, \(a^h_{h,t}\) is natural inflow,
-\(s_{h,t}\) is spill, and
-\(\rho_h=(1-\lambda_h)^{\Delta t}\) applies evaporation or standing water loss.
-For the first model period, \(v_{h,t-1}\) is the configured initial reservoir.
+where $v_{h,t}$ is reservoir state, $a^h_{h,t}$ is natural inflow,
+$s_{h,t}$ is spill, and
+$\rho_h=(1-\lambda_h)^{\Delta t}$ applies evaporation or standing water loss.
+For the first model period, $v_{h,t-1}$ is the configured initial reservoir.
 
 Bounds enforce configured minimum and maximum reservoir state, turbine capacity,
 and optional finite spill capacity:
 
-\[
+```math
 0\le x_{h,t}\le X_h^{\max},\quad
 0\le q_{h,t}\le X_h^{\max}/\eta^h_h,\quad
 0\le s_{h,t}\le S_h^{\max}.
-\]
+```
 
 Optional environmental release is:
 
-\[
+```math
 q_{h,t}+s_{h,t}\ge E_h^{\min}.
-\]
+```
 
 Terminal reservoir policy is per unit and supports minimum final storage, exact
 final storage, cyclic storage equal to the initial state, or free terminal
@@ -656,59 +656,59 @@ reported as reserve inadequacy rather than as a generic optimisation failure.
 
 Upward and downward reserve requirements are additive:
 
-\[
+```math
 R_t^{\uparrow} =
 R_{\mathrm{fixed}}^{\uparrow}
 + \alpha_D^{\uparrow} D_t
 + \alpha_R^{\uparrow} A_t^{R}
 + \alpha_C C_t^{\max}
-\]
+```
 
-\[
+```math
 R_t^{\downarrow} =
 R_{\mathrm{fixed}}^{\downarrow}
 + \alpha_D^{\downarrow} D_t
 + \alpha_R^{\downarrow} A_t^{R}
-\]
+```
 
-where \(D_t\) is source-side demand, \(A_t^R\) is renewable availability, and
-\(C_t^{\max}\) is the largest committed thermal capacity approximation.
+where $D_t$ is source-side demand, $A_t^R$ is renewable availability, and
+$C_t^{\max}$ is the largest committed thermal capacity approximation.
 
 Thermal upward reserve is limited by online headroom and ramp deliverability:
 
-\[
+```math
 p_{g,t} + r_{g,t}^{\uparrow} \le \bar P_{g,t} u_{g,t}
-\]
+```
 
-\[
+```math
 r_{g,t}^{\uparrow} \le RU_g T_R u_{g,t}
-\]
+```
 
 Downward thermal reserve is limited by reducible output and ramp deliverability:
 
-\[
+```math
 r_{g,t}^{\downarrow} \le p_{g,t} - \underline P_g u_{g,t}
-\]
+```
 
-\[
+```math
 r_{g,t}^{\downarrow} \le RD_g T_R u_{g,t}
-\]
+```
 
 Storage upward reserve is limited by discharge headroom and stored energy above
 minimum state of charge. Downward reserve is limited by charge headroom and
 remaining storage space:
 
-\[
+```math
 d_{s,t} + r_{s,t}^{\uparrow} \le \bar D_{s,t}
 \qquad
 \frac{T_R r_{s,t}^{\uparrow}}{\eta_s^d} \le e_{s,t} - \underline E_s
-\]
+```
 
-\[
+```math
 c_{s,t} + r_{s,t}^{\downarrow} \le \bar C_{s,t}
 \qquad
 T_R \eta_s^c r_{s,t}^{\downarrow} \le \bar E_s - e_{s,t}
-\]
+```
 
 Optional demand-response upward reserve is capped by both the reserve fraction
 and remaining configured curtailment or shift-down capability. Optional import
@@ -720,14 +720,14 @@ that can be reduced.
 
 The objective minimizes:
 
-\[
+```math
 \sum_t \Delta t\left[
 C^{\mathrm{imp}}i_t
 +C^{\mathrm{lost}}\ell_t
 +C^{\mathrm{bat}}(c_t^{\mathrm{bat}}+d_t^{\mathrm{bat}})
 +C^{\mathrm{CO2}}\gamma_i i_t
 \right]
-\]
+```
 
 plus generator running costs, no-load costs, start-up costs, shutdown costs,
 thermal carbon costs, renewable-curtailment costs, and hydro terminal water

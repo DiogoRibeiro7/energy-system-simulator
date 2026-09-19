@@ -31,41 +31,41 @@ poetry run energy-sim hydrogen-study --problem configs/hydrogen_system.yaml --ou
 
 ## Equations
 
-For each period \(t\), electrolyser output is tied to electrical input:
+For each period $t$, electrolyser output is tied to electrical input:
 
-\[
+```math
 h^{prod}_t = \eta^{el} p^{el}_t \Delta t
-\]
+```
 
 Hydrogen carrier balance allows either current production or storage discharge
 to serve demand, reconversion, storage charging, or curtailment:
 
-\[
+```math
 h^{prod}_t+h^{dis}_t
 =h^{store}_t+h^{del}_t+h^{rec}_t+h^{curt}_t
-\]
+```
 
 Inventory is lossy:
 
-\[
+```math
 s_t=(1-\lambda)^{\Delta t}s_{t-1}+h^{store}_t-h^{dis}_t
-\]
+```
 
 Demand shortage and electricity-deficit shortage are explicit slacks:
 
-\[
+```math
 h^{del}_t+h^{short}_t=d^H_t
-\]
+```
 
-\[
+```math
 p^{rec}_t+p^{unserved}_t=d^E_t
-\]
+```
 
 Reconversion uses configured efficiency:
 
-\[
+```math
 p^{rec}_t = \eta^{rec}h^{rec}_t / \Delta t
-\]
+```
 
 ## Outputs
 

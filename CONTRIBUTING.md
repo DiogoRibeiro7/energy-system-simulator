@@ -70,3 +70,9 @@ recommended before introducing a CLA for dual or commercial licensing.
 
 Follow the existing project structure and naming. Use typed Python and keep
 domain logic explicit rather than hidden behind broad abstractions.
+
+Write documentation math so that GitHub renders it: `$...$` inline and fenced
+code blocks tagged `math` for display equations, not `\( \)` or `\[ \]`. GitHub runs
+Markdown over inline math first, so put subscripts before superscripts
+(`x_{j,t}^{ev}`), and use `\lbrace`, `\rbrace`, `\lt`, and `\gt` inline.
+`tests/test_docs_math.py` checks this and explains each failure.

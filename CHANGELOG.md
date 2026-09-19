@@ -13,6 +13,14 @@ and this project follows semantic versioning.
   `docs/model.md`, and of the example radial feeder in
   `docs/distribution-feeder.md`, with the verified hosting-capacity result and
   its binding constraint.
+- `tests/test_docs_math.py`, which fails if any tracked Markdown file contains
+  math that GitHub would not render.
+
+### Fixed
+
+- Equations in `docs/model.md`, `docs/frequency-adequacy.md`, `docs/heat.md`,
+  and `docs/hydrogen.md` were shown as raw LaTeX on GitHub. They now use `$...$`
+  and fenced `math` blocks. No equation changed meaning.
 
 ## [1.1.4] - 2026-09-18
 
