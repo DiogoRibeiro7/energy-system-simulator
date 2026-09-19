@@ -28,33 +28,33 @@ poetry run energy-sim heat-study --problem configs/chp_heat_system.yaml --output
 ## Balances
 
 Heat demand is served on the end-use side while the model accounts for aggregate
-network delivery efficiency \(\eta_n\):
+network delivery efficiency $\eta_n$:
 
-\[
+```math
 q^{boiler}_t+q^{eb}_t+q^{hp}_t+q^{chp}_t+q^{dis}_t+q^{unmet}_t/\eta_n
 =d^H_t/\eta_n+q^{charge}_t+q^{dump}_t.
-\]
+```
 
 The electricity balance accounts for native electricity demand, electric
 boilers, heat pumps, CHP power, imports, shortage, and exports:
 
-\[
+```math
 p^{chp}_t+p^{buy}_t+p^{short}_t
 =d^E_t+p^{eb}_t+p^{hp}_t+p^{export}_t.
-\]
+```
 
 Exports are limited to CHP production, so purchased electricity cannot be
 arbitraged through the export variable.
 
 Thermal storage evolves independently:
 
-\[
+```math
 s_t=(1-\lambda)^{\Delta t}s_{t-1}+q^{charge}_t\Delta t-q^{dis}_t\Delta t.
-\]
+```
 
-For each CHP unit \(u\), operating vertices \(v\) define a convex hull:
+For each CHP unit $u$, operating vertices $v$ define a convex hull:
 
-\[
+```math
 p^{chp}_{u,t}=\sum_v \lambda_{u,v,t}p_{u,v},
 \quad
 q^{chp}_{u,t}=\sum_v \lambda_{u,v,t}q_{u,v},
@@ -62,7 +62,7 @@ q^{chp}_{u,t}=\sum_v \lambda_{u,v,t}q_{u,v},
 f^{chp}_{u,t}=\sum_v \lambda_{u,v,t}f_{u,v},
 \quad
 \sum_v \lambda_{u,v,t}\le 1.
-\]
+```
 
 This prevents the unit from independently selecting impossible maximum heat and
 maximum electric output.

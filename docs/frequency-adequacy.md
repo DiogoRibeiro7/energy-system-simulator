@@ -16,26 +16,26 @@ The checker uses configured asset metadata:
 
 For each period, total inertia is:
 
-\[
+```math
 I_t = I_t^{sync} + I_t^{synthetic}.
-\]
+```
 
 The RoCoF proxy is:
 
-\[
+```math
 \mathrm{RoCoF}_t = \frac{f_0 L_t}{2 I_t},
-\]
+```
 
-where \(f_0\) is nominal frequency and \(L_t\) is the largest credible loss. If
+where $f_0$ is nominal frequency and $L_t$ is the largest credible loss. If
 loss is positive and inertia is zero, RoCoF is infinite.
 
 The quasi-steady response requirement is:
 
-\[
+```math
 Q_t = \max(0, L_t - D \Delta f),
-\]
+```
 
-where \(D\) is demand damping in MW/Hz and \(\Delta f\) is the allowed
+where $D$ is demand damping in MW/Hz and $\Delta f$ is the allowed
 quasi-steady frequency deviation. Sustained primary response and fast frequency
 response are reported separately, then summed for the response shortfall check.
 
