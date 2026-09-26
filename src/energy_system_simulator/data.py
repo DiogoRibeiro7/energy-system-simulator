@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from dataexcept import DataLoadingError, FileReadError, wrapping
 
 from energy_system_simulator.constants import DEFAULT_NUMERICAL_POLICY
 from energy_system_simulator.exceptions import DataValidationError
@@ -23,7 +24,11 @@ def load_input_data(path: str | Path, time_step_hours: float) -> pd.DataFrame:
     if not input_path.exists():
         raise DataValidationError(f"Input CSV does not exist: {input_path}")
 
-    frame = pd.read_csv(input_path)
+    with (
+        wrapping((OSError, UnicodeError), FileReadError, path=str(input_path)),
+        wrapping(pd.errors.ParserError, DataLoadingError, source=str(input_path)),
+    ):
+        frame = pd.read_csv(input_path)
     return validate_input_frame(frame, time_step_hours)
 
 

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import yaml
+from dataexcept import DataLoadingError, FileReadError, FileWriteError
 
 from energy_system_simulator.ac_validation import ACValidationOptions, validate_ac_power_flow
 from energy_system_simulator.api import (
@@ -324,6 +325,12 @@ def main(argv: Sequence[str] | None = None) -> None:
     except DataValidationError as error:
         _print_error(error, json_output=json_output, label="Data validation failed")
         raise SystemExit(ExitCode.INVALID_DATA) from error
+    except (DataLoadingError, FileReadError) as error:
+        _print_error(error, json_output=json_output, label="Data loading failed")
+        raise SystemExit(ExitCode.INVALID_DATA) from error
+    except FileWriteError as error:
+        _print_error(error, json_output=json_output, label="Output writing failed")
+        raise SystemExit(ExitCode.SOLVER_FAILURE) from error
     except OptimisationError as error:
         code = (
             ExitCode.INFEASIBLE_MODEL

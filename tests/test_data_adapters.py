@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from dataexcept import DataLoadingError, FileReadError, FileWriteError
 
 from energy_system_simulator.cli import main
 from energy_system_simulator.data import load_input_data
@@ -66,6 +67,24 @@ def test_dst_spring_forward_local_times_are_canonical_utc() -> None:
     ]
     assert result.frame["demand_mw"].tolist() == pytest.approx([1000.0, 1100.0, 1200.0])
     assert result.provenance.original_timezone == "Europe/Paris"
+
+
+def test_adapter_missing_csv_keeps_path_and_cause(tmp_path: Path) -> None:
+    path = tmp_path / "missing.csv"
+    with pytest.raises(FileReadError) as error:
+        _demand_adapter(path).transform()
+    assert error.value.path == str(path)
+    assert isinstance(error.value.original, FileNotFoundError)
+    assert error.value.__cause__ is error.value.original
+
+
+def test_weather_adapter_invalid_csv_keeps_parser_cause(tmp_path: Path) -> None:
+    path = tmp_path / "weather.csv"
+    path.write_text('local_time,ghi\n"unterminated,0\n', encoding="utf-8")
+    with pytest.raises(DataLoadingError) as error:
+        _weather_adapter(path).transform()
+    assert error.value.source == str(path)
+    assert isinstance(error.value.original, pd.errors.ParserError)
 
 
 def test_duplicate_utc_timestamps_are_rejected() -> None:
@@ -161,6 +180,57 @@ def test_snapshot_manifest_contains_checksums_and_is_simulation_ready(tmp_path: 
     assert manifest["sources"][0]["provider"] == "ENTSO-E Transparency Platform"
     assert manifest["output_checksum_sha256"] == file_sha256(output_csv)
     assert load_input_data(output_csv, time_step_hours=1.0).shape[0] == 3
+
+
+def test_snapshot_write_failure_keeps_destination_and_cause(tmp_path: Path) -> None:
+    output_csv = tmp_path / "existing-directory"
+    output_csv.mkdir()
+    with pytest.raises(FileWriteError) as error:
+        build_canonical_snapshot(
+            (
+                _demand_adapter(FIXTURES / "european_demand_dst.csv"),
+                _weather_adapter(FIXTURES / "weather_local.csv"),
+            ),
+            output_csv=output_csv,
+            manifest_json=tmp_path / "snapshot.manifest.json",
+            time_step_hours=1.0,
+        )
+    assert error.value.path == str(output_csv)
+    assert isinstance(error.value.original, OSError)
+    assert error.value.__cause__ is error.value.original
+    assert not (tmp_path / "snapshot.manifest.json").exists()
+
+
+def test_spec_and_checksum_read_failures_keep_source(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.yaml"
+    with pytest.raises(FileReadError) as error:
+        run_data_preparation_spec(missing)
+    assert error.value.path == str(missing)
+    assert isinstance(error.value.original, FileNotFoundError)
+
+    with pytest.raises(FileReadError) as error:
+        file_sha256(missing)
+    assert error.value.path == str(missing)
+    assert isinstance(error.value.original, FileNotFoundError)
+
+    invalid = tmp_path / "invalid.yaml"
+    invalid.write_text("adapters: [oops", encoding="utf-8")
+    with pytest.raises(DataLoadingError) as error:
+        run_data_preparation_spec(invalid)
+    assert error.value.source == str(invalid)
+    assert error.value.__cause__ is error.value.original
+
+
+def test_prepare_data_cli_reports_read_failure_without_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    missing = tmp_path / "missing.yaml"
+    with pytest.raises(SystemExit) as error:
+        main(["prepare-data", "--spec", str(missing)])
+    assert error.value.code == 3
+    output = capsys.readouterr()
+    assert str(missing) in output.err
+    assert "Traceback" not in output.err
 
 
 def test_prepare_data_cli_spec_uses_local_files_only(tmp_path: Path) -> None:
