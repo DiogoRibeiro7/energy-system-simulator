@@ -47,6 +47,7 @@ Releases = "https://github.com/DiogoRibeiro7/energy-system-simulator/releases"
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.14"
+dataexcept = ">=1.7,<2.0"
 numpy = ">=1.26,<3.0"
 pandas = ">=2.1,<4.0"
 scipy = ">=1.11,<2.0"

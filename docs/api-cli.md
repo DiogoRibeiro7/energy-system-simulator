@@ -88,9 +88,12 @@ result = ess.run_simulation(
 )
 ```
 
-Public exceptions inherit from `EnergySystemError`; configuration, data, and
-optimisation failures use `ConfigurationError`, `DataValidationError`, and
-`OptimisationError`.
+Configuration, data validation, and optimisation failures inherit from
+`EnergySystemError` through `ConfigurationError`, `DataValidationError`, and
+`OptimisationError`. Data file reads and writes instead raise DataExcept's
+`FileReadError`, `FileWriteError`, or `DataLoadingError`, preserving the path and
+underlying exception. The CLI reports read failures as invalid data and write
+failures as execution failures.
 
 Nodal security diagnostics are available through `evaluate_security`:
 

@@ -9,6 +9,7 @@ from typing import Any, Literal, Protocol, cast
 import numpy as np
 import pandas as pd
 import yaml
+from dataexcept import DataLoadingError, FileReadError, FileWriteError, wrapping
 
 from energy_system_simulator.exceptions import DataValidationError
 
@@ -105,6 +106,15 @@ class PublicDataAdapter(Protocol):
         """Transform provider-specific local data into canonical UTC time series."""
 
 
+def _read_csv(path: Path) -> pd.DataFrame:
+    """Read an adapter's CSV while retaining its path and the underlying failure."""
+    with (
+        wrapping((OSError, UnicodeError), FileReadError, path=str(path)),
+        wrapping(pd.errors.ParserError, DataLoadingError, source=str(path)),
+    ):
+        return pd.read_csv(path)
+
+
 @dataclass(frozen=True)
 class EuropeanDemandCsvAdapter:
     """File adapter for European demand CSV extracts."""
@@ -122,7 +132,7 @@ class EuropeanDemandCsvAdapter:
     temporal_aggregation: str = "native"
 
     def transform(self) -> AdapterResult:
-        raw = pd.read_csv(self.path)
+        raw = _read_csv(self.path)
         self._require_columns(raw, (self.timestamp_column, self.demand_column))
         timestamps = local_timestamps_to_utc(raw[self.timestamp_column], self.timezone)
         demand = pd.to_numeric(raw[self.demand_column], errors="coerce")
@@ -178,7 +188,7 @@ class WeatherCsvAdapter:
     temporal_aggregation: str = "native"
 
     def transform(self) -> AdapterResult:
-        raw = pd.read_csv(self.path)
+        raw = _read_csv(self.path)
         required = (self.timestamp_column, *self.column_map.values())
         missing = [column for column in required if column not in raw]
         if missing:
@@ -242,9 +252,12 @@ def build_canonical_snapshot(
             raise DataValidationError(f"Canonical snapshot missing required column {column!r}")
     output_path = Path(output_csv)
     manifest_path = Path(manifest_json)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    frame.to_csv(output_path, index=False, lineterminator="\n")
+    with wrapping(OSError, FileWriteError, path=str(output_path)):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+    with wrapping(OSError, FileWriteError, path=str(manifest_path)):
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    with wrapping(OSError, FileWriteError, path=str(output_path)):
+        frame.to_csv(output_path, index=False, lineterminator="\n")
     output_checksum = file_sha256(output_path)
     payload = {
         "schema_version": 1,
@@ -258,7 +271,8 @@ def build_canonical_snapshot(
         "validation_after": report.to_dict(),
         "sources": [result.provenance.to_dict() for result in results],
     }
-    manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    with wrapping(OSError, FileWriteError, path=str(manifest_path)):
+        manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     return SnapshotResult(
         output_csv=output_path,
         manifest_json=manifest_path,
@@ -271,7 +285,11 @@ def build_canonical_snapshot(
 def run_data_preparation_spec(path: str | Path) -> SnapshotResult:
     """Run a local data-preparation YAML spec."""
     spec_path = Path(path)
-    payload = yaml.safe_load(spec_path.read_text(encoding="utf-8"))
+    with (
+        wrapping((OSError, UnicodeError), FileReadError, path=str(spec_path)),
+        wrapping(yaml.YAMLError, DataLoadingError, source=str(spec_path)),
+    ):
+        payload = yaml.safe_load(spec_path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise DataValidationError("Data preparation spec must be a mapping")
     base_dir = spec_path.parent
@@ -421,7 +439,7 @@ def validate_canonical_frame(
 
 def file_sha256(path: str | Path) -> str:
     digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
+    with wrapping(OSError, FileReadError, path=str(path)), Path(path).open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()

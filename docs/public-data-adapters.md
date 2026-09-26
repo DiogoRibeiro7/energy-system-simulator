@@ -36,6 +36,12 @@ to happen outside the simulation run, in explicit user scripts or data
 collection commands. Tests use small committed fixture files and never contact
 live services.
 
+File reads and checksum failures raise `dataexcept.FileReadError`; malformed CSV
+or YAML input raises `dataexcept.DataLoadingError`. Snapshot CSV and manifest
+write failures raise `dataexcept.FileWriteError`. These exceptions retain the
+affected path and original cause. Schema, timestamp, and missing-value failures
+continue to raise the simulator's `DataValidationError`.
+
 ## Provenance
 
 Each source records:

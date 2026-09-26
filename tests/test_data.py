@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from dataexcept import DataLoadingError, FileReadError
 
 from energy_system_simulator.data import load_input_data
 from energy_system_simulator.exceptions import DataValidationError
@@ -23,3 +24,27 @@ def test_rejects_irregular_timestamps(tmp_path: Path) -> None:
     frame.to_csv(path, index=False)
     with pytest.raises(DataValidationError):
         load_input_data(path, time_step_hours=1.0)
+
+
+def test_csv_read_failure_keeps_path_and_original_error(tmp_path: Path) -> None:
+    path = tmp_path / "input.csv"
+    path.mkdir()
+
+    with pytest.raises(FileReadError) as error:
+        load_input_data(path, time_step_hours=1.0)
+
+    assert error.value.path == str(path)
+    assert isinstance(error.value.original, OSError)
+    assert error.value.__cause__ is error.value.original
+
+
+def test_malformed_csv_keeps_source_and_parser_error(tmp_path: Path) -> None:
+    path = tmp_path / "input.csv"
+    path.write_text('timestamp,demand_mw\n"unterminated,10\n', encoding="utf-8")
+
+    with pytest.raises(DataLoadingError) as error:
+        load_input_data(path, time_step_hours=1.0)
+
+    assert error.value.source == str(path)
+    assert isinstance(error.value.original, pd.errors.ParserError)
+    assert error.value.__cause__ is error.value.original
