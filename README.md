@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/project-logo.png" alt="energy-system-simulator project logo" width="160" height="160">
+</p>
+
 # Energy System Simulator
 
 [![CI](https://github.com/DiogoRibeiro7/energy-system-simulator/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DiogoRibeiro7/energy-system-simulator/actions/workflows/ci.yml)
